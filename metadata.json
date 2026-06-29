@@ -1,0 +1,6 @@
+{
+  "name": "Yeng Corner",
+  "description": "Cửa hàng đặt hàng K-Pop và Logistics Hàn - Việt chính hãng uy tín với cước bay nội địa giá rẻ.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

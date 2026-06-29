@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Yeng Corner | Order Hàn</title>
+    <link rel="icon" type="image/png" href="https://drive.google.com/file/d/1blJqH3WIbe7aBQpkYdZ7qEdoA0qyfx8v/view?usp=drive_link">
+    <script>
+      // Prevent third party scripts or sandbox wrappers from failing when overriding window.fetch
+      (function() {
+        try {
+          if (window.fetch) {
+            let currentFetch = window.fetch;
+            
+            const makeFetchWritable = (obj) => {
+              try {
+                const desc = Object.getOwnPropertyDescriptor(obj, 'fetch');
+                if (desc && !desc.configurable) {
+                  return false;
+                }
+                Object.defineProperty(obj, 'fetch', {
+                  get() {
+                    return currentFetch;
+                  },
+                  set(newValue) {
+                    currentFetch = newValue;
+                  },
+                  configurable: true,
+                  enumerable: true
+                });
+                return true;
+              } catch (err) {
+                return false;
+              }
+            };
+
+            // Apply to window, Window.prototype, and globalThis to ensure maximum compatibility in strict mode
+            let done = makeFetchWritable(window);
+            if (!done && typeof Window !== 'undefined' && Window.prototype) {
+              makeFetchWritable(Window.prototype);
+            }
+            if (typeof globalThis !== 'undefined' && globalThis !== window) {
+              makeFetchWritable(globalThis);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not configure window.fetch writable wrapper:', e);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

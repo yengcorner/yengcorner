@@ -1,0 +1,96 @@
+{
+  "entities": {
+    "gmailConfig": {
+      "title": "Gmail Config",
+      "description": "Durable Gmail connection settings and access token",
+      "type": "object",
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": ["accessToken", "email", "updatedAt"]
+    },
+    "subscriber": {
+      "title": "Subscriber Email",
+      "description": "Email registered to receive new product notifications",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "subscriptionGroupsConfig": {
+      "title": "Subscription Groups Config",
+      "description": "Config containing the list of available artists/groups for subscription",
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["groups"]
+    },
+    "product": {
+      "title": "Product",
+      "description": "Product document containing catalog details and attributes",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "category": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "price", "category", "image"]
+    }
+  },
+  "firestore": {
+    "/gmail/{configId}": {
+      "schema": "gmailConfig",
+      "description": "Secure storage of Gmail tokens"
+    },
+    "/subscriber_emails/{emailId}": {
+      "schema": "subscriber",
+      "description": "List of subscriber emails for product notifications"
+    },
+    "/config/{configId}": {
+      "schema": "subscriptionGroupsConfig",
+      "description": "General system configuration"
+    },
+    "/products/{productId}": {
+      "schema": "product",
+      "description": "Product catalog data"
+    }
+  }
+}
