@@ -53,10 +53,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         setGmailToken(token);
         // Auto-fetch messages
         fetchGmailMessages(token);
-       // Synchronize token with backend server
-        // (Bỏ hết khối fetch ở đây)
-        
-        // Cần giữ lại phần bên dưới này để web hoạt động bình tượng
+        // Synchronize token with backend server
+        fetch('/api/gmail/store-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: token, email: user.email })
+        }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
       },
       () => {
         setGmailUser(null);
@@ -82,7 +84,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         setGmailMessages([]);
         showToast("⚠️ Phiên kết nối Gmail đã hết hạn. Vui lòng nhấn 'Kết nối Gmail' để đăng nhập lại.", "info");
         // Clear token on the server too
-        // fetch('/api/gmail/clear-token', { method: 'POST' }).catch(() => {});
+        fetch('/api/gmail/clear-token', { method: 'POST' }).catch(() => {});
         return;
       }
       
@@ -124,20 +126,19 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
- const handleAdminGmailLogin = async () => {
+  const handleAdminGmailLogin = async () => {
     try {
       const res = await googleSignIn();
       if (res) {
         setGmailUser(res.user);
         setGmailToken(res.accessToken);
         fetchGmailMessages(res.accessToken);
-        
-        // --- ĐÃ TẮT PHẦN GỌI API BACKEND (GÂY LỖI 404) ---
-        // await fetch('/api/gmail/store-token', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({ accessToken: res.accessToken, email: res.user.email })
-        // });
+        // Store on server
+        await fetch('/api/gmail/store-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accessToken: res.accessToken, email: res.user.email })
+        });
       }
     } catch (err: any) {
       console.error(err);
@@ -163,9 +164,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setGmailUser(null);
       setGmailToken(null);
       setGmailMessages([]);
-      
       // Clear on server
-      // await fetch('/api/gmail/clear-token', { method: 'POST' });
+      await fetch('/api/gmail/clear-token', { method: 'POST' });
     } catch (err) {
       console.error(err);
     }
@@ -366,38 +366,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setEmailSendError(null);
 
     try {
-      // 1. Tạo nội dung email đúng chuẩn Gmail yêu cầu
-      const emailContent = [
-        `To: ${emailFormTo}`,
-        'Content-Type: text/html; charset=utf-8',
-        'MIME-Version: 1.0',
-        `Subject: ${emailFormSubject}`,
-        '',
-        emailFormBody
-      ].join('\r\n');
-
-      // 2. Mã hóa sang định dạng Base64URL
-      const base64EncodedEmail = btoa(unescape(encodeURIComponent(emailContent)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-      // 3. Gửi trực tiếp tới Gmail API
-      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${gmailToken}`, // Sử dụng token đăng nhập của bồ
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          raw: base64EncodedEmail
+          to: emailFormTo,
+          subject: emailFormSubject,
+          bodyHtml: emailFormBody
         })
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Không thể gửi email qua Gmail API.');
+        throw new Error(data.error || 'Không thể gửi email.');
       }
 
-      setEmailSendSuccess(`Đã gửi email thành công tới "${emailFormTo}"!`);
+      setEmailSendSuccess(`Đã gửi email thành công tới "${emailFormTo}" qua API Gmail!`);
       setEmailFormBody('');
     } catch (err: any) {
       console.error(err);
@@ -1404,15 +1390,50 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setIsProductModalOpen(false);
     showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
 
-    // ... các lệnh cập nhật dữ liệu của bạn ở trên ...
-// Ví dụ: localStorage.setItem('yeng_products', JSON.stringify(updatedProducts));
-// setProducts(updatedProducts);
-// setIsProductModalOpen(false);
+    if (notifySubscribers) {
+      const sendNotification = async () => {
+        let subscriberEmails: string[] = [];
+        try {
+          const snap = await getDocs(collection(db, "subscriber_emails"));
+          snap.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data && data.email) {
+              subscriberEmails.push(data.email);
+            }
+          });
+        } catch (err: any) {
+          console.error("Error fetching subscriber emails client-side:", err);
+        }
 
-// CHỈ GIỮ LẠI DÒNG NÀY:
-showToast("✅ Lưu sản phẩm thành công!", "success");
+        fetch("/api/subscribers/notify-new-product", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ product: productPayload, emails: subscriberEmails }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success) {
+              if (data.sentCount > 0) {
+                showToast(`📢 Đã gửi email thông báo thành công tới ${data.sentCount} khách hàng đăng ký!`, "success");
+              } else {
+                showToast(`📢 Lưu sản phẩm thành công. Hiện tại không có khách hàng nào đăng ký nhận tin.`, "info");
+              }
+            } else {
+              showToast(`⚠️ Không thể gửi email thông báo: ${data.error || "Lỗi không xác định"}`, "error");
+            }
+          })
+          .catch((err) => {
+            console.error("Notify error:", err);
+            showToast(`⚠️ Lỗi kết nối khi gửi email thông báo: ${err.message}`, "error");
+          });
+      };
 
-// Đảm bảo chỉ có MỘT dấu } để đóng hàm handleSaveProduct (hoặc hàm tương đương) ở đây
+      sendNotification();
+    }
+  };
+
   // Delete product action handler
   const handleDeleteProduct = (productId: number, productName: string) => {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA SẢN PHẨM "${productName}" không?`)) {
