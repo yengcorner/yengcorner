@@ -1404,26 +1404,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setIsProductModalOpen(false);
     showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
 
-    if (notifySubscribers) {
-      const sendNotification = async () => {
-        let subscriberEmails: string[] = [];
-        try {
-          const snap = await getDocs(collection(db, "subscriber_emails"));
-          snap.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data && data.email) {
-              subscriberEmails.push(data.email);
-            }
-          });
-        } catch (err: any) {
-          console.error("Error fetching subscriber emails client-side:", err);
-        }
+    // ... các lệnh cập nhật dữ liệu của bạn ở trên ...
+// Ví dụ: localStorage.setItem('yeng_products', JSON.stringify(updatedProducts));
+// setProducts(updatedProducts);
+// setIsProductModalOpen(false);
 
-// Chỉ giữ lại duy nhất dòng thông báo thành công này:
-    showToast("✅ Lưu sản phẩm thành công!", "success");
-  }
-};
+// CHỈ GIỮ LẠI DÒNG NÀY:
+showToast("✅ Lưu sản phẩm thành công!", "success");
 
+// Đảm bảo chỉ có MỘT dấu } để đóng hàm handleSaveProduct (hoặc hàm tương đương) ở đây
   // Delete product action handler
   const handleDeleteProduct = (productId: number, productName: string) => {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA SẢN PHẨM "${productName}" không?`)) {
