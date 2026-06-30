@@ -178,40 +178,6 @@ async function startServer() {
   }
 });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[Gmail Send] Google API error response:", errorText);
-
-        if (response.status === 401) {
-          return res.status(401).json({
-            error: "Phiên kết nối Gmail đã hết hạn (401 Unauthorized). Vui lòng đăng nhập lại Gmail Center ở trang Admin."
-          });
-        }
-
-        let errorMsg = `Google API trả về lỗi ${response.status}`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error && parsed.error.message) {
-            errorMsg = parsed.error.message;
-          }
-        } catch (e) {}
-
-        return res.status(response.status).json({
-          error: `Lỗi từ Google Mail API: ${errorMsg}`
-        });
-      }
-
-      const resultData = await response.json();
-      console.log(`[Gmail Send] Email sent successfully to ${to}, Message ID: ${resultData.id}`);
-      res.json({ success: true, messageId: resultData.id });
-    } catch (error: any) {
-      console.error("[Gmail Send] Server error during Gmail send:", error);
-      res.status(500).json({
-        error: `Lỗi hệ thống khi gửi email: ${error.message || error}`
-      });
-    }
-  });
-
   // GET subscription groups list
   app.get("/api/subscribers/groups", async (req, res) => {
     try {
