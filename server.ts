@@ -142,73 +142,41 @@ async function startServer() {
     if (!to || !subject || !bodyHtml) {
       return res.status(400).json({ error: "Thiếu thông tin người nhận, tiêu đề hoặc nội dung email." });
     }
+// Sử dụng mật khẩu ứng dụng (App Password) đã cấu hình trên Vercel
+  const senderEmail = process.env.GMAIL_USER;
+  const appPassword = process.env.GMAIL_APP_PASSWORD;
 
-    let tokenData;
+  if (!senderEmail || !appPassword) {
+    return res.status(400).json({ 
+      error: "Cửa hàng chưa cấu hình biến môi trường GMAIL_USER hoặc GMAIL_APP_PASSWORD trên Vercel." 
+    });
+  }
 
-    // 1. Try reading local file cache
-    if (fs.existsSync(TOKEN_PATH)) {
-      try {
-        tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      } catch (err: any) {
-        console.error("Could not parse local gmail token:", err);
-      }
-    }
+  try {
+    const nodemailer = require("nodemailer");
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: senderEmail,
+        pass: appPassword,
+      },
+    });
 
-    // 2. If not found in local file, restore from Firestore automatically
-    if (!tokenData) {
-      try {
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          tokenData = docSnap.data();
-          // Cache it locally on disk
-          fs.writeFileSync(
-            TOKEN_PATH,
-            JSON.stringify(tokenData, null, 2)
-          );
-          console.log(`[Gmail Send] Restored Gmail token for ${tokenData.email} from Firestore`);
-        }
-      } catch (err: any) {
-        console.error("Error loading Gmail token from Firestore (relying on local cache fallback):", err.message);
-      }
-    }
+    console.log(`[Gmail Send] Đang gửi mail tới ${to} bằng mật khẩu ứng dụng...`);
+    
+    await transporter.sendMail({
+      from: `"Yeng Corner" <${senderEmail}>`,
+      to: to,
+      subject: subject,
+      html: bodyHtml,
+    });
 
-    if (!tokenData) {
-      return res.status(400).json({
-        error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
-      });
-    }
-
-    const { accessToken, email: senderEmail } = tokenData;
-
-    try {
-      // Construct MIME message with UTF-8
-      const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
-      const rawParts = [
-        `From: "Yeng Corner" <${senderEmail}>`,
-        `To: ${to}`,
-        `Subject: ${subjectEncoded}`,
-        "MIME-Version: 1.0",
-        "Content-Type: text/html; charset=utf-8",
-        "",
-        bodyHtml
-      ];
-      const raw = rawParts.join("\r\n");
-      const base64Safe = Buffer.from(raw)
-        .toString("base64")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
-
-      console.log(`[Gmail Send] Attempting to send email to ${to} using token of ${senderEmail}`);
-
-      const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ raw: base64Safe }),
-      });
+    res.json({ success: true, message: "Gửi email thành công!" });
+  } catch (err: any) {
+    console.error("[Gmail Send] Error:", err);
+    res.status(500).json({ error: "Lỗi khi gửi email qua Gmail: " + err.message });
+  }
+});
 
       if (!response.ok) {
         const errorText = await response.text();
