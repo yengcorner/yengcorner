@@ -84,7 +84,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         setGmailMessages([]);
         showToast("⚠️ Phiên kết nối Gmail đã hết hạn. Vui lòng nhấn 'Kết nối Gmail' để đăng nhập lại.", "info");
         // Clear token on the server too
-        fetch('/api/gmail/clear-token', { method: 'POST' }).catch(() => {});
+        // fetch('/api/gmail/clear-token', { method: 'POST' }).catch(() => {});
         return;
       }
       
