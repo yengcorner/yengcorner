@@ -366,24 +366,38 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setEmailSendError(null);
 
     try {
-      const response = await fetch('/api/gmail/send', {
+      // 1. Tạo nội dung email đúng chuẩn Gmail yêu cầu
+      const emailContent = [
+        `To: ${emailFormTo}`,
+        'Content-Type: text/html; charset=utf-8',
+        'MIME-Version: 1.0',
+        `Subject: ${emailFormSubject}`,
+        '',
+        emailFormBody
+      ].join('\r\n');
+
+      // 2. Mã hóa sang định dạng Base64URL
+      const base64EncodedEmail = btoa(unescape(encodeURIComponent(emailContent)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      // 3. Gửi trực tiếp tới Gmail API
+      const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${gmailToken}`, // Sử dụng token đăng nhập của bồ
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: emailFormTo,
-          subject: emailFormSubject,
-          bodyHtml: emailFormBody
+          raw: base64EncodedEmail
         })
       });
 
-      const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Không thể gửi email.');
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Không thể gửi email qua Gmail API.');
       }
 
-      setEmailSendSuccess(`Đã gửi email thành công tới "${emailFormTo}" qua API Gmail!`);
+      setEmailSendSuccess(`Đã gửi email thành công tới "${emailFormTo}"!`);
       setEmailFormBody('');
     } catch (err: any) {
       console.error(err);
