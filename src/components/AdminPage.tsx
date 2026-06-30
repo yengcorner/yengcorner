@@ -1419,34 +1419,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           console.error("Error fetching subscriber emails client-side:", err);
         }
 
-        fetch("/api/subscribers/notify-new-product", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ product: productPayload, emails: subscriberEmails }),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.success) {
-              if (data.sentCount > 0) {
-                showToast(`📢 Đã gửi email thông báo thành công tới ${data.sentCount} khách hàng đăng ký!`, "success");
-              } else {
-                showToast(`📢 Lưu sản phẩm thành công. Hiện tại không có khách hàng nào đăng ký nhận tin.`, "info");
-              }
-            } else {
-              showToast(`⚠️ Không thể gửi email thông báo: ${data.error || "Lỗi không xác định"}`, "error");
-            }
-          })
-          .catch((err) => {
-            console.error("Notify error:", err);
-            showToast(`⚠️ Lỗi kết nối khi gửi email thông báo: ${err.message}`, "error");
-          });
-      };
-
-      sendNotification();
-    }
-  };
+// Chỉ giữ lại duy nhất dòng thông báo thành công này:
+    showToast("✅ Lưu sản phẩm thành công!", "success");
+  }
+};
 
   // Delete product action handler
   const handleDeleteProduct = (productId: number, productName: string) => {
