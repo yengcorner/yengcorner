@@ -53,12 +53,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         setGmailToken(token);
         // Auto-fetch messages
         fetchGmailMessages(token);
-        // Synchronize token with backend server
-        fetch('/api/gmail/store-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: token, email: user.email })
-        }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
+       // Synchronize token with backend server
+        // (Bỏ hết khối fetch ở đây)
+        
+        // Cần giữ lại phần bên dưới này để web hoạt động bình tượng
       },
       () => {
         setGmailUser(null);
