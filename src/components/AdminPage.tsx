@@ -124,19 +124,20 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
-  const handleAdminGmailLogin = async () => {
+ const handleAdminGmailLogin = async () => {
     try {
       const res = await googleSignIn();
       if (res) {
         setGmailUser(res.user);
         setGmailToken(res.accessToken);
         fetchGmailMessages(res.accessToken);
-        // Store on server
-        await fetch('/api/gmail/store-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: res.accessToken, email: res.user.email })
-        });
+        
+        // --- ĐÃ TẮT PHẦN GỌI API BACKEND (GÂY LỖI 404) ---
+        // await fetch('/api/gmail/store-token', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({ accessToken: res.accessToken, email: res.user.email })
+        // });
       }
     } catch (err: any) {
       console.error(err);
@@ -162,8 +163,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setGmailUser(null);
       setGmailToken(null);
       setGmailMessages([]);
+      
       // Clear on server
-      await fetch('/api/gmail/clear-token', { method: 'POST' });
+      // await fetch('/api/gmail/clear-token', { method: 'POST' });
     } catch (err) {
       console.error(err);
     }
