@@ -484,18 +484,18 @@ async function startServer() {
       let optionsHtml = "";
       if (product.variations && product.variations.length > 0) {
         optionsHtml = `
-          <div style="margin-top: 15px; padding: 12px; background-color: #f7f5fb; border: 1px solid #e1dbf0; border-radius: 8px;">
-            <strong style="color: #6f42c1; font-size: 13px; display: block; margin-bottom: 6px;">🎁 Các phân loại khả dụng:</strong>
-            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #4e4e58; line-height: 1.5;">
-              ${product.variations.map((v: any) => `<li>${v.name} - <strong style="color: #d63384;">${Number(v.price).toLocaleString("vi-VN")} đ</strong></li>`).join("")}
+          <div style="margin-top: 15px; padding: 12px; background-color: #e8f0ff; border: 1px solid #b3d1ff; border-radius: 8px;">
+            <strong style="color: #1e3a8a; font-size: 13px; display: block; margin-bottom: 6px;">🎁 Các phân loại khả dụng:</strong>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #4a5568; line-height: 1.5;">
+              ${product.variations.map((v: any) => `<li>${v.name} - <strong style="color: #2563eb;">${Number(v.price).toLocaleString("vi-VN")} đ</strong></li>`).join("")}
             </ul>
           </div>
         `;
       } else if (product.versions && product.versions.length > 0) {
         optionsHtml = `
-          <div style="margin-top: 15px; padding: 12px; background-color: #f7f5fb; border: 1px solid #e1dbf0; border-radius: 8px;">
-            <strong style="color: #6f42c1; font-size: 13px; display: block; margin-bottom: 6px;">🎁 Các phiên bản:</strong>
-            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #4e4e58; line-height: 1.5;">
+          <div style="margin-top: 15px; padding: 12px; background-color: #e8f0ff; border: 1px solid #b3d1ff; border-radius: 8px;">
+            <strong style="color: #1e3a8a; font-size: 13px; display: block; margin-bottom: 6px;">🎁 Các phiên bản:</strong>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: #4a5568; line-height: 1.5;">
               ${product.versions.map((ver: string) => `<li>${ver}</li>`).join("")}
             </ul>
           </div>
@@ -503,58 +503,53 @@ async function startServer() {
       }
 
       const rawTemplate = `
-<div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e8e4f2; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(111, 66, 193, 0.08);">
-  
-  <!-- Header Banner -->
-  <div style="background: linear-gradient(135deg, #6f42c1, #8c57db); padding: 35px 25px; text-align: center; color: #ffffff;">
-    <h1 style="margin: 0; font-size: 26px; letter-spacing: 1.5px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.15);">YENG CORNER</h1>
-    <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.95; font-weight: 500; letter-spacing: 0.5px;">Cửa Hàng Phân Phối Album & Merchandise K-POP Chính Hãng</p>
-  </div>
+<div style="background-color: #e8f0ff; padding: 30px 15px; font-family: 'Segoe UI', Arial, sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; border: 1px solid #b3d1ff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); background-color: #ffffff;">
+    <!-- Content Body -->
+    <div style="padding: 35px 30px; color: #2d3748; line-height: 1.7;">
+      <p style="font-size: 16px; margin-top: 0; font-weight: 600; color: #1e3a8a;">Chào các bạn,</p>
+      <p style="font-size: 14.5px; color: #4a5568;">Yeng corner xin thông báo về sản phẩm mới vừa mở bán tại shop và đang chờ các bạn đặt hàng sớm đây!</p>
+      
+      <!-- Product Showcase Block -->
+      <div style="background-color: #f5f9ff; border-left: 5px solid #2563eb; padding: 22px; margin: 25px 0; border-radius: 4px 12px 12px 4px; border-top: 1px solid #e1ecfe; border-right: 1px solid #e1ecfe; border-bottom: 1px solid #e1ecfe;">
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr>
+            <!-- Product Image -->
+            <td style="width: 38%; vertical-align: top; padding-right: 18px;">
+              <img src="{ANH_SAN_PHAM}" alt="{TEN_SAN_PHAM}" style="width: 100%; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: block;">
+            </td>
+            <!-- Product Specs -->
+            <td style="width: 62%; vertical-align: top;">
+              <h3 style="margin: 0 0 10px 0; font-size: 17px; color: #1e3a8a; font-weight: 700; line-height: 1.4;">{TEN_SAN_PHAM}</h3>
+              <p style="margin: 0 0 12px 0; font-size: 16px; color: #2563eb; font-weight: bold;">Giá: {GIA_SAN_PHAM}</p>
+              <p style="margin: 0; font-size: 13px; color: #4a5568; line-height: 1.5;">
+                {MO_TA_NGAN}
+              </p>
+              {HIEN_THI_PHAN_LOAI}
+            </td>
+          </tr>
+        </table>
+      </div>
 
-  <!-- Content Body -->
-  <div style="padding: 35px 30px; background-color: #ffffff; color: #2d3748; line-height: 1.7;">
-    <p style="font-size: 16px; margin-top: 0; font-weight: 600; color: #1a202c;">Chào các Vẩy thân yêu, ❤️</p>
-    <p style="font-size: 14.5px; color: #4a5568;">Yeng Corner xin trân trọng thông báo một siêu phẩm cực kỳ lấp lánh dành riêng cho các fan cứng của <strong>${artistName.toUpperCase()}</strong> vừa được cập bến cửa hàng của chúng mình!</p>
-    
-    <!-- Product Showcase Block -->
-    <div style="background-color: #faf9fd; border-left: 5px solid #6f42c1; padding: 22px; margin: 25px 0; border-radius: 4px 12px 12px 4px; border-top: 1px solid #f1edf9; border-right: 1px solid #f1edf9; border-bottom: 1px solid #f1edf9;">
-      <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <!-- Product Image -->
-          <td style="width: 38%; vertical-align: top; padding-right: 18px;">
-            <img src="{ANH_SAN_PHAM}" alt="{TEN_SAN_PHAM}" style="width: 100%; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.08); display: block;">
-          </td>
-          <!-- Product Specs -->
-          <td style="width: 62%; vertical-align: top;">
-            <h3 style="margin: 0 0 10px 0; font-size: 17px; color: #6f42c1; font-weight: 700; line-height: 1.4;">{TEN_SAN_PHAM}</h3>
-            <p style="margin: 0 0 12px 0; font-size: 16px; color: #e83e8c; font-weight: bold; font-family: 'Courier New', Courier, monospace;">Giá: {GIA_SAN_PHAM}</p>
-            <p style="margin: 0; font-size: 13px; color: #718096; line-height: 1.5;">
-              {MO_TA_NGAN}
-            </p>
-            {HIEN_THI_PHAN_LOAI}
-          </td>
-        </tr>
-      </table>
+      <!-- Call To Action Button -->
+      <div style="text-align: center; margin: 35px 0 20px 0;">
+        <a href="{LINK_SAN_PHAM}" style="background-color: #2563eb; color: #ffffff; padding: 14px 40px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 30px; display: inline-block; box-shadow: 0 6px 18px rgba(37,99,235,0.2); transition: all 0.2s ease-in-out; letter-spacing: 0.5px;">
+          Xem Chi Tiết & Đặt Hàng Ngay ✨
+        </a>
+      </div>
     </div>
 
-    <!-- Call To Action Button -->
-    <div style="text-align: center; margin: 35px 0 20px 0;">
-      <a href="{LINK_SAN_PHAM}" style="background-color: #6f42c1; color: #ffffff; padding: 14px 40px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 30px; display: inline-block; box-shadow: 0 6px 18px rgba(111,66,193,0.25); transition: all 0.2s ease-in-out; letter-spacing: 0.5px;">
-        Xem Chi Tiết & Đặt Hàng Ngay ✨
-      </a>
+    <!-- Footer block with notice -->
+    <div style="background-color: #f0f5ff; padding: 25px; text-align: center; font-size: 12px; color: #4a5568; border-top: 1px solid #e1ecfe; line-height: 1.6;">
+      <p style="margin: 0 0 10px 0; font-weight: 600; color: #b91c1c; background-color: #fef2f2; padding: 8px; border-radius: 6px; display: inline-block; border: 1px solid #fee2e2;">
+        ⚠️ Đây là thư một chiều. Vui lòng không trả lời thư này! Nếu khách muốn thay đổi thông tin cá nhân, hãy liên hệ qua facebook của shop!
+      </p>
+      <p style="margin: 0 0 4px 0; font-size: 11px;">Bạn nhận được thư điện tử này vì đã đăng ký nhận thông tin từ nhóm nhạc ${artistName} tại Yeng Corner.</p>
+      <p style="margin: 0 0 8px 0; font-size: 11px; font-style: italic;">
+        Nếu bạn không muốn tiếp tục nhận các thông báo này, bạn có thể <a href="{LINK_HUY_DANG_KY}" style="color: #2563eb; text-decoration: underline;">Hủy nhận thông báo</a> bất cứ lúc nào.
+      </p>
+      <p style="margin: 0; font-weight: 600; color: #1e3a8a;">© 2026 Yeng Corner. All rights reserved.</p>
     </div>
-  </div>
-
-  <!-- Footer block with notice -->
-  <div style="background-color: #f7f5fc; padding: 25px; text-align: center; font-size: 12px; color: #718096; border-top: 1px solid #edeaf4; line-height: 1.6;">
-    <p style="margin: 0 0 10px 0; font-weight: 600; color: #e53e3e; background-color: #fff5f5; padding: 8px; border-radius: 6px; display: inline-block; border: 1px solid #fed7d7;">
-      ⚠️ Đây là thư một chiều. Vui lòng không trả lời thư này! Nếu khách muốn thay đổi thông tin cá nhân, hãy liên hệ qua facebook của shop!
-    </p>
-    <p style="margin: 0 0 4px 0; font-size: 11px;">Bạn nhận được thư điện tử này vì đã đăng ký nhận thông tin từ nhóm nhạc ${artistName} tại Yeng Corner.</p>
-    <p style="margin: 0 0 8px 0; font-size: 11px; font-style: italic;">
-      Nếu bạn không muốn tiếp tục nhận các thông báo này, bạn có thể <a href="{LINK_HUY_DANG_KY}" style="color: #718096; text-decoration: underline;">Hủy nhận thông báo</a> bất cứ lúc nào.
-    </p>
-    <p style="margin: 0; font-weight: 600; color: #4a5568;">© 2026 Yeng Corner. All rights reserved.</p>
   </div>
 </div>
 `;
