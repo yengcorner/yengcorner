@@ -12,6 +12,31 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+export function sanitizeData(obj: any): any {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null) {
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    return obj
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeData(item));
+  }
+  if (typeof obj === 'object') {
+    const sanitized: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        sanitized[key] = sanitizeData(val);
+      }
+    }
+    return sanitized;
+  }
+  return obj;
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -107,8 +132,11 @@ export const saveProduct = async (product: Product): Promise<void> => {
       product.id = maxId + 1;
     }
     
+    // Recursive data sanitization to remove all undefined values for Firestore compatibility
+    const sanitizedProduct = sanitizeData(product);
+    
     const docRef = doc(db, "products", product.id.toString());
-    await setDoc(docRef, product);
+    await setDoc(docRef, sanitizedProduct);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `products/${product?.id}`);
   }
