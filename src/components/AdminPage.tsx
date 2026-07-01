@@ -1290,7 +1290,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   };
 
   // Save/Update product handler
-  const handleSaveProductSubmit = (e: React.FormEvent) => {
+  const handleSaveProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     let generatedVersions: string[] = [];
@@ -1380,15 +1380,16 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       };
     }
 
-    // Save to Firestore asynchronously
-    saveAdminProduct(productPayload).catch(err => {
+    // Save to Firestore and sync local state immediately
+    try {
+      await saveAdminProduct(productPayload);
+      setHasUnsavedCatalogChanges(true);
+      setIsProductModalOpen(false);
+      showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
+    } catch (err: any) {
       console.error("Error saving product to Firestore:", err);
       showToast(`⚠️ Lỗi đồng bộ sản phẩm lên cơ sở dữ liệu: ${err.message}`, "error");
-    });
-
-    setHasUnsavedCatalogChanges(false);
-    setIsProductModalOpen(false);
-    showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
+    }
 
     if (notifySubscribers) {
       const sendNotification = async () => {
