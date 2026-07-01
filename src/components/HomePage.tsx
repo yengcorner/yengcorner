@@ -21,12 +21,12 @@ export default function HomePage({
 }: HomePageProps) {
   // Filter out retired K-POP category
   const [productsList, setProductsList] = useState<Product[]>(() => 
-    getProducts().filter(p => p.category.toLowerCase() !== 'k-pop')
+    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
 
   useEffect(() => {
     const unsubscribe = subscribeProducts((list) => {
-      setProductsList(list.filter(p => p.category.toLowerCase() !== 'k-pop'));
+      setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
     });
     return unsubscribe;
   }, []);
@@ -249,7 +249,10 @@ function triggerAddedNotifier(name: string) {
 }
 
 // Export custom tag color stylings
-function exportTagStyles(tag: string) {
+function exportTagStyles(tag?: string) {
+  if (!tag) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  }
   switch (tag.toLowerCase()) {
     case 'sẵn hàng':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
