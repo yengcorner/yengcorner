@@ -22,11 +22,14 @@ export default function ShopAllPage({
   );
 
   useEffect(() => {
-    const unsubscribe = subscribeProducts((list) => {
-      setProductsList(list.filter(p => (p.category || "").toLowerCase() !== "k-pop")
-    });
-    return unsubscribe;
-  }, []);
+  const unsubscribe = subscribeProducts((list) => {
+    setProductsList(
+      list.filter(p => (p.category || "").toLowerCase() !== "k-pop")
+    );
+  });
+
+  return unsubscribe;
+}, []);
 
   const [filter, setFilter] = useState('All');
   const [artistFilter, setArtistFilter] = useState('All');
