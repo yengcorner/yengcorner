@@ -18,12 +18,12 @@ export default function ShopAllPage({
 }: ShopAllPageProps) {
   // Filter out retired K-POP category
   const [productsList, setProductsList] = useState<Product[]>(() => 
-    getProducts().filter(p => p.category.toLowerCase() !== 'k-pop')
+    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
 
   useEffect(() => {
     const unsubscribe = subscribeProducts((list) => {
-      setProductsList(list.filter(p => p.category.toLowerCase() !== 'k-pop'));
+      setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
     });
     return unsubscribe;
   }, []);
@@ -46,7 +46,7 @@ export default function ShopAllPage({
   // 1. Filter by category
   let products = filter === 'All' 
     ? productsList 
-    : productsList.filter(p => p.category.toLowerCase() === filter.toLowerCase());
+    : productsList.filter(p => p.category && p.category.toLowerCase() === filter.toLowerCase());
 
   // 1.5 Filter by artist / brand
   if (artistFilter !== 'All') {
@@ -56,8 +56,8 @@ export default function ShopAllPage({
   // 2. Filter by search query
   if (searchQuery.trim().length > 0) {
     products = products.filter(p => 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      p.info.toLowerCase().includes(searchQuery.toLowerCase())
+      (p.name && p.name.toLowerCase().includes(searchQuery.toLowerCase())) || 
+      (p.info && p.info.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   }
 
@@ -272,7 +272,10 @@ function showInfoAlert(name: string) {
   alert(`🛒 Đã thêm thành công: "${name}" vào giỏ hàng!`);
 }
 
-function getBadgeTagStyles(tag: string) {
+function getBadgeTagStyles(tag?: string) {
+  if (!tag) {
+    return 'bg-neutral-50 text-neutral-700 border-neutral-200';
+  }
   switch (tag.toLowerCase()) {
     case 'sẵn hàng':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
