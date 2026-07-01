@@ -483,7 +483,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           <div className="bg-white p-5 rounded-xl border border-neutral-250 shadow-sm text-left space-y-3">
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-center space-x-2">
               <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-              <span>Hệ thống sẽ tự động gửi email xác nhận đơn hàng điện tử đến bạn ngay sau khi shop xác nhận đơn hàng!</span>
+              <span>Bạn có thể kiểm tra shop đã xác nhận đơn hay chưa bằng cách điền số điện thoại vào trang tra cứu</span>
             </div>
           </div>
 
