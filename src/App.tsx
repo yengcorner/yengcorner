@@ -175,7 +175,7 @@ export default function App() {
   useEffect(() => {
     const getTargetURL = () => {
       if (currentPage === 'admin-yeng') {
-        return '/admin-yeng';
+        return '/admin';
       } else if (currentPage === 'product-detail' && selectedProductId !== null) {
         const productsList = getProducts();
         const currentProd = productsList.find((p) => p.id === selectedProductId);
