@@ -10,12 +10,8 @@
       "destination": "/api/index"
     },
     {
-      "source": "/assets/:path*",
-      "destination": "/dist/assets/:path*"
-    },
-    {
-      "source": "/((?!api|unsubscribe|assets).*)",
-      "destination": "/dist/index.html"
+      "source": "/((?!api|unsubscribe).*)",
+      "destination": "/index.html"
     }
   ]
 }
