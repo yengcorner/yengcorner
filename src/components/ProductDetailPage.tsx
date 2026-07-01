@@ -23,27 +23,28 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   const product = productsList.find(p => p.id === id) || productsList[0];
   
   // States of current variants selector
-  const hasMultiTier = !!(product.attribute1Name && product.attribute1Options && product.attribute1Options.length > 0);
+  const hasMultiTier = !!(product?.attribute1Name && Array.isArray(product?.attribute1Options) && product.attribute1Options.length > 0);
 
-  const [activeImage, setActiveImage] = useState(product.image);
+  const [activeImage, setActiveImage] = useState(product?.image || '');
 
   const [selectedOpt1, setSelectedOpt1] = useState(() => {
-    return product.attribute1Options && product.attribute1Options.length > 0 
+    return product?.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 
       ? product.attribute1Options[0] 
       : '';
   });
   
   const [selectedOpt2, setSelectedOpt2] = useState(() => {
-    return product.attribute2Options && product.attribute2Options.length > 0 
+    return product?.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 
       ? product.attribute2Options[0] 
       : '';
   });
 
   const defaultVersion = (() => {
-    if (product.variations && product.variations.length > 0) {
+    if (!product) return "";
+    if (Array.isArray(product.variations) && product.variations.length > 0) {
       return product.variations[0].name;
     }
-    return product.versions && product.versions.length > 0 ? product.versions[0] : "";
+    return Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
   })();
   const [selectedVersion, setSelectedVersion] = useState(defaultVersion);
   const [quantity, setQuantity] = useState(1);
@@ -51,15 +52,15 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   // Reset selected options, active image, version, and quantity when product changes
   useEffect(() => {
     if (product) {
-      setActiveImage(product.image);
-      setSelectedOpt1(product.attribute1Options && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
-      setSelectedOpt2(product.attribute2Options && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
+      setActiveImage(product.image || '');
+      setSelectedOpt1(product.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
+      setSelectedOpt2(product.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
       
       const nextDefaultVersion = (() => {
-        if (product.variations && product.variations.length > 0) {
+        if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
           return product.variations[0].name;
         }
-        return product.versions && product.versions.length > 0 ? product.versions[0] : "";
+        return product.versions && Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
       })();
       setSelectedVersion(nextDefaultVersion);
       setQuantity(1);
@@ -68,16 +69,17 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
   // Stock tracking helper functions
   const getMatrixStock = (o1: string, o2?: string) => {
-    if (!product.variantMatrix) return 99;
+    if (!product || !Array.isArray(product.variantMatrix)) return 99;
     const item = product.variantMatrix.find(
-      v => v.option1 === o1 && (!o2 || v.option2 === o2)
+      v => v && v.option1 === o1 && (!o2 || v.option2 === o2)
     );
     return item?.stock !== undefined ? item.stock : 99;
   };
 
   const getVariationStock = (name: string) => {
-    if (product.variations && product.variations.length > 0) {
-      const v = product.variations.find(item => item.name === name);
+    if (!product) return 99;
+    if (Array.isArray(product.variations) && product.variations.length > 0) {
+      const v = product.variations.find(item => item && item.name === name);
       return v?.stock !== undefined ? v.stock : 99;
     }
     return product.stock !== undefined ? product.stock : 99;
@@ -94,15 +96,15 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   // Sync / Reset selections on ID change
   React.useEffect(() => {
     if (product) {
-      setActiveImage(product.image);
-      setSelectedOpt1(product.attribute1Options && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
-      setSelectedOpt2(product.attribute2Options && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
+      setActiveImage(product.image || '');
+      setSelectedOpt1(product.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
+      setSelectedOpt2(product.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
       
       const nextDefault = (() => {
-        if (product.variations && product.variations.length > 0) {
+        if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
           return product.variations[0].name;
         }
-        return product.versions && product.versions.length > 0 ? product.versions[0] : "";
+        return product.versions && Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
       })();
       setSelectedVersion(nextDefault);
       setQuantity(1);
@@ -111,7 +113,7 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
   // Auto-resolve Option 2 when Option 1 changes to a combination that might be out of stock
   React.useEffect(() => {
-    if (hasMultiTier && product.attribute2Name && product.attribute2Options) {
+    if (hasMultiTier && product && product.attribute2Name && Array.isArray(product.attribute2Options)) {
       const currentStock = getMatrixStock(selectedOpt1, selectedOpt2);
       if (currentStock === 0) {
         const firstAvailable = product.attribute2Options.find(opt => getMatrixStock(selectedOpt1, opt) > 0);
@@ -128,28 +130,41 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   // Determine actual selected combination and price
   const currentCombinedVersion = selectedOpt2 ? `${selectedOpt1} - ${selectedOpt2}` : selectedOpt1;
   
-  const activeMatrixItem = hasMultiTier
-    ? product.variantMatrix?.find(
-        v => v.option1 === selectedOpt1 && (!product.attribute2Name || v.option2 === selectedOpt2)
+  const activeMatrixItem = hasMultiTier && product && Array.isArray(product.variantMatrix)
+    ? product.variantMatrix.find(
+        v => v && v.option1 === selectedOpt1 && (!product.attribute2Name || v.option2 === selectedOpt2)
       )
     : null;
 
-  const activeVariation = !hasMultiTier && product.variations?.find(v => v.name === selectedVersion);
+  const activeVariation = !hasMultiTier && product && Array.isArray(product.variations)
+    ? product.variations.find(v => v && v.name === selectedVersion)
+    : null;
 
   const displayedPrice = hasMultiTier
-    ? (activeMatrixItem ? activeMatrixItem.price : product.price)
-    : (activeVariation ? activeVariation.price : product.price);
+    ? (activeMatrixItem ? activeMatrixItem.price : (product?.price || 0))
+    : (activeVariation ? activeVariation.price : (product?.price || 0));
 
   const displayedPob = hasMultiTier
-    ? (activeMatrixItem && activeMatrixItem.pob ? activeMatrixItem.pob : product.preorderGift)
-    : product.preorderGift;
+    ? (activeMatrixItem && activeMatrixItem.pob ? activeMatrixItem.pob : product?.preorderGift)
+    : product?.preorderGift;
 
   const handleAddToCart = () => {
-    if (isSelectedOutOfStock) return;
+    if (!product || isSelectedOutOfStock) return;
     const finalVer = hasMultiTier ? currentCombinedVersion : selectedVersion;
     addToCart(product, quantity, finalVer);
     setCurrentPage('cart');
   };
+
+  if (!product) {
+    return (
+      <div className="py-20 text-center space-y-4">
+        <div className="animate-spin inline-block w-8 h-8 border-[3px] border-current border-t-transparent text-blue-600 rounded-full" role="status">
+          <span className="sr-only">Đang tải...</span>
+        </div>
+        <p className="text-neutral-500 font-mono text-sm">Đang tải chi tiết sản phẩm hoặc không tìm thấy sản phẩm...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">
@@ -178,7 +193,7 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
           </div>
 
           {(() => {
-            const allImages = [product.image, ...(product.images || [])].filter(Boolean);
+            const allImages = [product.image, ...(Array.isArray(product.images) ? product.images : [])].filter(Boolean);
             if (allImages.length <= 1) return null;
             return (
               <div className="grid grid-cols-4 gap-3">
@@ -338,13 +353,13 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
               </div>
             </div>
           ) : (
-            ((product.variations && product.variations.length > 0) || (product.versions && product.versions.length > 0)) && (
+            ((Array.isArray(product.variations) && product.variations.length > 0) || (Array.isArray(product.versions) && product.versions.length > 0)) && (
               <div className="space-y-2.5">
                 <label className="block text-xs font-mono font-bold tracking-wider text-neutral-500 uppercase">
                   ⚙️ PHÂN LOẠI ({product.variationName || "VERSION / SIZE"}):
                 </label>
                 <div className="grid grid-cols-1 gap-2">
-                  {product.variations && product.variations.length > 0 ? (
+                  {Array.isArray(product.variations) && product.variations.length > 0 ? (
                     product.variations.map((v) => {
                       const isSelected = selectedVersion === v.name;
                       const isOutOfStock = v.stock === 0;
@@ -373,13 +388,13 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
                       );
                     })
                   ) : (
-                    product.versions?.map((ver) => {
+                    Array.isArray(product.versions) && product.versions.map((ver) => {
                       const isSelected = selectedVersion === ver;
                       const isOutOfStock = product.stock === 0;
                       return (
                         <button
                           key={ver}
-                          type="button; "
+                          type="button"
                           disabled={isOutOfStock}
                           onClick={() => setSelectedVersion(ver)}
                           className={`w-full text-left p-3.5 rounded-lg border text-xs font-display transition-all ${
