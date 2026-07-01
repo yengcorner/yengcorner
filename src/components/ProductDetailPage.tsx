@@ -488,8 +488,8 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   );
 }
 
-function getBadgeStyles(tag?: string) {
-  switch ((tag ?? "").toLowerCase()) {
+function getBadgeStyles(tag: string) {
+  switch (tag.toLowerCase()) {
     case 'sẵn hàng':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     case 'pre-order':
