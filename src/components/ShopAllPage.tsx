@@ -18,18 +18,15 @@ export default function ShopAllPage({
 }: ShopAllPageProps) {
   // Filter out retired K-POP category
   const [productsList, setProductsList] = useState<Product[]>(() => 
-    getProducts().filter(p => (p.category || "").toLowerCase() !== "k-pop")
+    getProducts().filter(p => p.category.toLowerCase() !== 'k-pop')
   );
 
   useEffect(() => {
-  const unsubscribe = subscribeProducts((list) => {
-    setProductsList(
-      list.filter(p => (p.category || "").toLowerCase() !== "k-pop")
-    );
-  });
-
-  return unsubscribe;
-}, []);
+    const unsubscribe = subscribeProducts((list) => {
+      setProductsList(list.filter(p => p.category.toLowerCase() !== 'k-pop'));
+    });
+    return unsubscribe;
+  }, []);
 
   const [filter, setFilter] = useState('All');
   const [artistFilter, setArtistFilter] = useState('All');
@@ -49,22 +46,18 @@ export default function ShopAllPage({
   // 1. Filter by category
   let products = filter === 'All' 
     ? productsList 
-    : productsList.filter(
-  p => (p.category || "").toLowerCase() === filter.toLowerCase()
-)
+    : productsList.filter(p => p.category.toLowerCase() === filter.toLowerCase());
 
   // 1.5 Filter by artist / brand
   if (artistFilter !== 'All') {
-  products = products.filter(
-    p => (p.artist || "").toLowerCase() === artistFilter.toLowerCase()
-  );
-}
+    products = products.filter(p => p.artist && p.artist.toLowerCase() === artistFilter.toLowerCase());
+  }
 
   // 2. Filter by search query
   if (searchQuery.trim().length > 0) {
     products = products.filter(p => 
-      (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (p.info || "").toLowerCase().includes(searchQuery.toLowerCase())
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      p.info.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }
 
@@ -74,7 +67,7 @@ export default function ShopAllPage({
   } else if (sortBy === 'price-desc') {
     products = [...products].sort((a, b) => b.price - a.price);
   } else if (sortBy === 'name-asc') {
-    products = [...products].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    products = [...products].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   return (
