@@ -55,8 +55,10 @@ export default function ShopAllPage({
 
   // 1.5 Filter by artist / brand
   if (artistFilter !== 'All') {
-    products = products.filter(p => (p.artist || "").toLowerCase() === artistFilter.toLowerCase()
-  }
+  products = products.filter(
+    p => (p.artist || "").toLowerCase() === artistFilter.toLowerCase()
+  );
+}
 
   // 2. Filter by search query
   if (searchQuery.trim().length > 0) {
@@ -72,7 +74,7 @@ export default function ShopAllPage({
   } else if (sortBy === 'price-desc') {
     products = [...products].sort((a, b) => b.price - a.price);
   } else if (sortBy === 'name-asc') {
-    products = [...products].sort((a, b) => a.name.localeCompare(b.name));
+    products = [...products].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   }
 
   return (
