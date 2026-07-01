@@ -98,7 +98,7 @@ useEffect(() => {
               className="px-7 py-3 sm:px-8 sm:py-3.5 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-bold rounded-xl hover:bg-blue-100/50 active:scale-95 transition-all inline-flex items-center gap-1.5"
             >
               <span>MUA SẮM NGAY</span>
-              ="text-lg font-normal">→</span>
+<span className="text-lg font-normal">→</span>
             </button>
             <button 
               onClick={() => setCurrentPage('rules')}
