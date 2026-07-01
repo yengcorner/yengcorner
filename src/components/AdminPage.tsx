@@ -795,33 +795,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const basePrice = Number(productForm.price) || 0;
     
     if (showSecondAttribute) {
-      const keys1 = productForm.versionsText.split(',').map(v => v.trim()).filter(v => v.length > 0);
-      const keys2 = productForm.attribute2OptionsText.split(',').map(v => v.trim()).filter(v => v.length > 0);
+      const keys1 = (productForm.versionsText || '').split(',').map(v => v.trim()).filter(v => v.length > 0);
+      const keys2 = (productForm.attribute2OptionsText || '').split(',').map(v => v.trim()).filter(v => v.length > 0);
       
       setVariantMatrix(prev => {
+        const prevArray = Array.isArray(prev) ? prev : [];
         const newMatrix: any[] = [];
         keys1.forEach(k1 => {
           keys2.forEach(k2 => {
-            const existing = prev.find(v => v.option1 === k1 && v.option2 === k2);
+            const existing = prevArray.find(v => v && v.option1 === k1 && v.option2 === k2);
             newMatrix.push({
               option1: k1,
               option2: k2,
-              price: existing ? existing.price : basePrice,
-              pob: existing ? existing.pob : ''
+              price: existing ? (Number(existing.price) || basePrice) : basePrice,
+              pob: existing ? (existing.pob || '') : ''
             });
           });
         });
         return newMatrix;
       });
     } else {
-      const keys = productForm.versionsText.split(',').map(v => v.trim()).filter(v => v.length > 0);
+      const keys = (productForm.versionsText || '').split(',').map(v => v.trim()).filter(v => v.length > 0);
       setFormVariations(prev => {
+        const prevArray = Array.isArray(prev) ? prev : [];
         return keys.map(key => {
-          const existing = prev.find(v => v.name === key);
+          const existing = prevArray.find(v => v && v.name === key);
           return {
             name: key,
-            price: existing ? existing.price : basePrice,
-            description: existing ? existing.description : ''
+            price: existing ? (Number(existing.price) || basePrice) : basePrice,
+            description: existing ? (existing.description || '') : ''
           };
         });
       });
@@ -1226,27 +1228,27 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const handleOpenEditProduct = (prod: Product) => {
     setEditingProduct(prod);
     setNotifySubscribers(false);
-    setAdditionalImages(prod.images ? [...prod.images] : []);
+    setAdditionalImages(Array.isArray(prod.images) ? [...prod.images] : []);
     
-    const isMulti = !!(prod.attribute1Name && prod.attribute1Options && prod.attribute1Options.length > 0);
+    const isMulti = !!(prod.attribute1Name && Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0);
     const has2Tiers = !!prod.attribute2Name;
 
     setShowSecondAttribute(has2Tiers);
 
     if (isMulti) {
       setFormVariations([]);
-      setVariantMatrix(prod.variantMatrix ? [...prod.variantMatrix] : []);
+      setVariantMatrix(Array.isArray(prod.variantMatrix) ? [...prod.variantMatrix] : []);
       
       setProductForm({
-        id: prod.id,
-        name: prod.name,
-        price: prod.price,
-        category: prod.category,
-        image: prod.image,
+        id: prod.id || 0,
+        name: prod.name || '',
+        price: Number(prod.price) || 0,
+        category: prod.category || '',
+        image: prod.image || '',
         tag: prod.tag ?? 'Pre-order',
-        info: prod.info,
+        info: prod.info || '',
         detailedDesc: prod.detailedDesc ?? '',
-        versionsText: prod.attribute1Options ? prod.attribute1Options.join(', ') : '',
+        versionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         weight: prod.weight ?? '0.50 kg',
         orderDeadline: prod.orderDeadline ?? '',
         releaseDate: prod.releaseDate ?? '',
@@ -1254,27 +1256,27 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         artist: prod.artist ?? '',
         variationName: prod.attribute1Name ?? '',
         attribute1Name: prod.attribute1Name ?? '',
-        attribute1OptionsText: prod.attribute1Options ? prod.attribute1Options.join(', ') : '',
+        attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         attribute2Name: prod.attribute2Name ?? '',
-        attribute2OptionsText: prod.attribute2Options ? prod.attribute2Options.join(', ') : '',
+        attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
         stock: prod.stock ?? 99
       });
     } else {
-      setFormVariations(prod.variations ? [...prod.variations] : []);
+      setFormVariations(Array.isArray(prod.variations) ? [...prod.variations] : []);
       setVariantMatrix([]);
       
-      const versionsStr = prod.variations 
-        ? prod.variations.map(v => v.name).join(', ') 
-        : (prod.versions ? prod.versions.join(', ') : '');
+      const versionsStr = Array.isArray(prod.variations)
+        ? prod.variations.map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
+        : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''));
 
       setProductForm({
-        id: prod.id,
-        name: prod.name,
-        price: prod.price,
-        category: prod.category,
-        image: prod.image,
+        id: prod.id || 0,
+        name: prod.name || '',
+        price: Number(prod.price) || 0,
+        category: prod.category || '',
+        image: prod.image || '',
         tag: prod.tag ?? 'Pre-order',
-        info: prod.info,
+        info: prod.info || '',
         detailedDesc: prod.detailedDesc ?? '',
         versionsText: versionsStr,
         weight: prod.weight ?? '0.50 kg',
@@ -2424,11 +2426,11 @@ function getColumnLetter(colIndex) {
                           </span>
                         </td>
                         <td className="p-4 text-right font-mono font-bold text-neutral-900">
-                          {p.price.toLocaleString('vi-VN')} đ
+                          {(Number(p.price) || 0).toLocaleString('vi-VN')} đ
                         </td>
                         <td className="p-4 max-w-[180px]">
                           <div className="flex flex-wrap gap-1">
-                            {p.versions && p.versions.length > 0 ? (
+                            {Array.isArray(p.versions) && p.versions.length > 0 ? (
                               p.versions.map((v, i) => (
                                 <span key={i} className="bg-neutral-50 border text-neutral-500 px-1 py-0.5 rounded text-[9.5px]">
                                   {v}
