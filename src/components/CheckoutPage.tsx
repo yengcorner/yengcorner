@@ -47,10 +47,11 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
   const sendAutoConfirmationEmail = async (order: OrderPayload): Promise<{ success: boolean; error?: string }> => {
     const subject = `[Yeng Corner] Xác nhận đơn hàng #${order.id}`;
     const itemsFormatted = order.items.map(item => 
-      `${item.product.name} (Phân loại: ${item.version}) x${item.quantity}`
+      `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
     ).join(", ");
 
-    const isHalfDeposit = order.payment.method.toLowerCase().includes("50%") || order.payment.method.toLowerCase().includes("cọc");
+    const paymentMethod = order.payment?.method || "";
+    const isHalfDeposit = paymentMethod.toLowerCase().includes("50%") || paymentMethod.toLowerCase().includes("cọc");
     const displayPaymentMethod = isHalfDeposit ? "Cọc 50%" : "Thanh toán 100%";
     const paidAmount = isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal;
     const remainingAmount = order.subtotal - paidAmount;
@@ -132,8 +133,8 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
             <tbody>
               ${order.items.map(item => `
                 <tr style="border-bottom: 1px solid #e5e5e5; color: #374151;">
-                  <td style="padding: 10px 0; font-weight: 600; color: #111827;">${item.product.name}</td>
-                  <td style="padding: 10px 0; color: #4b5563;">${item.version}</td>
+                  <td style="padding: 10px 0; font-weight: 600; color: #111827;">${item.product?.name || 'Sản phẩm'}</td>
+                  <td style="padding: 10px 0; color: #4b5563;">${item.version || '—'}</td>
                   <td style="padding: 10px 0; text-align: right; font-weight: 600; font-family: monospace;">${item.quantity}</td>
                 </tr>
               `).join('')}
