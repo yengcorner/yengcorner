@@ -131,34 +131,6 @@ export default function Footer({ setCurrentPage, navigateToRulesSection }: Foote
               <Twitter className="w-4 h-4" />
             </a>
           </div>
-
-          {/* Đăng ký nhận thông báo sản phẩm mới */}
-          <div className="pt-3 border-t border-blue-200/50 max-w-sm">
-            <h5 className="text-[10.5px] font-mono font-bold text-blue-900 tracking-wider uppercase mb-2">📬 Đăng ký nhận tin sản phẩm mới:</h5>
-            <form onSubmit={handleSubscribe} className="flex gap-1.5">
-              <input
-                type="email"
-                required
-                placeholder="Nhập email nhận tin..."
-                value={subscriberEmail}
-                onChange={(e) => setSubscriberEmail(e.target.value)}
-                className="flex-1 min-w-0 px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-xs font-medium text-neutral-900 placeholder:text-neutral-400 shadow-sm"
-              />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-3 py-1.5 bg-blue-900 text-white text-[11px] font-bold font-display uppercase tracking-wider rounded-lg hover:bg-blue-950 transition-colors disabled:bg-neutral-400 flex items-center justify-center shrink-0 shadow-sm"
-              >
-                {submitting ? "Đang gửi..." : "Đăng ký"}
-              </button>
-            </form>
-
-            {subscribeMsg && (
-              <p className={`text-[10px] mt-1.5 font-bold ${subscribeMsg.includes('Lỗi') || subscribeMsg.includes('không') || subscribeMsg.includes('xảy') ? 'text-red-600' : 'text-emerald-700'}`}>
-                {subscribeMsg}
-              </p>
-            )}
-          </div>
         </div>
 
         <div>
