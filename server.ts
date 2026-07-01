@@ -27,7 +27,7 @@ const PORT = 3000;
 
 // Initialize Firebase Client SDK for server-side persistence
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(firebaseApp);
 
 // Always use Firebase Client SDK (db) on the server because Admin SDK does not have permission on the custom named database
 const dbAdmin: any = null;
