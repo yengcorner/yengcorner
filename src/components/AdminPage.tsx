@@ -100,9 +100,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             if (detailRes.ok) {
               const detail = await detailRes.json();
               const headers = detail.payload.headers || [];
-              const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || '(Không có chủ đề)';
-              const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Không rõ';
-              const date = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
+              const subject = headers.find((h: any) => h.name && h.name.toLowerCase() === 'subject')?.value || '(Không có chủ đề)';
+              const from = headers.find((h: any) => h.name && h.name.toLowerCase() === 'from')?.value || 'Không rõ';
+              const date = headers.find((h: any) => h.name && h.name.toLowerCase() === 'date')?.value || '';
               return {
                 id: msg.id,
                 snippet: detail.snippet,
@@ -177,7 +177,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     
     if (templateType === 'deposit') {
       subject = `[Yeng Corner] Xác nhận đơn hàng #${order.id}`;
-      const isHalfDeposit = order.payment.method.toLowerCase().includes("50%") || order.payment.method.toLowerCase().includes("cọc");
+      const pMethod = order.payment?.method || "";
+      const isHalfDeposit = pMethod.toLowerCase().includes("50%") || pMethod.toLowerCase().includes("cọc");
       const displayPaymentMethod = isHalfDeposit ? "Cọc 50%" : "Thanh toán 100%";
       const paidAmount = isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal;
       const remainingAmount = order.subtotal - paidAmount;
@@ -514,7 +515,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     if (rows.length === 0) return [];
 
-    const headers = rows[0].map(h => h.toLowerCase());
+    const headers = rows[0].map(h => String(h || '').toLowerCase());
     let idIdx = 0;
     let codeIdx = 1;
 
@@ -706,8 +707,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const matchedIds = orders
       .filter(order => 
         order.items.some(item => 
-          item.product.name.toLowerCase() === query || 
-          item.product.name.toLowerCase().includes(query)
+          item.product && item.product.name && (
+            item.product.name.toLowerCase() === query || 
+            item.product.name.toLowerCase().includes(query)
+          )
         )
       )
       .map(o => o.id);
@@ -1053,13 +1056,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     if (!sheetsUrl) return;
 
     const itemsFormatted = ord.items.map(item => 
-      `${item.product.name} (Phân loại: ${item.version}) x${item.quantity}`
+      `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
     ).join(", ");
 
     const totalQty = ord.items.reduce((sum, item) => sum + item.quantity, 0);
-    const isHalfDeposit = ord.payment.method.toLowerCase().includes('50%') || 
-                          ord.payment.method.toLowerCase().includes('cọc') || 
-                          ord.payment.method.toLowerCase().includes('đặt cọc');
+    const paymentMethod = ord.payment?.method || '';
+    const isHalfDeposit = paymentMethod.toLowerCase().includes('50%') || 
+                          paymentMethod.toLowerCase().includes('cọc') || 
+                          paymentMethod.toLowerCase().includes('đặt cọc');
     const calculatedPaid = isHalfDeposit ? Math.round(ord.subtotal * 0.5) : ord.subtotal;
 
     const payload = {
@@ -1483,14 +1487,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Filter & Search Logic
   const filteredOrders = orders.filter(ord => {
     const matchesSearch = 
-      ord.shipping.receiverName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ord.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ord.shipping.phone.includes(searchQuery) ||
-      ord.contact.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ord.items.some(it => it.product.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      (ord.shipping?.receiverName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (ord.id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (ord.shipping?.phone || '').includes(searchQuery) ||
+      (ord.contact?.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ord.items.some(it => it.product && it.product.name && it.product.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesStatus = statusFilter === 'All' || ord.status === statusFilter;
-    const matchesPayment = paymentFilter === 'All' || ord.payment.method.includes(paymentFilter);
+    const matchesPayment = paymentFilter === 'All' || (ord.payment?.method || '').includes(paymentFilter);
 
     return matchesSearch && matchesStatus && matchesPayment;
   });
@@ -1498,9 +1502,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Filter products logic
   const filteredProducts = products.filter(p => {
     const matchesProductSearch = 
-      p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+      (p.name || '').toLowerCase().includes(productSearch.toLowerCase()) ||
       (p.info && p.info.toLowerCase().includes(productSearch.toLowerCase())) ||
-      p.category.toLowerCase().includes(productSearch.toLowerCase());
+      (p.category && p.category.toLowerCase().includes(productSearch.toLowerCase()));
 
     const matchesCat = productCatFilter === 'All' || p.category === productCatFilter;
 
@@ -1511,7 +1515,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const totalSales = orders.reduce((sum, ord) => sum + (ord.status !== "Đã hủy" ? ord.subtotal : 0), 0);
   const totalReceivedDeposit = orders.reduce((sum, ord) => {
     if (ord.status === "Đã hủy") return sum;
-    return sum + (ord.payment.method.includes('50%') ? (ord.subtotal * 0.5) : ord.subtotal);
+    const pMethod = ord.payment?.method || '';
+    return sum + (pMethod.includes('50%') ? (ord.subtotal * 0.5) : ord.subtotal);
   }, 0);
   const countPending = orders.filter(ord => ord.status === 'Chờ xác nhận').length;
 
