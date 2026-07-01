@@ -22,21 +22,20 @@ function convertToSlug(text: string): string {
     .replace(/-+/g, "-"); // remove double hyphens
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  // Initialize Firebase Client SDK for server-side persistence
-  const firebaseApp = initializeApp(firebaseConfig);
-  const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+// Initialize Firebase Client SDK for server-side persistence
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
-  // Always use Firebase Client SDK (db) on the server because Admin SDK does not have permission on the custom named database
-  const dbAdmin: any = null;
+// Always use Firebase Client SDK (db) on the server because Admin SDK does not have permission on the custom named database
+const dbAdmin: any = null;
 
-  const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
-  // Middleware to parse JSON payloads
-  app.use(express.json({ limit: '10mb' }));
+// Middleware to parse JSON payloads
+app.use(express.json({ limit: '10mb' }));
 
   const TOKEN_PATH = path.join(process.cwd(), "gmail-token.json");
 
@@ -142,41 +141,107 @@ async function startServer() {
     if (!to || !subject || !bodyHtml) {
       return res.status(400).json({ error: "Thiếu thông tin người nhận, tiêu đề hoặc nội dung email." });
     }
-// Sử dụng mật khẩu ứng dụng (App Password) đã cấu hình trên Vercel
-  const senderEmail = process.env.GMAIL_USER;
-  const appPassword = process.env.GMAIL_APP_PASSWORD;
 
-  if (!senderEmail || !appPassword) {
-    return res.status(400).json({ 
-      error: "Cửa hàng chưa cấu hình biến môi trường GMAIL_USER hoặc GMAIL_APP_PASSWORD trên Vercel." 
-    });
-  }
+    let tokenData;
 
-  try {
-    const nodemailer = require("nodemailer");
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: senderEmail,
-        pass: appPassword,
-      },
-    });
+    // 1. Try reading local file cache
+    if (fs.existsSync(TOKEN_PATH)) {
+      try {
+        tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+      } catch (err: any) {
+        console.error("Could not parse local gmail token:", err);
+      }
+    }
 
-    console.log(`[Gmail Send] Đang gửi mail tới ${to} bằng mật khẩu ứng dụng...`);
-    
-    await transporter.sendMail({
-      from: `"Yeng Corner" <${senderEmail}>`,
-      to: to,
-      subject: subject,
-      html: bodyHtml,
-    });
+    // 2. If not found in local file, restore from Firestore automatically
+    if (!tokenData) {
+      try {
+        const docSnap = await getDoc(gmailDocRef);
+        if (docSnap.exists()) {
+          tokenData = docSnap.data();
+          // Cache it locally on disk
+          fs.writeFileSync(
+            TOKEN_PATH,
+            JSON.stringify(tokenData, null, 2)
+          );
+          console.log(`[Gmail Send] Restored Gmail token for ${tokenData.email} from Firestore`);
+        }
+      } catch (err: any) {
+        console.error("Error loading Gmail token from Firestore (relying on local cache fallback):", err.message);
+      }
+    }
 
-    res.json({ success: true, message: "Gửi email thành công!" });
-  } catch (err: any) {
-    console.error("[Gmail Send] Error:", err);
-    res.status(500).json({ error: "Lỗi khi gửi email qua Gmail: " + err.message });
-  }
-});
+    if (!tokenData) {
+      return res.status(400).json({
+        error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
+      });
+    }
+
+    const { accessToken, email: senderEmail } = tokenData;
+
+    try {
+      // Construct MIME message with UTF-8
+      const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+      const rawParts = [
+        `From: "Yeng Corner" <${senderEmail}>`,
+        `To: ${to}`,
+        `Subject: ${subjectEncoded}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/html; charset=utf-8",
+        "",
+        bodyHtml
+      ];
+      const raw = rawParts.join("\r\n");
+      const base64Safe = Buffer.from(raw)
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      console.log(`[Gmail Send] Attempting to send email to ${to} using token of ${senderEmail}`);
+
+      const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw: base64Safe }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[Gmail Send] Google API error response:", errorText);
+
+        if (response.status === 401) {
+          return res.status(401).json({
+            error: "Phiên kết nối Gmail đã hết hạn (401 Unauthorized). Vui lòng đăng nhập lại Gmail Center ở trang Admin."
+          });
+        }
+
+        let errorMsg = `Google API trả về lỗi ${response.status}`;
+        try {
+          const parsed = JSON.parse(errorText);
+          if (parsed.error && parsed.error.message) {
+            errorMsg = parsed.error.message;
+          }
+        } catch (e) {}
+
+        return res.status(response.status).json({
+          error: `Lỗi từ Google Mail API: ${errorMsg}`
+        });
+      }
+
+      const resultData = await response.json();
+      console.log(`[Gmail Send] Email sent successfully to ${to}, Message ID: ${resultData.id}`);
+      res.json({ success: true, messageId: resultData.id });
+    } catch (error: any) {
+      console.error("[Gmail Send] Server error during Gmail send:", error);
+      res.status(500).json({
+        error: `Lỗi hệ thống khi gửi email: ${error.message || error}`
+      });
+    }
+  });
 
   // GET subscription groups list
   app.get("/api/subscribers/groups", async (req, res) => {
@@ -594,11 +659,14 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
+    }).then((vite) => {
+      app.use(vite.middlewares);
+    }).catch((err) => {
+      console.error("Vite server error:", err);
     });
-    app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     
@@ -625,9 +693,10 @@ async function startServer() {
     });
   }
 
+if (!process.env.VERCEL) {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+export default app;
