@@ -114,7 +114,7 @@ useEffect(() => {
       <section className="space-y-8">
         <div className="flex items-center justify-between border-b border-neutral-200 pb-4">
           <div className="flex items-center space-x-2.5">
-            ="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
             <h2 className="text-xl font-display font-semibold tracking-wider text-black uppercase">Khám phá sản phẩm</h2>
           </div>
         </div>
