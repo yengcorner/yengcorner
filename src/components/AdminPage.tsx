@@ -668,6 +668,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Products management state
   const [products, setProducts] = useState<Product[]>([]);
+  const [editedProductIds, setEditedProductIds] = useState<Set<number>>(new Set());
+  const [newProductIds, setNewProductIds] = useState<Set<number>>(new Set());
+  const editedProductIdsRef = React.useRef<Set<number>>(new Set());
+  const newProductIdsRef = React.useRef<Set<number>>(new Set());
+
+  const trackEdit = (id: number) => {
+    setEditedProductIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      editedProductIdsRef.current = next;
+      return next;
+    });
+  };
+
+  const trackNew = (id: number) => {
+    setNewProductIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      newProductIdsRef.current = next;
+      return next;
+    });
+  };
+
+  const clearTracking = () => {
+    setEditedProductIds(new Set());
+    setNewProductIds(new Set());
+    editedProductIdsRef.current = new Set();
+    newProductIdsRef.current = new Set();
+  };
 
   // Unique list of product names for dropdown filtering
   const uniqueProductNames = useMemo(() => {
@@ -858,7 +887,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setOrders(getOrders());
       
       const unsubscribe = subscribeProducts((list) => {
-        setProducts(list);
+        setProducts((prev) => {
+          const hasDrafts = prev.length > 0 && (editedProductIdsRef.current.size > 0 || newProductIdsRef.current.size > 0);
+          if (hasDrafts) {
+            return prev;
+          }
+          return list;
+        });
         if (list.length > 0) {
           setNewOrderForm(prev => ({
             ...prev,
@@ -1393,58 +1428,29 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       };
     }
 
-    // Save to Firestore and sync local state immediately
+    // Save locally and track change
     try {
-      await saveAdminProduct(productPayload);
-      setHasUnsavedCatalogChanges(false);
-      setIsProductModalOpen(false);
-      showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
-    } catch (err: any) {
-      console.error("Error saving product to Firestore:", err);
-      showToast(`⚠️ Lỗi đồng bộ sản phẩm lên cơ sở dữ liệu: ${err.message}`, "error");
-    }
-
-    if (notifySubscribers) {
-      const sendNotification = async () => {
-        let subscriberEmails: string[] = [];
-        try {
-          const snap = await getDocs(collection(db, "subscriber_emails"));
-          snap.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (data && data.email) {
-              subscriberEmails.push(data.email);
-            }
-          });
-        } catch (err: any) {
-          console.error("Error fetching subscriber emails client-side:", err);
+      setProducts((prev) => {
+        const exists = prev.some(p => Number(p.id) === Number(targetId));
+        if (exists) {
+          return prev.map(p => Number(p.id) === Number(targetId) ? productPayload : p);
+        } else {
+          return [productPayload, ...prev];
         }
+      });
 
-        fetch("/api/subscribers/notify-new-product", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ product: productPayload, emails: subscriberEmails }),
-        })
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.success) {
-              if (data.sentCount > 0) {
-                showToast(`📢 Đã gửi email thông báo thành công tới ${data.sentCount} khách hàng đăng ký!`, "success");
-              } else {
-                showToast(`📢 Lưu sản phẩm thành công. Hiện tại không có khách hàng nào đăng ký nhận tin.`, "info");
-              }
-            } else {
-              showToast(`⚠️ Không thể gửi email thông báo: ${data.error || "Lỗi không xác định"}`, "error");
-            }
-          })
-          .catch((err) => {
-            console.error("Notify error:", err);
-            showToast(`⚠️ Lỗi kết nối khi gửi email thông báo: ${err.message}`, "error");
-          });
-      };
+      if (editingProduct) {
+        trackEdit(Number(targetId));
+      } else {
+        trackNew(Number(targetId));
+      }
 
-      sendNotification();
+      setHasUnsavedCatalogChanges(true);
+      setIsProductModalOpen(false);
+      showToast(`✨ Đã thêm/chỉnh sửa sản phẩm "${productForm.name}" vào danh sách tạm thời. Vui lòng bấm nút "Lưu thay đổi" bên ngoài để đồng bộ vĩnh viễn lên cơ sở dữ liệu!`, "info");
+    } catch (err: any) {
+      console.error("Error preparing product changes:", err);
+      showToast(`⚠️ Lỗi khi cập nhật sản phẩm: ${err.message}`, "error");
     }
   };
 
@@ -1462,13 +1468,72 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Save changes immediately & sync catalog to Firestore
   const handlePersistCatalogChanges = async () => {
+    const productsToSave = products.filter(p => 
+      editedProductIds.has(Number(p.id)) || newProductIds.has(Number(p.id))
+    );
+
+    if (productsToSave.length === 0) {
+      showToast("ℹ️ Không có sản phẩm nào thay đổi hoặc thêm mới để lưu.", "info");
+      return;
+    }
+
     try {
-      await Promise.all(products.map(p => saveAdminProduct(p)));
+      // 3. Clear existing list from the UI before rendering updated database data to avoid duplication
+      setProducts([]);
+
+      // 1 & 2. Perform updates for edited products or additions for new ones
+      for (const p of productsToSave) {
+        const isNew = newProductIds.has(Number(p.id));
+        await saveAdminProduct(p);
+
+        // Trigger email notification for new products if notifySubscribers was selected
+        if (notifySubscribers && isNew) {
+          try {
+            let subscriberEmails: string[] = [];
+            const snap = await getDocs(collection(db, "subscriber_emails"));
+            snap.forEach((docSnap) => {
+              const data = docSnap.data();
+              if (data && data.email) {
+                subscriberEmails.push(data.email);
+              }
+            });
+
+            if (subscriberEmails.length > 0) {
+              const res = await fetch("/api/subscribers/notify-new-product", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ product: p, emails: subscriberEmails }),
+              });
+              const data = await res.json();
+              if (data.success && data.sentCount > 0) {
+                showToast(`📢 Đã gửi email thông báo sản phẩm mới "${p.name}" tới ${data.sentCount} khách hàng đăng ký!`, "success");
+              }
+            }
+          } catch (err: any) {
+            console.error("Lỗi gửi email thông báo sản phẩm mới:", err);
+          }
+        }
+      }
+
+      // Clear tracking states
+      clearTracking();
       setHasUnsavedCatalogChanges(false);
-      showToast("✨ Cập nhật và đồng bộ sản phẩm lên Firestore thành công!", "success");
+      setNotifySubscribers(false);
+
+      // Re-render fresh list cleanly from database cache
+      setTimeout(() => {
+        const refreshedList = getProducts();
+        setProducts(refreshedList);
+        showToast("✨ Cập nhật và đồng bộ sản phẩm lên Firestore thành công!", "success");
+      }, 400);
+
     } catch (e: any) {
       console.error("Lỗi đồng bộ sản phẩm:", e);
       showToast(`⚠️ Đã có lỗi xảy ra khi lưu sản phẩm: ${e.message}`, "error");
+      // Restore products list from local cache if database update failed
+      setProducts(getProducts());
     }
   };
 
