@@ -1297,13 +1297,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     let productPayload: Product;
 
     // Automatically learn Category and Artist/Brand
-    const enteredCategory = productForm.category.trim();
+    const enteredCategory = (productForm.category || '').trim();
     if (enteredCategory && !customCategories.includes(enteredCategory)) {
       const nextCats = [...customCategories, enteredCategory];
       setCustomCategories(nextCats);
       localStorage.setItem('yeng_custom_categories', JSON.stringify(nextCats));
     }
-    const enteredArtist = productForm.artist.trim();
+    const enteredArtist = (productForm.artist || '').trim();
     if (enteredArtist) {
       if (!customArtists.includes(enteredArtist)) {
         const nextArts = [...customArtists, enteredArtist];
@@ -1312,12 +1312,19 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       }
     }
 
+    // Safe ID generation: filter out non-numeric, null or undefined IDs to prevent NaN
+    const getNextId = () => {
+      const validIds = products.map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
+      return validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
+    };
+    const targetId = editingProduct ? editingProduct.id : getNextId();
+
     if (showSecondAttribute) {
-      const opts1 = productForm.versionsText
+      const opts1 = (productForm.versionsText || '')
         .split(',')
         .map(v => v.trim())
         .filter(v => v.length > 0);
-      const opts2 = productForm.attribute2OptionsText
+      const opts2 = (productForm.attribute2OptionsText || '')
         .split(',')
         .map(v => v.trim())
         .filter(v => v.length > 0);
@@ -1325,7 +1332,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       generatedVersions = variantMatrix.map(v => `${v.option1} - ${v.option2}`);
 
       productPayload = {
-        id: editingProduct ? editingProduct.id : (products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1),
+        id: targetId,
         name: productForm.name,
         price: Number(productForm.price),
         category: productForm.category,
@@ -1349,17 +1356,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       };
     } else {
       // Parse versions
-      const parsedVersions = productForm.versionsText
+      const parsedVersions = (productForm.versionsText || '')
          .split(',')
          .map(v => v.trim())
          .filter(v => v.length > 0);
       
       generatedVersions = formVariations.length > 0 
          ? formVariations.map(v => v.name) 
-         : (parsedVersions.length > 0 ? parsedVersions : undefined);
+         : parsedVersions;
 
       productPayload = {
-        id: editingProduct ? editingProduct.id : (products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1),
+        id: targetId,
         name: productForm.name,
         price: Number(productForm.price),
         category: productForm.category,
@@ -1368,7 +1375,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         tag: productForm.tag,
         info: productForm.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
-        versions: generatedVersions,
+        versions: generatedVersions.length > 0 ? generatedVersions : undefined,
         weight: productForm.weight || "0.45 kg",
         orderDeadline: productForm.orderDeadline,
         releaseDate: productForm.releaseDate,
@@ -1450,9 +1457,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Save changes immediately & sync catalog to Firestore
   const handlePersistCatalogChanges = async () => {
     try {
-      for (const p of products) {
-        await saveAdminProduct(p);
-      }
+      await Promise.all(products.map(p => saveAdminProduct(p)));
       setHasUnsavedCatalogChanges(false);
       showToast("✨ Cập nhật và đồng bộ sản phẩm lên Firestore thành công!", "success");
     } catch (e: any) {
