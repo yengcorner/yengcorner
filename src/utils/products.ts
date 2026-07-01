@@ -127,8 +127,9 @@ export const subscribeProducts = (callback: (products: Product[]) => void) => {
 export const saveProduct = async (product: Product): Promise<void> => {
   try {
     if (!product.id) {
-      // Assign a new ID based on current cached list
-      const maxId = cachedProducts.reduce((max, p) => p.id > max ? p.id : max, 0);
+      // Assign a new ID based on current cached list safely filtering out non-numeric IDs
+      const validIds = cachedProducts.map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
+      const maxId = validIds.reduce((max, id) => id > max ? id : max, 0);
       product.id = maxId + 1;
     }
     
