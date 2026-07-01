@@ -36,8 +36,11 @@ export default async function handler(req: any, res: any) {
       email,
     });
   } catch (err: any) {
-    return res.status(500).json({
-      error: err.message,
-    });
-  }
+  console.error(err);
+
+  return res.status(500).json({
+    error: err?.message,
+    stack: err?.stack,
+    name: err?.name,
+  });
 }
