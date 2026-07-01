@@ -488,7 +488,10 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   );
 }
 
-function getBadgeStyles(tag: string) {
+function getBadgeStyles(tag?: string) {
+  if (!tag) {
+    return 'bg-neutral-50 text-neutral-700 border-neutral-200';
+  }
   switch (tag.toLowerCase()) {
     case 'sẵn hàng':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
