@@ -98,7 +98,7 @@ useEffect(() => {
               className="px-7 py-3 sm:px-8 sm:py-3.5 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-bold rounded-xl hover:bg-blue-100/50 active:scale-95 transition-all inline-flex items-center gap-1.5"
             >
               <span>MUA SẮM NGAY</span>
-              <span className="text-lg font-normal">→</span>
+              ="text-lg font-normal">→</span>
             </button>
             <button 
               onClick={() => setCurrentPage('rules')}
@@ -114,7 +114,7 @@ useEffect(() => {
       <section className="space-y-8">
         <div className="flex items-center justify-between border-b border-neutral-200 pb-4">
           <div className="flex items-center space-x-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+            ="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
             <h2 className="text-xl font-display font-semibold tracking-wider text-black uppercase">Khám phá sản phẩm</h2>
           </div>
         </div>
@@ -148,7 +148,7 @@ useEffect(() => {
                     />
                     {/* Category tag */}
                     <div className="absolute top-3 left-3 z-10">
-                      <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
+                      ={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
                         {product.tag}
                       </span>
                     </div>
@@ -200,9 +200,9 @@ useEffect(() => {
                     {/* Pricing and CTAs */}
                     <div className="pt-2 flex flex-col space-y-3 mt-auto">
                       <div className="flex items-baseline justify-between">
-                        <span className="text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
-                        <span className="text-lg font-mono font-bold text-black text-right">
-                          {product.price.toLocaleString('vi-VN')} <span className="text-xs font-sans">VND</span>
+                        ="text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
+                        ="text-lg font-mono font-bold text-black text-right">
+                          {product.price.toLocaleString('vi-VN')} ="text-xs font-sans">VND</span>
                         </span>
                       </div>
 
@@ -236,7 +236,7 @@ useEffect(() => {
                 className="px-8 py-3.5 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] font-display font-bold text-xs tracking-widest rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center space-x-2.5 cursor-pointer uppercase border border-[#E8F0FE] hover:border-[#D2E3FC]"
               >
                 <span>XEM TẤT CẢ SẢN PHẨM</span>
-                <span className="text-base">→</span>
+                ="text-base">→</span>
               </button>
             </div>
           </div>
@@ -252,8 +252,8 @@ function triggerAddedNotifier(name: string) {
 }
 
 // Export custom tag color stylings
-function exportTagStyles(tag: string) {
-  switch (tag.toLowerCase()) {
+function exportTagStyles(tag?: string) {
+  switch ((tag ?? "").toLowerCase()) {
     case 'sẵn hàng':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
     case 'pre-order':
