@@ -137,6 +137,21 @@ export const saveProduct = async (product: Product): Promise<void> => {
     
     const docRef = doc(db, "products", product.id.toString());
     await setDoc(docRef, sanitizedProduct);
+
+    // Update memory cache immediately
+    const idx = cachedProducts.findIndex(p => p.id === product.id);
+    let nextProducts = [...cachedProducts];
+    if (idx > -1) {
+      nextProducts[idx] = product;
+    } else {
+      nextProducts.unshift(product);
+    }
+    cachedProducts = nextProducts;
+    localStorage.setItem('yeng_products', JSON.stringify(nextProducts));
+
+    // Dispatch custom event to notify React components instantly
+    const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
+    window.dispatchEvent(event);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `products/${product?.id}`);
   }
@@ -146,6 +161,15 @@ export const deleteProduct = async (productId: number): Promise<void> => {
   try {
     const docRef = doc(db, "products", productId.toString());
     await deleteDoc(docRef);
+
+    // Update memory cache immediately
+    const nextProducts = cachedProducts.filter(p => p.id !== productId);
+    cachedProducts = nextProducts;
+    localStorage.setItem('yeng_products', JSON.stringify(nextProducts));
+
+    // Dispatch custom event to notify React components instantly
+    const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
+    window.dispatchEvent(event);
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `products/${productId}`);
   }
@@ -156,9 +180,15 @@ export const resetProductsToDefault = async (): Promise<Product[]> => {
     for (const p of cachedProducts) {
       await deleteDoc(doc(db, "products", p.id.toString()));
     }
+    cachedProducts = INITIAL_PRODUCTS;
+    localStorage.setItem('yeng_products', JSON.stringify(INITIAL_PRODUCTS));
+
+    // Dispatch custom event to notify React components instantly
+    const event = new CustomEvent('yeng_products_updated', { detail: INITIAL_PRODUCTS });
+    window.dispatchEvent(event);
   } catch (err) {
     console.error("Error resetting products in Firestore:", err);
     handleFirestoreError(err, OperationType.DELETE, "products");
   }
-  return [];
+  return INITIAL_PRODUCTS;
 };
