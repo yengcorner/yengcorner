@@ -36,8 +36,9 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
   };
 
   const getPaymentSummary = (order: OrderPayload) => {
-    const isHalfDeposit = order.payment.method.toLowerCase().includes("50%") || 
-                          order.payment.method.toLowerCase().includes("cọc");
+    const method = order.payment?.method || "";
+    const isHalfDeposit = method.toLowerCase().includes("50%") || 
+                          method.toLowerCase().includes("cọc");
     const paidAmount = isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal;
     const remainingAmount = order.subtotal - paidAmount;
     return {
