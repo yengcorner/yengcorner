@@ -1383,7 +1383,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     // Save to Firestore and sync local state immediately
     try {
       await saveAdminProduct(productPayload);
-      setHasUnsavedCatalogChanges(true);
+      setHasUnsavedCatalogChanges(false);
       setIsProductModalOpen(false);
       showToast(`✨ Đã lưu và cập nhật sản phẩm "${productForm.name}" thành công!`, "success");
     } catch (err: any) {
