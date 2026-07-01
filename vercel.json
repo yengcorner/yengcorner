@@ -2,15 +2,11 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/index"
-    },
-    {
       "source": "/unsubscribe",
-      "destination": "/api/index"
+      "destination": "/api/unsubscribe"
     },
     {
-      "source": "/((?!api|unsubscribe).*)",
+      "source": "/((?!api).*)",
       "destination": "/index.html"
     }
   ]
