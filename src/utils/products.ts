@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -191,4 +191,47 @@ export const resetProductsToDefault = async (): Promise<Product[]> => {
     handleFirestoreError(err, OperationType.DELETE, "products");
   }
   return INITIAL_PRODUCTS;
+};
+
+/**
+ * Thêm sản phẩm mới vào Firestore collection 'products' sử dụng addDoc theo chuẩn Firebase v9+
+ * @param formData Đối tượng chứa thông tin sản phẩm từ form
+ * @returns ID của document vừa tạo trong Firestore
+ */
+export const addProductWithAddDoc = async (formData: {
+  name: string;
+  price: number;
+  image: string;
+  category: string;
+  stock: number;
+  status: string;
+  artist: string;
+  pob: string;
+  shortDescription: string;
+  deadline: string;
+  releaseDate: string;
+  description: string;
+}): Promise<string> => {
+  try {
+    const docRef = await addDoc(collection(db, "products"), {
+      name: formData.name,
+      price: Number(formData.price),
+      image: formData.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
+      category: formData.category,
+      stock: Number(formData.stock),
+      status: formData.status || "Còn hàng",
+      artist: formData.artist || "",
+      pob: formData.pob || "",
+      shortDescription: formData.shortDescription || "",
+      deadline: formData.deadline || "",
+      releaseDate: formData.releaseDate || "",
+      description: formData.description || "",
+      createdAt: new Date().toISOString()
+    });
+    console.log("Document successfully written with ID: ", docRef.id);
+    return docRef.id;
+  } catch (err) {
+    console.error("Error adding document to 'products' collection:", err);
+    throw err;
+  }
 };
