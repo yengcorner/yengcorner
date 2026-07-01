@@ -20,16 +20,19 @@ export default function HomePage({
   toggleWishlist 
 }: HomePageProps) {
   // Filter out retired K-POP category
-  const [productsList, setProductsList] = useState<Product[]>(() => 
-    getProducts().filter(p => p.category.toLowerCase() !== 'k-pop')
-  );
+ const [productsList, setProductsList] = useState<Product[]>(() =>
+  getProducts().filter(p => (p.category || "").toLowerCase() !== "k-pop")
+);
 
-  useEffect(() => {
-    const unsubscribe = subscribeProducts((list) => {
-      setProductsList(list.filter(p => p.category.toLowerCase() !== 'k-pop'));
-    });
-    return unsubscribe;
-  }, []);
+useEffect(() => {
+  const unsubscribe = subscribeProducts((list) => {
+    setProductsList(
+      list.filter(p => (p.category || "").toLowerCase() !== "k-pop")
+    );
+  });
+
+  return unsubscribe;
+}, []);
 
   // Show only 4 to 8 featured products on HomePage
   const displayProducts = productsList.slice(0, 8);
