@@ -91,10 +91,14 @@ try {
 onSnapshot(collection(db, "products"), (snapshot) => {
   const list: Product[] = [];
   snapshot.forEach((docSnap) => {
-    list.push(docSnap.data() as Product);
+    const data = docSnap.data();
+    if (data) {
+      data.id = Number(data.id);
+      list.push(data as Product);
+    }
   });
   // Sort products by id descending
-  list.sort((a, b) => b.id - a.id);
+  list.sort((a, b) => Number(b.id) - Number(a.id));
   cachedProducts = list;
   localStorage.setItem('yeng_products', JSON.stringify(list));
   
@@ -126,7 +130,8 @@ export const subscribeProducts = (callback: (products: Product[]) => void) => {
 
 export const saveProduct = async (product: Product): Promise<void> => {
   try {
-    if (!product.id) {
+    product.id = Number(product.id);
+    if (!product.id || isNaN(product.id)) {
       // Assign a new ID based on current cached list safely filtering out non-numeric IDs
       const validIds = cachedProducts.map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
       const maxId = validIds.reduce((max, id) => id > max ? id : max, 0);
@@ -139,8 +144,8 @@ export const saveProduct = async (product: Product): Promise<void> => {
     const docRef = doc(db, "products", product.id.toString());
     await setDoc(docRef, sanitizedProduct);
 
-    // Update memory cache immediately
-    const idx = cachedProducts.findIndex(p => p.id === product.id);
+    // Update memory cache safely and immediately
+    const idx = cachedProducts.findIndex(p => Number(p.id) === Number(product.id));
     let nextProducts = [...cachedProducts];
     if (idx > -1) {
       nextProducts[idx] = product;
@@ -163,8 +168,8 @@ export const deleteProduct = async (productId: number): Promise<void> => {
     const docRef = doc(db, "products", productId.toString());
     await deleteDoc(docRef);
 
-    // Update memory cache immediately
-    const nextProducts = cachedProducts.filter(p => p.id !== productId);
+    // Update memory cache safely and immediately
+    const nextProducts = cachedProducts.filter(p => Number(p.id) !== Number(productId));
     cachedProducts = nextProducts;
     localStorage.setItem('yeng_products', JSON.stringify(nextProducts));
 
