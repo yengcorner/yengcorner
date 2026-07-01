@@ -1,15 +1,21 @@
 {
-  "build": {
-    "env": {
-      "NODE_VERSION": "20.x"
-    }
-  },
-  "functions": {
-    "api/index.ts": {
-      "runtime": "nodejs20.x"
-    }
-  },
+  "version": 2,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/dist/server.cjs" }
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/unsubscribe",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/assets/:path*",
+      "destination": "/dist/assets/:path*"
+    },
+    {
+      "source": "/((?!api|unsubscribe|assets).*)",
+      "destination": "/dist/index.html"
+    }
   ]
 }
