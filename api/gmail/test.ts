@@ -9,7 +9,7 @@ export default async function handler(req: Request, res: Response) {
    // Tạm thời sửa chỗ này trong file test.ts
 auth: {
   user: 'taphoayeng12@gmail.com',
-  pass: 'xsmtpsib-5c454fcf06e8c7b9c3ab15ef70390a897e77f56ac64603ee14f13adaeaf1e103-YVF0pIOJiIGiqjqO', 
+  pass: process.env.SMTP_PASS,
 },
   });
 
