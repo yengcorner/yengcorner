@@ -7,7 +7,7 @@ export default async function handler(req: Request, res: Response) {
     host: 'smtp-relay.brevo.com',
     port: 587,
     auth: {
-  user: 'taphoayeng12o@gmail.com',
+  user: 'taphoayeng12@gmail.com',
   pass: process.env.SMTP_PASS, // Đảm bảo ghi y hệt thế này
 },
   });
