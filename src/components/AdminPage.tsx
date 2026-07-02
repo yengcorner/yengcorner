@@ -1136,7 +1136,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       invoiceImage: ord.payment.invoiceImage || "",
       customerName: ord.shipping?.receiverName || '',
       phone: shipping.phone,
-      address: ord.shipping.address,
+      address: ord.shipping?.address || "",
       shippingMethod: ord.shipping.method,
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
       paidAmount: calculatedPaid,
@@ -1215,7 +1215,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         ord.status,
         ord.shipping?.receiverName,
         `="${shipping.phone}"`,
-        ord.shipping.address,
+        ord.shipping?.address || "",
         itemsDetail,
         ord.payment.method,
         ord.subtotal,
@@ -2206,7 +2206,7 @@ function getColumnLetter(colIndex) {
                           <div className="border-t border-dashed border-neutral-100 pt-2 space-y-1">
                             <span className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider block">📍 VẬN CHUYỂN TỚI:</span>
                             <p className="text-neutral-600 bg-neutral-50 p-2 rounded-lg text-[11px] leading-relaxed border">
-                              {ord.shipping.address}
+                              {ord.shipping?.address || "Chưa có địa chỉ"}
                             </p>
                             <div className="flex items-center space-x-1.5 mt-1">
                               <span className="text-[10px] font-mono text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold">Đơn vị: {ord.shipping.method}</span>
