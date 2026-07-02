@@ -16,7 +16,7 @@ export default async function handler(req: Request, res: Response) {
   });
   
     await transporter.sendMail({
-      from: '"Yeng Corner" <taphoayeng12o@gmail.com>',
+      from: '"Yeng Corner" <taphoayeng12@gmail.com>',
       to: to, // Email của khách lấy từ req.body
       subject: subject, // Tiêu đề lấy từ req.body
       html: html, // Nội dung thư lấy từ req.body
