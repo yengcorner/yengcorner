@@ -2139,17 +2139,21 @@ function getColumnLetter(colIndex) {
           ) : (
             <div className="space-y-6">
               {filteredOrders.map((ord) => {
-                const statusColors: Record<string, string> = {
-                  "Chờ xác nhận": "bg-yellow-50 text-yellow-700 border-yellow-200",
-                  "Đã xác nhận": "bg-emerald-50 text-emerald-700 border-emerald-200",
-                  "Đã vận chuyển": "bg-blue-50 text-blue-700 border-blue-200",
-                  "Đang gom hàng": "bg-blue-55 text-blue-700 border-blue-200 animate-pulse",
-                  "Đã bay kho Hàn": "bg-indigo-50 text-indigo-700 border-indigo-200",
-                  "Đã về Sài Gòn": "bg-emerald-50 text-emerald-700 border-emerald-200",
-                  "Đã giao cho đơn vị vận chuyển": "bg-amber-50 text-amber-700 border-amber-200",
-                  "Đã hoàn thành": "bg-neutral-105 text-neutral-700 border-neutral-300",
-                  "Đã hủy": "bg-red-50 text-red-700 border-red-200"
-                };
+
+  const shipping = ord.shipping || { receiverName: 'Chưa có tên', phone: 'Chưa có SĐT', address: '' };
+  const contact = ord.contact || { email: 'Chưa có email', phone: 'Chưa có SĐT' };
+
+  const statusColors: Record<string, string> = {
+    "Chờ xác nhận": "bg-yellow-50 text-yellow-700 border-yellow-200",
+    "Đã xác nhận": "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "Đã vận chuyển": "bg-blue-50 text-blue-700 border-blue-200",
+    "Đang gom hàng": "bg-blue-55 text-blue-700 border-blue-200 animate-pulse",
+    "Đã bay kho Hàn": "bg-indigo-50 text-indigo-700 border-indigo-200",
+    "Đã về Sài Gòn": "bg-emerald-50 text-emerald-700 border-emerald-200",
+    "Đã giao cho đơn vị vận chuyển": "bg-amber-50 text-amber-700 border-amber-200",
+    "Đã hoàn thành": "bg-neutral-105 text-neutral-700 border-neutral-300",
+    "Đã hủy": "bg-red-50 text-red-700 border-red-200"
+  };
 
                 return (
                   <div 
