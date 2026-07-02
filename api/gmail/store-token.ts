@@ -43,4 +43,4 @@ export default async function handler(req: any, res: any) {
     stack: err?.stack,
     name: err?.name,
   });
-}
+  }}
