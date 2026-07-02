@@ -10,6 +10,7 @@ import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrders
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs } from 'firebase/firestore';
+export const dynamic = 'force-dynamic';
 
 interface AdminPageProps {
   setCurrentPage: (page: string) => void;
