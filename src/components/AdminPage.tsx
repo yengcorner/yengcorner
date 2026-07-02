@@ -1117,7 +1117,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const sheetsUrl = localStorage.getItem('yeng_google_sheets_url');
     if (!sheetsUrl) return;
 
-    const itemsFormatted = ord.items.map(item => 
+    const itemsFormatted = (ord.items ?? []).map(item => 
       `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
     ).join(", ");
 
@@ -1205,7 +1205,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     ];
 
     const rows = ordersToExport.map(ord => {
-      const itemsDetail = ord.items.map(item => 
+      const itemsDetail = (ord.items ?? []).map(item => 
         `${item.product.name} (Phân loại: ${item.version}) x${item.quantity}`
       ).join(" | ");
 
@@ -2138,7 +2138,7 @@ function getColumnLetter(colIndex) {
             </div>
           ) : (
             <div className="space-y-6">
-              {filteredOrders.map((ord) => {
+              {filtered(orders ?? []).map((ord) => {
 
   const shipping = ord.shipping || { receiverName: 'Chưa có tên', phone: 'Chưa có SĐT', address: '' };
   const contact = ord.contact || { email: 'Chưa có email', phone: 'Chưa có SĐT' };
@@ -2243,7 +2243,7 @@ function getColumnLetter(colIndex) {
                       <div className="lg:col-span-5 space-y-4">
                         <h4 className="text-[10px] font-mono font-bold text-neutral-400 tracking-widest uppercase">📦 SẢN PHẨM KHÁCH ĐẶT:</h4>
                         <div className="space-y-3.5">
-                          {ord.items.map((item, idx) => {
+                          {(ord.items ?? []).map((item, idx) => {
                             const getPrice = (cItem: CartItem) => {
                               if (cItem.product.variantMatrix && cItem.product.variantMatrix.length > 0) {
                                 const matched = cItem.product.variantMatrix.find(v => {
@@ -2806,7 +2806,7 @@ function getColumnLetter(colIndex) {
                         <button
                           type="button"
                           onClick={() => {
-                            const allIds = orders.map(o => o.id);
+                            const allIds = (orders ?? []).map(o => o.id);
                             setSelectedOrderIds(allIds);
                             // Set first recipient
                             if (allIds.length > 0) {
@@ -2842,7 +2842,7 @@ function getColumnLetter(colIndex) {
                       {orders.length === 0 ? (
                         <div className="text-center py-6 text-xs text-neutral-400">Không tìm thấy đơn hàng nào</div>
                       ) : (
-                        orders.map((o) => {
+                        (orders ?? []).map((o) => {
                           const isChecked = selectedOrderIds.includes(o.id);
                           const productsSummary = o.items.map(i => `${i.product.name} (x${i.quantity})`).join(', ');
                           return (
@@ -2911,7 +2911,7 @@ function getColumnLetter(colIndex) {
                     </label>
                     <input
                       type="email"
-                      value={selectedOrderIds.length > 1 ? selectedOrderIds.map(id => orders.find(o => o.id === id)?.contact?.email).filter(Boolean).join(', ') : emailFormTo}
+                      value={selectedOrderIds.length > 1 ? (selectedOrderIds ?? []).map(id => orders.find(o => o.id === id)?.contact?.email).filter(Boolean).join(', ') : emailFormTo}
                       onChange={(e) => {
                         if (selectedOrderIds.length <= 1) {
                           setEmailFormTo(e.target.value);
