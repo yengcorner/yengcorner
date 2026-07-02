@@ -303,7 +303,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         const order = orders.find(o => o.id === orderId);
         if (!order) continue;
 
-        const recipientEmail = order.contact.email;
+        const recipientEmail = order.contact?.email ?? "";
         if (!recipientEmail) {
           failureCount++;
           continue;
@@ -663,7 +663,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: order.contact.email,
+            to: order.contact?.email ?? "",
             subject,
             bodyHtml
           })
@@ -675,7 +675,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           failCount++;
         }
       } catch (err) {
-        console.error(`Error sending bulk mail to ${order.contact.email}:`, err);
+        console.error(`Error sending bulk mail to ${order.contact?.email ?? "unknown"}:`, err);
         failCount++;
       }
 
@@ -993,8 +993,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         throw new Error(data.error || `Gmail API returned status ${response.status}`);
       }
 
-      showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact.email} thành công!`, "success");
-    } catch (err: any) {
+      showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact?.email ?? ""} thành công!`, "success");
       console.error(`Failed to send auto confirmation email for order #${orderId}:`, err);
       showToast(`⚠️ Không thể gửi email tự động: ${err.message || err}`, "error");
     }
@@ -1031,7 +1030,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         throw new Error(data.error || `Gmail API returned status ${response.status}`);
       }
 
-      showToast(`✉️ Đã gửi email thông báo vận chuyển tới ${order.contact.email} thành công!`, "success");
+      showToast(`✉️ Đã gửi email thông báo vận chuyển tới ${order.contact?.email ?? ""} thành công!`, "success");
     } catch (err: any) {
       console.error(`Failed to send shipping email for order #${orderId}:`, err);
       showToast(`⚠️ Không thể gửi email: ${err.message || err}`, "error");
@@ -1130,7 +1129,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     const payload = {
       timestamp: new Date(ord.timestamp).toLocaleString('vi-VN'),
-      email: ord.contact.email,
+      email: ord.contact?.email ?? "",
       snsLink: ord.contact.snsLink,
       quantity: totalQty,
       invoiceImage: ord.payment.invoiceImage || "",
@@ -2194,7 +2193,7 @@ function getColumnLetter(colIndex) {
                           </div>
                           <div className="flex items-center space-x-2">
                             <Mail className="w-4 h-4 text-neutral-400 shrink-0" />
-                            <span className="text-ellipsis overflow-hidden block">Mail: <a href={`mailto:${ord.contact.email}`} className="text-blue-700 hover:underline">{ord.contact.email}</a></span>
+                            <span className="text-ellipsis overflow-hidden block">Mail: <a href={`mailto:${ord.contact?.email ?? ""}`} className="text-blue-700 hover:underline">{ord.contact?.email ?? ""}</a></span>
                           </div>
                           {ord.contact.snsLink && ord.contact.snsLink !== 'Không có' && (
                             <div className="flex items-center space-x-2">
@@ -2775,7 +2774,7 @@ function getColumnLetter(colIndex) {
                               const content = getEmailContentForOrder(firstOrd, val);
                               setEmailFormSubject(content.subject);
                               setEmailFormBody(content.body);
-                              setEmailFormTo(firstOrd.contact.email);
+                              setEmailFormTo(firstOrd.contact?.email ?? "");
                             }
                           }
                         }}
@@ -2812,7 +2811,7 @@ function getColumnLetter(colIndex) {
                             if (allIds.length > 0) {
                               const firstOrd = orders.find(o => o.id === allIds[0]);
                               if (firstOrd) {
-                                setEmailFormTo(firstOrd.contact.email);
+                                setEmailFormTo(firstOrd.contact?.email ?? "");
                                 if (bulkTemplateType !== 'custom') {
                                   const content = getEmailContentForOrder(firstOrd, bulkTemplateType);
                                   setEmailFormSubject(content.subject);
@@ -2866,7 +2865,7 @@ function getColumnLetter(colIndex) {
                                   if (updated.length > 0) {
                                     const singleOrd = orders.find(ord => ord.id === updated[0]);
                                     if (singleOrd) {
-                                      setEmailFormTo(singleOrd.contact.email);
+                                      setEmailFormTo(singleOrd.contact?.email ?? "");
                                       if (bulkTemplateType !== 'custom') {
                                         const content = getEmailContentForOrder(singleOrd, bulkTemplateType);
                                         setEmailFormSubject(content.subject);
@@ -2911,7 +2910,7 @@ function getColumnLetter(colIndex) {
                     </label>
                     <input
                       type="email"
-                      value={selectedOrderIds.length > 1 ? selectedOrderIds.map(id => orders.find(o => o.id === id)?.contact.email).filter(Boolean).join(', ') : emailFormTo}
+                      value={selectedOrderIds.length > 1 ? selectedOrderIds.map(id => orders.find(o => o.id === id)?.contact?.email).filter(Boolean).join(', ') : emailFormTo}
                       onChange={(e) => {
                         if (selectedOrderIds.length <= 1) {
                           setEmailFormTo(e.target.value);
