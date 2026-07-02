@@ -1,26 +1,33 @@
 import { Request, Response } from 'express';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import 'dotenv/config';
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 export default async function handler(req: Request, res: Response) {
-  const transporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false,
-auth: {
-  user: 'taphoayeng12@gmail.com',
-  pass: process.env.SMTP_PASS,
-},
-  });
+  try {
+    const data = await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: 'taphoayeng12@gmail.com',  
+      subject: 'Có đơn hàng mới test nè bồ!',
+      html: '<strong>Hệ thống Resend đã chạy ngon lành cành đào rồi nhé!</strong>'
+    });
+
+    return res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+}
 
   try {
-    await transporter.sendMail({
-      from: '"Yeng corner" <taphoayeng12@gmail.com>',
+    const data = await resend.emails.send({
+      from: 'onboarding@resend.dev', 
       to: 'taphoayeng12@gmail.com', 
-      subject: 'Test gửi mail từ Yeng VN',
-      html: '<h1>Chào bồ!</h1><p>Hệ thống gửi mail đã hoạt động ngon lành.</p>'
+      subject: 'Test gửi mail từ Yeng VN via Resend',
+      html: '<h1>Chào bồ!</h1><p>Hệ thống gửi mail qua Resend đã hoạt động ngon lành cành đào.</p>'
     });
-    res.status(200).json({ message: 'Gửi mail thành công!' });
+
+    res.status(200).json({ message: 'Gửi mail thành công!', data });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
