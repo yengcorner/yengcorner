@@ -58,7 +58,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         fetch('/api/gmail/store-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: token, email: user.email })
+          body: JSON.stringify({ accessToken: token, email: user?.email })
         }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
       },
       () => {
@@ -138,7 +138,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         await fetch('/api/gmail/store-token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: res.accessToken, email: res.user.email })
+          body: JSON.stringify({ accessToken: res.accessToken, email: res.user?.email })
         });
       }
     } catch (err: any) {
