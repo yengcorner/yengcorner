@@ -721,11 +721,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Unique list of product names for dropdown filtering
   const uniqueProductNames = useMemo(() => {
     const names = new Set<string>();
-    products.forEach(p => {
+    products?.forEach(p => {
       if (p.name) names.add(p.name);
     });
-    orders.forEach(o => {
-      o.items.forEach(item => {
+    orders?.forEach(o => {
+      o.items?.forEach(item => {
         if (item.product?.name) {
           names.add(item.product.name);
         }
