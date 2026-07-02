@@ -9,6 +9,7 @@ export default async function handler(req: Request, res: Response) {
   const transporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
     port: 587,
+    secure: false,
     auth: {
       user: 'taphoayeng12@gmail.com',
       pass: process.env.SMTP_PASS,
