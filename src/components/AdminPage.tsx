@@ -192,7 +192,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   </div>
 
   <div style="margin-bottom: 20px;">
-    <p>Xin chào <strong>${order.shipping.receiverName}</strong>,</p>
+    <p>Xin chào <strong>${order.shipping?.receiverName || 'Khách hàng'}</strong>,</p>
     <p>Đơn hàng <strong>#${order.id}</strong> của bạn đã được khởi tạo thành công trên hệ thống. Dưới đây là thông tin chi tiết đơn hàng của bạn:</p>
   </div>
   
@@ -202,7 +202,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       <tbody>
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding: 6px 0; color: #64748b; font-weight: 500; width: 180px;">Tên người nhận:</td>
-          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${order.shipping.receiverName}</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${order.shipping?.receiverName}</td>
         </tr>
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Số điện thoại:</td>
@@ -270,7 +270,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   </div>
 
   <div style="margin-bottom: 20px;">
-    <p>Xin chào <strong>${order.shipping.receiverName}</strong>,</p>
+    <p>Xin chào <strong>${order.shipping?.receiverName}</strong>,</p>
     <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${order.shipping.method}</strong>.</p>
     <p>Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 15px;">${order.trackingCode || ''}</strong>.</p>
     <p>Bạn có thể kiểm tra hành trình đơn hàng nhé!</p>
@@ -1134,7 +1134,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       snsLink: ord.contact.snsLink,
       quantity: totalQty,
       invoiceImage: ord.payment.invoiceImage || "",
-      customerName: ord.shipping.receiverName,
+      customerName: ord.shipping?.receiverName || '',
       phone: ord.shipping.phone,
       address: ord.shipping.address,
       shippingMethod: ord.shipping.method,
@@ -1213,7 +1213,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         ord.id,
         new Date(ord.timestamp).toLocaleString('vi-VN'),
         ord.status,
-        ord.shipping.receiverName,
+        ord.shipping?.receiverName,
         `="${ord.shipping.phone}"`,
         ord.shipping.address,
         itemsDetail,
@@ -2182,7 +2182,7 @@ function getColumnLetter(colIndex) {
                         <div className="space-y-2.5 text-neutral-700">
                           <div className="flex items-center space-x-2">
                             <User className="w-4 h-4 text-neutral-400 shrink-0" />
-                            <span className="font-bold text-neutral-900">{ord.shipping.receiverName}</span>
+                            <span className="font-bold text-neutral-900">{ord.shipping?.receiverName || 'Chưa có tên'}</span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <Phone className="w-4 h-4 text-neutral-400 shrink-0" />
@@ -2883,7 +2883,7 @@ function getColumnLetter(colIndex) {
                                   }`}>{o.status}</span>
                                 </div>
                                 <div className="text-[11px] text-neutral-600 font-medium">
-                                  {o.shipping.receiverName} • <span className="font-mono text-[10px]">{o.contact.email}</span>
+                                  {o.shipping?.receiverName || 'Chưa có tên'} • <span className="font-mono text-[10px]">{o.contact?.email || 'Chưa có email'}</span>
                                 </div>
                                 <div className="text-[10px] text-neutral-400 truncate mt-0.5">
                                   Sản phẩm: {productsSummary}
