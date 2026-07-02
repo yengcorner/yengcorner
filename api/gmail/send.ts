@@ -1,7 +1,10 @@
-// ... các dòng import giữ nguyên
+import nodemailer from 'nodemailer'; 
+import { Request, Response } from 'express';
 
 export default async function handler(req: Request, res: Response) {
-  // ... phần kiểm tra method giữ nguyên
+  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+
+  const { to, subject, html } = req.body; 
 
   const transporter = nodemailer.createTransport({
     host: 'smtp-relay.brevo.com',
