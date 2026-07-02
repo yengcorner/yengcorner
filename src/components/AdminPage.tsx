@@ -271,7 +271,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   <div style="margin-bottom: 20px;">
     <p>Xin chào <strong>${order.shipping?.receiverName}</strong>,</p>
-    <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${order.shipping.method}</strong>.</p>
+    <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${ord.shipping?.method ?? ""}</strong>.</p>
     <p>Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 15px;">${order.trackingCode || ''}</strong>.</p>
     <p>Bạn có thể kiểm tra hành trình đơn hàng nhé!</p>
   </div>
@@ -1137,7 +1137,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       customerName: ord.shipping?.receiverName || '',
       phone: shipping.phone,
       address: ord.shipping?.address || "",
-      shippingMethod: ord.shipping.method,
+      shippingMethod: ord.shipping?.method ?? "",
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
       paidAmount: calculatedPaid,
       totalAmount: ord.subtotal,
@@ -1221,7 +1221,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         ord.subtotal,
         ord.contact?.email || "",
         ord.contact?.snsLink || "",
-        ord.shipping.method,
+        ord.shipping?.method ?? "",
         ord.note || ""
       ];
     });
@@ -2209,7 +2209,7 @@ function getColumnLetter(colIndex) {
                               {ord.shipping?.address || "Chưa có địa chỉ"}
                             </p>
                             <div className="flex items-center space-x-1.5 mt-1">
-                              <span className="text-[10px] font-mono text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold">Đơn vị: {ord.shipping.method}</span>
+                              <span className="text-[10px] font-mono text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold">Đơn vị: {ord.shipping?.method ?? ""}</span>
                             </div>
                           </div>
 
