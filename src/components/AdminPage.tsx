@@ -1135,7 +1135,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       quantity: totalQty,
       invoiceImage: ord.payment.invoiceImage || "",
       customerName: ord.shipping?.receiverName || '',
-      phone: ord.shipping.phone,
+      phone: shipping.phone,
       address: ord.shipping.address,
       shippingMethod: ord.shipping.method,
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
@@ -1214,7 +1214,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         new Date(ord.timestamp).toLocaleString('vi-VN'),
         ord.status,
         ord.shipping?.receiverName,
-        `="${ord.shipping.phone}"`,
+        `="${shipping.phone}"`,
         ord.shipping.address,
         itemsDetail,
         ord.payment.method,
@@ -2190,7 +2190,7 @@ function getColumnLetter(colIndex) {
                           </div>
                           <div className="flex items-center space-x-2">
                             <Phone className="w-4 h-4 text-neutral-400 shrink-0" />
-                            <span>SĐT: <a href={`tel:${ord.shipping.phone}`} className="font-mono font-bold text-blue-700 hover:underline">{ord.shipping.phone}</a></span>
+                            <span>SĐT: <a href={`tel:${shipping.phone}`} className="font-mono font-bold text-blue-700 hover:underline">{shipping.phone}</a></span>
                           </div>
                           <div className="flex items-center space-x-2">
                             <Mail className="w-4 h-4 text-neutral-400 shrink-0" />
