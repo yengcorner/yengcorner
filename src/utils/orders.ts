@@ -107,3 +107,31 @@ export function syncAllProductSpecificOrders(): void {
 export function resetOrdersToDefault(): OrderPayload[] {
   return [];
 }
+// --- ĐOẠN CODE XỬ LÝ COUPON TRÊN FIRESTORE ---
+const COUPON_COLLECTION = 'coupons';
+
+// 1. Hàm lấy danh sách Coupon từ Firestore
+export async function getCoupons(): Promise<Coupon[]> {
+  try {
+    const querySnapshot = await getDocs(collection(db, COUPON_COLLECTION));
+    const list: Coupon[] = [];
+    querySnapshot.forEach((docSnap) => {
+      list.push(docSnap.data() as Coupon);
+    });
+    return list;
+  } catch (e) {
+    console.error("Lỗi lấy danh sách coupon từ Firestore:", e);
+    return [];
+  }
+}
+
+// 2. Hàm lưu Coupon mới lên Firestore
+export async function saveCoupon(coupon: Coupon): Promise<void> {
+  try {
+    // Dùng chính mã code viết hoa (ví dụ: DISK10) làm ID tài liệu trên Firestore
+    const docRef = doc(db, COUPON_COLLECTION, coupon.code.toUpperCase());
+    await setDoc(docRef, coupon);
+  } catch (e) {
+    console.error("Lỗi lưu coupon lên Firestore:", e);
+  }
+}
