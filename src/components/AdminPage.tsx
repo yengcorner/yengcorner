@@ -1036,7 +1036,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   };
 
   // Add a manual custom order
-  const handleAddManualOrder = (e: React.FormEvent) => {
+  const handleAddManualOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     const product = products.find(p => p.id === Number(newOrderForm.productId)) || products[0];
     if (!product) return;
