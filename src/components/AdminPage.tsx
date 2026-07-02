@@ -2680,7 +2680,9 @@ function getColumnLetter(colIndex) {
                 </div>
                 <div className="text-left text-xs">
                   <span className="font-semibold text-neutral-800 block leading-tight">{gmailUser.displayName || "Admin"}</span>
-                  <span className="text-[10px] text-neutral-400 font-mono block">{gmailUser.email}</span>
+                  <span className="text-[10px] text-neutral-400 font-mono block">
+  {gmailUser?.email || "Chưa kết nối Gmail"}
+</span>
                 </div>
                 <button
                   onClick={handleAdminGmailLogout}
