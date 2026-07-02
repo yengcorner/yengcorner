@@ -2132,30 +2132,29 @@ function getColumnLetter(colIndex) {
 
           {/* Orders List cards flow layout */}
           {filteredOrders.length === 0 ? (
-            <div className="text-center py-16 bg-white border border-neutral-200 rounded-xl max-w-sm mx-auto shadow-sm space-y-3">
-              <p className="text-sm font-semibold text-neutral-500">🔍 Không tìm thấy đơn hàng nào phù hợp</p>
-              <p className="text-xs text-neutral-400">Hãy thử nhập từ khóa tìm kiếm khác hoặc thay đổi bộ lọc trạng thái.</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {(orders ?? [])
-  .filter(ord => /* điều kiện */)
-  .map((ord) => {
+  <div className="text-center py-16 bg-white border border-neutral-200 rounded-xl max-w-sm mx-auto shadow-sm space-y-3">
+    <p className="text-sm font-semibold text-neutral-500">🔍 Không tìm thấy đơn hàng nào phù hợp</p>
+    <p className="text-xs text-neutral-400">Hãy thử nhập từ khóa tìm kiếm khác hoặc thay đổi bộ lọc trạng thái.</p>
+  </div>
+) : (
+  <div className="space-y-6">
+    {/* Thay (orders ?? []) bằng filteredOrders để đồng bộ với điều kiện check trống ở trên */}
+    {filteredOrders.map((ord) => {
+      // Đống khai báo biến phải nằm TRONG vòng lặp .map() và TRƯỚC lệnh return
+      const shipping = ord.shipping || { receiverName: 'Chưa có tên', phone: 'Chưa có SĐT', address: '' };
+      const contact = ord.contact || { email: 'Chưa có email', phone: 'Chưa có SĐT' };
 
-  const shipping = ord.shipping || { receiverName: 'Chưa có tên', phone: 'Chưa có SĐT', address: '' };
-  const contact = ord.contact || { email: 'Chưa có email', phone: 'Chưa có SĐT' };
-
-  const statusColors: Record<string, string> = {
-    "Chờ xác nhận": "bg-yellow-50 text-yellow-700 border-yellow-200",
-    "Đã xác nhận": "bg-emerald-50 text-emerald-700 border-emerald-200",
-    "Đã vận chuyển": "bg-blue-50 text-blue-700 border-blue-200",
-    "Đang gom hàng": "bg-blue-55 text-blue-700 border-blue-200 animate-pulse",
-    "Đã bay kho Hàn": "bg-indigo-50 text-indigo-700 border-indigo-200",
-    "Đã về Sài Gòn": "bg-emerald-50 text-emerald-700 border-emerald-200",
-    "Đã giao cho đơn vị vận chuyển": "bg-amber-50 text-amber-700 border-amber-200",
-    "Đã hoàn thành": "bg-neutral-105 text-neutral-700 border-neutral-300",
-    "Đã hủy": "bg-red-50 text-red-700 border-red-200"
-  };
+      const statusColors: Record<string, string> = {
+        "Chờ xác nhận": "bg-yellow-50 text-yellow-700 border-yellow-200",
+        "Đã xác nhận": "bg-emerald-50 text-emerald-700 border-emerald-200",
+        "Đã vận chuyển": "bg-blue-50 text-blue-700 border-blue-200",
+        "Đang gom hàng": "bg-blue-50 text-blue-700 border-blue-200 animate-pulse", // Đã sửa màu bg-blue-55 lỗi thành bg-blue-50
+        "Đã bay kho Hàn": "bg-indigo-50 text-indigo-700 border-indigo-200",
+        "Đã về Sài Gòn": "bg-emerald-50 text-emerald-700 border-emerald-200",
+        "Đã giao cho đơn vị vận chuyển": "bg-amber-50 text-amber-700 border-amber-200",
+        "Đã hoàn thành": "bg-neutral-100 text-neutral-700 border-neutral-300", // Đã sửa màu bg-neutral-105 lỗi thành bg-neutral-100
+        "Đã hủy": "bg-red-50 text-red-700 border-red-200"
+      };
 
                 return (
                   <div 
