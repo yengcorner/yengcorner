@@ -1130,7 +1130,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const payload = {
       timestamp: new Date(ord.timestamp).toLocaleString('vi-VN'),
       email: ord.contact?.email ?? "",
-      snsLink: ord.contact.snsLink,
+      snsLink: ord.contact?.snsLink,
       quantity: totalQty,
       invoiceImage: ord.payment.invoiceImage || "",
       customerName: ord.shipping?.receiverName || '',
@@ -1218,8 +1218,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         itemsDetail,
         ord.payment.method,
         ord.subtotal,
-        ord.contact.email || "",
-        ord.contact.snsLink || "",
+        ord.contact?.email || "",
+        ord.contact?.snsLink || "",
         ord.shipping.method,
         ord.note || ""
       ];
@@ -2195,10 +2195,10 @@ function getColumnLetter(colIndex) {
                             <Mail className="w-4 h-4 text-neutral-400 shrink-0" />
                             <span className="text-ellipsis overflow-hidden block">Mail: <a href={`mailto:${ord.contact?.email ?? ""}`} className="text-blue-700 hover:underline">{ord.contact?.email ?? ""}</a></span>
                           </div>
-                          {ord.contact.snsLink && ord.contact.snsLink !== 'Không có' && (
+                          {ord.contact?.snsLink && ord.contact?.snsLink !== 'Không có' && (
                             <div className="flex items-center space-x-2">
                               <Link className="w-4 h-4 text-blue-400 shrink-0" />
-                              <span className="text-ellipsis overflow-hidden block">SNS: <a href={ord.contact.snsLink.startsWith('http') ? ord.contact.snsLink : `https://${ord.contact.snsLink}`} target="_blank" rel="noreferrer" className="text-blue-700 font-semibold hover:underline flex items-center space-x-0.5 inline-flex">{ord.contact.snsLink.replace(/^(https?:\/\/)?(www\.)?/, '')}</a></span>
+                              <span className="text-ellipsis overflow-hidden block">SNS: <a href={ord.contact?.snsLink.startsWith('http') ? ord.contact?.snsLink : `https://${ord.contact?.snsLink}`} target="_blank" rel="noreferrer" className="text-blue-700 font-semibold hover:underline flex items-center space-x-0.5 inline-flex">{ord.contact?.snsLink.replace(/^(https?:\/\/)?(www\.)?/, '')}</a></span>
                             </div>
                           )}
                           
