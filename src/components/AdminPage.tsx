@@ -593,7 +593,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     reader.readAsText(file);
   };
 
-  const handleApplyImports = () => {
+  const handleApplyImports = async () => { // 👈 Thêm chữ async ở đây
     if (parsedImports.length === 0) return;
 
     const updates = parsedImports.map(item => ({
@@ -601,7 +601,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       trackingCode: item.trackingCode
     }));
 
-    const updated = updateBulkOrdersTracking(updates);
+    // 🔄 Thêm chữ await và đợi Firebase xử lý xong rồi lấy data mới set vào giao diện
+    const updated = await updateBulkOrdersTracking(updates);
     setOrders(updated);
     showToast(`✅ Đã nhập thành công ${parsedImports.length} mã vận đơn từ file!`, 'success');
     setIsImportModalOpen(false);
@@ -955,15 +956,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   };
 
   // Change order status action handler
-  const handleUpdateStatus = (id: string, newStatus: string) => {
-    const updated = updateOrderStatus(id, newStatus);
+  const handleUpdateStatus = async (id: string, newStatus: string) => { // 👈 Thêm chữ async
+    const updated = await updateOrderStatus(id, newStatus);               // 👈 Thêm chữ await
     setOrders(updated);
   };
-
+  
   // Confirm order and send automatic confirmation email
   const handleConfirmOrder = async (orderId: string) => {
     // 1. Update order status to "Đã xác nhận"
-    const updated = updateOrderStatus(orderId, "Đã xác nhận");
+    const updated = await updateOrderStatus(orderId, "Đã xác nhận"); // 👈 Thêm chữ await ở đây
     setOrders(updated);
     showToast(`✅ Đã duyệt đơn hàng #${orderId} và cập nhật trạng thái thành "Đã xác nhận"!`, "success");
 
