@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders } from '../utils/orders';
+import { , updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs } from 'firebase/firestore';
@@ -885,7 +885,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Load orders and products on authentication
   useEffect(() => {
     if (isAuthenticated) {
-      setOrders(getOrders());
+      // 🔄 Dùng .then để đợi Firebase trả dữ liệu về rồi mới setOrders
+      ().then((data) => {
+        setOrders(data);
+      });
       
       const unsubscribe = subscribeProducts((list) => {
         setProducts((prev) => {
@@ -1067,9 +1070,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       timestamp: new Date().toISOString()
     };
 
-    saveOrder(manualOrder);
+    await saveOrder(manualOrder);
     syncOrderToGoogleSheets(manualOrder);
-    setOrders(getOrders());
+    getOrders().then((data) => {
+      setOrders(data);
+    });
     setIsCreateModalOpen(false);
     // Reset manual form
     setNewOrderForm({
