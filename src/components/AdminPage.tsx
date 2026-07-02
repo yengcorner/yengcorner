@@ -963,42 +963,43 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   
   // Confirm order and send automatic confirmation email
   const handleConfirmOrder = async (orderId: string) => {
-    // 1. Update order status to "Đã xác nhận"
-    const updated = await updateOrderStatus(orderId, "Đã xác nhận"); // 👈 Thêm chữ await ở đây
-    setOrders(updated);
-    showToast(`✅ Đã duyệt đơn hàng #${orderId} và cập nhật trạng thái thành "Đã xác nhận"!`, "success");
+  // 1. Update order status to "Đã xác nhận"
+  const updated = await updateOrderStatus(orderId, "Đã xác nhận"); // 👈 Thêm chữ await ở đây
+  setOrders(updated);
+  showToast(`✅ Đã duyệt đơn hàng #${orderId} và cập nhật trạng thái thành "Đã xác nhận"!`, "success");
 
-    // 2. Trigger automatic confirmation email
-    const order = updated.find(o => o.id === orderId);
-    if (!order) return;
+  // 2. Trigger automatic confirmation email
+  const order = updated.find(o => o.id === orderId);
+  if (!order) return;
 
-    try {
-      // Generate email body using 'deposit' template (the main confirmation email template)
-      const { subject, body } = getEmailContentForOrder(order, 'deposit');
-      
-      const response = await fetch('/api/gmail/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          to: order.contact?.email ?? "",
-          subject,
-          bodyHtml: body
-        })
-      });
+  try {
+    // Generate email body using 'deposit' template (the main confirmation email template)
+    const { subject, body } = getEmailContentForOrder(order, 'deposit');
+    
+    const response = await fetch('/api/gmail/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: order.contact?.email ?? "",
+        subject,
+        bodyHtml: body
+      })
+    });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || `Gmail API returned status ${response.status}`);
-      }
-
-      showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact?.email ?? ""} thành công!`, "success");
-      console.error(`Failed to send auto confirmation email for order #${orderId}:`, err);
-      showToast(`⚠️ Không thể gửi email tự động: ${err.message || err}`, "error");
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || `Gmail API returned status ${response.status}`);
     }
-  };
 
+    showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact?.email ?? ""} thành công!`, "success");
+
+  } catch (err: any) { // 👈 Thêm block catch bọc đúng chỗ này
+    console.error(`Failed to send auto confirmation email for order #${orderId}:`, err);
+    showToast(`⚠️ Không thể gửi email tự động: ${err.message || err}`, "error");
+  }
+};
   // Send shipping notification email
   const handleSendShippingEmail = async (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
