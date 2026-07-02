@@ -158,15 +158,37 @@ export default function WishlistPage({
                     >
                       CHI TIẾT
                     </button>
-                    <button 
-                      onClick={() => {
-                        addToCart(product, 1, product.versions && product.versions.length > 0 ? product.versions[0] : "");
-                      }}
-                      className="py-2.5 px-3 bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8] text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm"
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5 text-[#1A73E8]" />
-                      <span>MUA NGAY</span>
-                    </button>
+                    {(() => {
+                      const isSoldOut = 
+                        product.status?.toLowerCase() === 'sold_out' || 
+                        product.status?.toLowerCase() === 'sold out' || 
+                        product.status === 'Hết hàng' ||
+                        product.tag?.toLowerCase().trim() === 'sold_out' || 
+                        product.tag?.toLowerCase().trim() === 'sold out' || 
+                        product.tag?.toLowerCase().trim() === 'hết hàng' ||
+                        (product.stock !== undefined && product.stock <= 0);
+
+                      return (
+                        <button 
+                          onClick={() => {
+                            if (isSoldOut) {
+                              alert("⚠️ Sản phẩm này đã hết hàng!");
+                              return;
+                            }
+                            addToCart(product, 1, product.versions && product.versions.length > 0 ? product.versions[0] : "");
+                          }}
+                          disabled={isSoldOut}
+                          className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
+                            isSoldOut
+                              ? "bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed"
+                              : "bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8]"
+                          }`}
+                        >
+                          <ShoppingBag className={`w-3.5 h-3.5 ${isSoldOut ? "text-neutral-400" : "text-[#1A73E8]"}`} />
+                          <span>{isSoldOut ? "HẾT HÀNG" : "MUA NGAY"}</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
