@@ -2138,7 +2138,9 @@ function getColumnLetter(colIndex) {
             </div>
           ) : (
             <div className="space-y-6">
-              {filtered(orders ?? []).map((ord) => {
+              {(orders ?? [])
+  .filter(ord => /* điều kiện */)
+  .map((ord) => {
 
   const shipping = ord.shipping || { receiverName: 'Chưa có tên', phone: 'Chưa có SĐT', address: '' };
   const contact = ord.contact || { email: 'Chưa có email', phone: 'Chưa có SĐT' };
