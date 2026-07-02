@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs } from 'firebase/firestore';
@@ -401,32 +401,31 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setEmailFormBody(content.body);
   };
 
-  // Coupons state
-  const [coupons, setCoupons] = useState<Coupon[]>(() => {
-    const saved = localStorage.getItem('yeng_coupons');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return [
-      {
-        code: 'YENGNEW',
-        expiryDate: '2026-12-31',
-        applicableProducts: 'Tất cả danh mục',
-        maxUsage: 100,
-        discountType: 'percentage',
-        discountValue: 10,
-        usedCount: 0
-      }
-    ];
-  });
+// Coupons state - Ban đầu để mảng rỗng, dữ liệu sẽ được tải từ Firebase về sau
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
 
+  // 🔄 Tự động tải danh sách Coupon từ Firebase khi mở trang Admin (Gộp chung vào useEffect có sẵn của bồ)
   useEffect(() => {
-    localStorage.setItem('yeng_coupons', JSON.stringify(coupons));
-  }, [coupons]);
+    if (isAuthenticated) {
+      getCoupons().then((data) => {
+        // Nếu trên Firebase chưa có coupon nào, nạp mã mặc định YENGNEW cho bồ luôn
+        if (data.length === 0) {
+          const defaultCoupon: Coupon = {
+            code: 'YENGNEW',
+            expiryDate: '2026-12-31',
+            applicableProducts: 'Tất cả danh mục',
+            maxUsage: 100,
+            discountType: 'percentage',
+            discountValue: 10,
+            usedCount: 0
+          };
+          saveCoupon(defaultCoupon).then(() => setCoupons([defaultCoupon]));
+        } else {
+          setCoupons(data);
+        }
+      });
+    }
+  }, [isAuthenticated]);
 
   const [isCouponModalOpen, setIsCouponModalOpen] = useState(false);
   const [couponForm, setCouponForm] = useState({
@@ -438,7 +437,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     discountValue: 10
   });
 
-  const handleAddCoupon = (e: React.FormEvent) => {
+  // ➕ Hàm xử lý Thêm Coupon mới lên Firebase
+  const handleAddCoupon = async (e: React.FormEvent) => { // 👈 Đã thêm async
     e.preventDefault();
     if (!couponForm.code.trim()) {
       showToast('❌ Vui lòng nhập mã giảm giá!', 'error');
@@ -451,14 +451,21 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
     const newCoupon: Coupon = {
       code: couponForm.code.toUpperCase().replace(/\s+/g, ''),
-      expiryDate: couponForm.expiryDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // default 30 days
+      expiryDate: couponForm.expiryDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       applicableProducts: couponForm.applicableProducts,
       maxUsage: Number(couponForm.maxUsage) || 100,
       discountType: couponForm.discountType,
       discountValue: Number(couponForm.discountValue) || 0,
       usedCount: 0
     };
-    setCoupons([...coupons, newCoupon]);
+
+    // Lưu thẳng lên mạng Firebase Firestore và đợi xong
+    await saveCoupon(newCoupon); 
+    
+    // Tải lại danh sách mới từ Firebase để cập nhật giao diện
+    const freshCoupons = await getCoupons();
+    setCoupons(freshCoupons);
+
     setIsCouponModalOpen(false);
     setCouponForm({
       code: '',
@@ -471,10 +478,21 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     showToast('🎉 Thêm mã giảm giá thành công!', 'success');
   };
 
-  const handleDeleteCoupon = (code: string) => {
+  // 🗑️ Hàm xử lý Xóa Coupon khỏi Firebase
+  const handleDeleteCoupon = async (code: string) => { // 👈 Đã thêm async
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn xóa mã giảm giá ${code}?`)) {
-      setCoupons(coupons.filter(c => c.code !== code));
-      showToast('🗑️ Đã xóa mã giảm giá!', 'info');
+      try {
+        // Gọi thẳng lệnh xóa tài liệu trên Firebase Firestore
+        const { deleteDoc, doc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'coupons', code.toUpperCase()));
+        
+        // Cập nhật lại giao diện ngay lập tức
+        setCoupons(coupons.filter(c => c.code !== code));
+        showToast('🗑️ Đã xóa mã giảm giá!', 'info');
+      } catch (e) {
+        console.error("Lỗi khi xóa coupon:", e);
+        showToast('❌ Xóa mã giảm giá thất bại!', 'error');
+      }
     }
   };
 
