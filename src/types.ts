@@ -26,6 +26,7 @@ export interface Product {
   variationName?: string;
   variations?: { name: string; price: number; description?: string; stock?: number }[];
   stock?: number;
+  status?: string;
   hasInsurance?: boolean;
   
   // Multi-tier variants properties
