@@ -1,3 +1,102 @@
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
+import { Product } from '../types';
+import { getProducts, subscribeProducts } from '../utils/products';
+
+interface HomePageProps {
+  navigateToProduct: (id: number) => void;
+  addToCart: (product: Product, quantity?: number, version?: string) => void;
+  setCurrentPage: (page: string) => void;
+  wishlist: number[];
+  toggleWishlist: (id: number) => void;
+}
+
+export default function HomePage({ 
+  navigateToProduct, 
+  addToCart, 
+  setCurrentPage, 
+  wishlist, 
+  toggleWishlist 
+}: HomePageProps) {
+  // Filter out retired K-POP category
+  const [productsList, setProductsList] = useState<Product[]>(() => 
+    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
+  );
+
+  useEffect(() => {
+    const unsubscribe = subscribeProducts((list) => {
+      setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
+    });
+    return unsubscribe;
+  }, []);
+
+  // Show only 4 to 8 featured products on HomePage
+  const displayProducts = productsList.slice(0, 8);
+
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
+  };
+
+  return (
+    <div className="space-y-16">
+      {/* Premium Hero Section */}
+      <section className="relative overflow-hidden bg-[#e8f0ff] text-neutral-900 rounded-[24px] border border-blue-200 p-8 sm:p-12 lg:p-16">
+        {/* Subtle grid pattern background overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e40af0a_1px,transparent_1px),linear-gradient(to_bottom,#1e40af0a_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none" />
+        
+        {/* Ambience light effects - centered glowing planets */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-[20%] -translate-y-1/2 w-[350px] h-[350px] sm:w-[500px] sm:h-[500px] bg-white rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-[30%] -translate-y-1/2 w-[220px] h-[220px] sm:w-[320px] sm:h-[320px] bg-blue-100 rounded-full blur-[60px] pointer-events-none" />
+
+        <div className="relative max-w-3xl space-y-6">
+          <div className="inline-flex items-center space-x-2 bg-white text-blue-900 text-xs px-4 py-2 rounded-full border border-blue-300 font-mono tracking-wider select-none">
+            <span>UY TÍN • CHẤT LƯỢNG</span>
+          </div>
+
+          <motion.h1 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-4xl sm:text-5xl lg:text-6.5xl font-display font-bold tracking-tight leading-tight uppercase text-blue-950"
+          >
+            YENG CORNER
+          </motion.h1>
+
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+            className="text-sm sm:text-base text-neutral-700 leading-relaxed font-sans max-w-2xl whitespace-pre-line"
+          >
+            Xin chào ! Shop mình được thành lập từ năm 2019 và nhờ sự ủng hộ và yêu quý của các bạn mà mình vẫn có động lực để tiếp tục phát triển hơn ♡{"\n"}
+            Mình nhận order all Korea.
+          </motion.p>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4, duration: 0.4 }}
+            className="pt-4 flex flex-wrap gap-4"
+          >
+            <button 
+              onClick={() => setCurrentPage('shop')}
+              className="px-7 py-3 sm:px-8 sm:py-3.5 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-bold rounded-xl hover:bg-blue-100/50 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <span>MUA SẮM NGAY</span>
+              <span className="text-lg font-normal">→</span>
+            </button>
             <button 
               onClick={() => setCurrentPage('rules')}
               className="px-6 py-3 sm:px-7 sm:py-3.5 bg-[#e8f0ff] border border-blue-300 text-blue-900 font-semibold rounded-xl hover:bg-white active:scale-95 transition-all text-sm uppercase"
@@ -111,16 +210,29 @@
                         >
                           CHI TIẾT
                         </button>
-                                                {(() => {
-                          const quickBuyVersion = getQuickBuyVersion(product);
-                          const isSoldOut = quickBuyVersion === null;
+                        {(() => {
+                          const isSoldOut = 
+                            product.status?.toLowerCase() === 'sold_out' || 
+                            product.status?.toLowerCase() === 'sold out' || 
+                            product.status === 'Hết hàng' ||
+                            product.tag?.toLowerCase().trim() === 'sold_out' || 
+                            product.tag?.toLowerCase().trim() === 'sold out' || 
+                            product.tag?.toLowerCase().trim() === 'hết hàng' ||
+                            (product.stock !== undefined && product.stock <= 0);
 
                           return (
-                            <button
-                              onClick={() => addToCart(product, 1, quickBuyVersion ?? "")}
+                            <button 
+                              onClick={() => {
+                                if (isSoldOut) {
+                                  alert("⚠️ Sản phẩm này đã hết hàng!");
+                                  return;
+                                }
+                                addToCart(product, 1, product.versions && product.versions.length > 0 ? product.versions[0] : "");
+                              }}
+                              disabled={isSoldOut}
                               className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
                                 isSoldOut
-                                  ? "bg-neutral-100 border border-neutral-200 text-neutral-400 hover:bg-neutral-200"
+                                  ? "bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed"
                                   : "bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8]"
                               }`}
                             >
