@@ -982,7 +982,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: order.contact.email,
+          to: order.contact?.email ?? "",
           subject,
           bodyHtml: body
         })
@@ -1019,7 +1019,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: order.contact.email,
+          to: order.contact?.email ?? "",
           subject,
           bodyHtml: body
         })
