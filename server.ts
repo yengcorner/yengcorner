@@ -7,6 +7,9 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
+import storeTokenHandler from "./api/gmail/store-token";
+import clearTokenHandler from "./api/gmail/clear-token";
+import sendHandler from "./api/gmail/send";
 
 const firebaseConfig = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
@@ -45,68 +48,10 @@ app.use(express.json({ limit: '10mb' }));
     : path.join(process.cwd(), "gmail-token.json");
 
   // Endpoint to store Gmail credentials securely on the server
-  app.post("/api/gmail/store-token", async (req, res) => {
-    const { accessToken, email } = req.body;
-    if (!accessToken || !email) {
-      return res.status(400).json({ error: "Missing accessToken or email" });
-    }
-
-    try {
-      // 1. Try to write to local file cache (non-blocking)
-      try {
-        fs.writeFileSync(
-          TOKEN_PATH,
-          JSON.stringify({
-            accessToken,
-            email,
-            updatedAt: new Date().toISOString(),
-          }, null, 2)
-        );
-        console.log(`[Gmail Auth] Token cached locally at ${TOKEN_PATH}`);
-      } catch (cacheErr: any) {
-        console.warn(`[Gmail Auth] Could not write to local cache (non-blocking):`, cacheErr.message);
-      }
-
-      // 2. Write to Firestore for durable persistence across restarts and rebuilds
-      try {
-        await setDoc(gmailDocRef, {
-          accessToken,
-          email,
-          updatedAt: new Date().toISOString(),
-        });
-        console.log(`[Gmail Auth] Token stored successfully in Firestore for ${email}`);
-      } catch (fsErr: any) {
-        console.warn(`[Gmail Auth] Firestore write failed:`, fsErr.message);
-      }
-
-      res.json({ success: true, email });
-    } catch (err: any) {
-      console.error("[Gmail Auth] Error storing token:", err);
-      res.status(500).json({ error: "Could not save Gmail token: " + err.message });
-    }
-  });
+  app.post("/api/gmail/store-token", storeTokenHandler);
 
   // Endpoint to clear stored Gmail credentials
-  app.post("/api/gmail/clear-token", async (req, res) => {
-    try {
-      try {
-        if (fs.existsSync(TOKEN_PATH)) {
-          fs.unlinkSync(TOKEN_PATH);
-        }
-      } catch (cacheErr: any) {
-        console.warn(`[Gmail Auth] Could not delete local cache (non-blocking):`, cacheErr.message);
-      }
-      // Delete from Firestore too
-      try {
-        await deleteDoc(gmailDocRef);
-      } catch (fsErr: any) {
-        console.warn(`[Gmail Auth] Firestore delete failed:`, fsErr.message);
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  app.post("/api/gmail/clear-token", clearTokenHandler);
 
   // Endpoint to retrieve active Gmail connection status
   app.get("/api/gmail/status", async (req, res) => {
@@ -327,117 +272,7 @@ app.use(express.json({ limit: '10mb' }));
   });
 
   // Secure API endpoint to send emails using stored Gmail token
-  app.post("/api/gmail/send", async (req, res) => {
-    const { to, subject, bodyHtml } = req.body;
-
-    if (!to || !subject || !bodyHtml) {
-      return res.status(400).json({ error: "Thiếu thông tin người nhận, tiêu đề hoặc nội dung email." });
-    }
-
-    let tokenData;
-
-    // 1. Try reading local file cache
-    try {
-      if (fs.existsSync(TOKEN_PATH)) {
-        tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      }
-    } catch (err: any) {
-      console.warn("Could not read local gmail token cache:", err.message);
-    }
-
-    // 2. If not found in local file, restore from Firestore automatically
-    if (!tokenData) {
-      try {
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          tokenData = docSnap.data();
-          // Cache it locally on disk
-          try {
-            fs.writeFileSync(
-              TOKEN_PATH,
-              JSON.stringify(tokenData, null, 2)
-            );
-          } catch (cacheErr: any) {
-            console.warn("Could not cache token locally:", cacheErr.message);
-          }
-          console.log(`[Gmail Send] Restored Gmail token for ${tokenData.email} from Firestore`);
-        }
-      } catch (err: any) {
-        console.error("Error loading Gmail token from Firestore:", err.message);
-      }
-    }
-
-    if (!tokenData) {
-      return res.status(400).json({
-        error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
-      });
-    }
-
-    const { accessToken, email: senderEmail } = tokenData;
-
-    try {
-      // Construct MIME message with UTF-8
-      const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
-      const rawParts = [
-        `From: "Yeng Corner" <${senderEmail}>`,
-        `To: ${to}`,
-        `Subject: ${subjectEncoded}`,
-        "MIME-Version: 1.0",
-        "Content-Type: text/html; charset=utf-8",
-        "",
-        bodyHtml
-      ];
-      const raw = rawParts.join("\r\n");
-      const base64Safe = Buffer.from(raw)
-        .toString("base64")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
-
-      console.log(`[Gmail Send] Attempting to send email to ${to} using token of ${senderEmail}`);
-
-      const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ raw: base64Safe }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[Gmail Send] Google API error response:", errorText);
-
-        if (response.status === 401) {
-          return res.status(401).json({
-            error: "Phiên kết nối Gmail đã hết hạn (401 Unauthorized). Vui lòng đăng nhập lại Gmail Center ở trang Admin."
-          });
-        }
-
-        let errorMsg = `Google API trả về lỗi ${response.status}`;
-        try {
-          const parsed = JSON.parse(errorText);
-          if (parsed.error && parsed.error.message) {
-            errorMsg = parsed.error.message;
-          }
-        } catch (e) {}
-
-        return res.status(response.status).json({
-          error: `Lỗi từ Google Mail API: ${errorMsg}`
-        });
-      }
-
-      const resultData = await response.json();
-      console.log(`[Gmail Send] Email sent successfully to ${to}, Message ID: ${resultData.id}`);
-      res.json({ success: true, messageId: resultData.id });
-    } catch (error: any) {
-      console.error("[Gmail Send] Server error during Gmail send:", error);
-      res.status(500).json({
-        error: `Lỗi hệ thống khi gửi email: ${error.message || error}`
-      });
-    }
-  });
+  app.post("/api/gmail/send", sendHandler);
 
   // GET subscription groups list
   app.get("/api/subscribers/groups", async (req, res) => {
@@ -587,83 +422,83 @@ app.use(express.json({ limit: '10mb' }));
 
   // API endpoint to notify all subscribers when a new product is added
   app.post("/api/subscribers/notify-new-product", async (req, res) => {
-    const { product, emails } = req.body;
-    if (!product || !product.id || !product.name) {
-      return res.status(400).json({ error: "Thông tin sản phẩm không hợp lệ." });
-    }
-
-    let finalEmails = emails;
-
-    // Fetch subscribers securely from Admin SDK or Client SDK if finalEmails is empty
-    if (!Array.isArray(finalEmails) || finalEmails.length === 0) {
-      try {
-        const list: string[] = [];
-
-        if (dbAdmin) {
-          const subscribersSnap = await dbAdmin.collection("subscriber_emails").get();
-          subscribersSnap.forEach((docSnap: any) => {
-            const data = docSnap.data();
-            if (data && data.email) {
-              list.push(data.email);
-            }
-          });
-          console.log(`[Admin Secure Query] Fetched all ${list.length} subscribers on server side.`);
-        } else {
-          const subscribersSnap = await getDocs(collection(db, "subscriber_emails"));
-          subscribersSnap.forEach((docSnap: any) => {
-            const data = docSnap.data();
-            if (data && data.email) {
-              list.push(data.email);
-            }
-          });
-          console.log(`[Client Query] Fetched all ${list.length} subscribers from Firestore.`);
-        }
-        finalEmails = list;
-      } catch (err: any) {
-        console.error("Error fetching subscribers on server side:", err.message);
-      }
-    }
-
-    if (!Array.isArray(finalEmails) || finalEmails.length === 0) {
-      return res.json({ success: true, sentCount: 0, message: "Không có khách hàng nào đăng ký nhận tin." });
-    }
-
-    let tokenData;
-
-    // 1. Try reading local file cache
-    if (fs.existsSync(TOKEN_PATH)) {
-      try {
-        tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      } catch (err: any) {
-        console.error("Could not parse local gmail token:", err);
-      }
-    }
-
-    // 2. If not found in local file, restore from Firestore automatically
-    if (!tokenData) {
-      try {
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          tokenData = docSnap.data();
-          fs.writeFileSync(
-            TOKEN_PATH,
-            JSON.stringify(tokenData, null, 2)
-          );
-        }
-      } catch (err: any) {
-        console.error("Error loading Gmail token from Firestore:", err.message);
-      }
-    }
-
-    if (!tokenData) {
-      return res.status(400).json({
-        error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
-      });
-    }
-
-    const { accessToken, email: senderEmail } = tokenData;
-
     try {
+      const { product, emails } = req.body;
+      if (!product || !product.id || !product.name) {
+        return res.status(400).json({ error: "Thông tin sản phẩm không hợp lệ." });
+      }
+
+      let finalEmails = emails;
+
+      // Fetch subscribers securely from Admin SDK or Client SDK if finalEmails is empty
+      if (!Array.isArray(finalEmails) || finalEmails.length === 0) {
+        try {
+          const list: string[] = [];
+
+          if (dbAdmin) {
+            const subscribersSnap = await dbAdmin.collection("subscriber_emails").get();
+            subscribersSnap.forEach((docSnap: any) => {
+              const data = docSnap.data();
+              if (data && data.email) {
+                list.push(data.email);
+              }
+            });
+            console.log(`[Admin Secure Query] Fetched all ${list.length} subscribers on server side.`);
+          } else {
+            const subscribersSnap = await getDocs(collection(db, "subscriber_emails"));
+            subscribersSnap.forEach((docSnap: any) => {
+              const data = docSnap.data();
+              if (data && data.email) {
+                list.push(data.email);
+              }
+            });
+            console.log(`[Client Query] Fetched all ${list.length} subscribers from Firestore.`);
+          }
+          finalEmails = list;
+        } catch (err: any) {
+          console.error("Error fetching subscribers on server side:", err.message);
+        }
+      }
+
+      if (!Array.isArray(finalEmails) || finalEmails.length === 0) {
+        return res.json({ success: true, sentCount: 0, message: "Không có khách hàng nào đăng ký nhận tin." });
+      }
+
+      let tokenData;
+
+      // 1. Try reading local file cache
+      if (fs.existsSync(TOKEN_PATH)) {
+        try {
+          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+        } catch (err: any) {
+          console.error("Could not parse local gmail token:", err);
+        }
+      }
+
+      // 2. If not found in local file, restore from Firestore automatically
+      if (!tokenData) {
+        try {
+          const docSnap = await getDoc(gmailDocRef);
+          if (docSnap.exists()) {
+            tokenData = docSnap.data();
+            fs.writeFileSync(
+              TOKEN_PATH,
+              JSON.stringify(tokenData, null, 2)
+            );
+          }
+        } catch (err: any) {
+          console.error("Error loading Gmail token from Firestore:", err.message);
+        }
+      }
+
+      if (!tokenData) {
+        return res.status(400).json({
+          error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
+        });
+      }
+
+      const { accessToken, email: senderEmail } = tokenData;
+
       // 2. Format product link
       const protocol = req.headers["x-forwarded-proto"] || "https";
       const host = req.get("host");
@@ -725,7 +560,7 @@ app.use(express.json({ limit: '10mb' }));
           </tr>
         </table>
       </div>
-
+ 
       <!-- Call To Action Button -->
       <div style="text-align: center; margin: 35px 0 20px 0;">
         <a href="{LINK_SAN_PHAM}" style="background-color: #2563eb; color: #ffffff; padding: 14px 40px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 30px; display: inline-block; box-shadow: 0 6px 18px rgba(37,99,235,0.2); transition: all 0.2s ease-in-out; letter-spacing: 0.5px;">
@@ -733,7 +568,7 @@ app.use(express.json({ limit: '10mb' }));
         </a>
       </div>
     </div>
-
+ 
     <!-- Footer block with notice -->
     <div style="background-color: #f0f5ff; padding: 25px; text-align: center; font-size: 12px; color: #4a5568; border-top: 1px solid #e1ecfe; line-height: 1.6;">
       <p style="margin: 0 0 10px 0; font-weight: 600; color: #b91c1c; background-color: #fef2f2; padding: 8px; border-radius: 6px; display: inline-block; border: 1px solid #fee2e2;">
@@ -805,10 +640,10 @@ app.use(express.json({ limit: '10mb' }));
       }
 
       console.log(`[Notify New Product] Finished sending notification: ${sentCount} sent, ${failCount} failed.`);
-      res.json({ success: true, sentCount, failCount, totalSubscribers: emails.length });
+      res.json({ success: true, sentCount, failCount, totalSubscribers: (emails || []).length });
     } catch (err: any) {
       console.error("[Notify New Product] General Error:", err);
-      res.status(500).json({ error: "Lỗi hệ thống khi gửi email thông báo: " + err.message });
+      res.status(500).json({ success: false, error: "Lỗi hệ thống khi gửi email thông báo: " + err.message });
     }
   });
 
