@@ -10,9 +10,10 @@ interface TrackOrderPageProps {
 export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [matchingOrders, setMatchingOrders] = useState<OrderPayload[]>([]);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanSearchPhone = phoneNumber.trim().replace(/[^0-9]/g, '');
     
@@ -21,18 +22,26 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
       return;
     }
 
-    const allOrders = getOrders();
-    const filtered = allOrders.filter(o => {
-      const orderPhone = (o.shipping?.phone || '').trim().replace(/[^0-9]/g, '');
-      if (!orderPhone) return false;
-      // Match exactly or check if one is suffix/prefix of another for robust search
-      return orderPhone === cleanSearchPhone || 
-             (orderPhone.length >= 9 && cleanSearchPhone.endsWith(orderPhone)) ||
-             (cleanSearchPhone.length >= 9 && orderPhone.endsWith(cleanSearchPhone));
-    });
+    setLoading(true);
+    try {
+      const allOrders = await getOrders();
+      const filtered = allOrders.filter(o => {
+        const orderPhone = (o.shipping?.phone || '').trim().replace(/[^0-9]/g, '');
+        if (!orderPhone) return false;
+        // Match exactly or check if one is suffix/prefix of another for robust search
+        return orderPhone === cleanSearchPhone || 
+               (orderPhone.length >= 9 && cleanSearchPhone.endsWith(orderPhone)) ||
+               (cleanSearchPhone.length >= 9 && orderPhone.endsWith(cleanSearchPhone));
+      });
 
-    setMatchingOrders(filtered);
-    setSearched(true);
+      setMatchingOrders(filtered);
+      setSearched(true);
+    } catch (err) {
+      console.error("Lỗi tra cứu đơn hàng:", err);
+      alert("❌ Đã xảy ra lỗi khi tra cứu đơn hàng. Vui lòng thử lại sau.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getPaymentSummary = (order: OrderPayload) => {
@@ -123,10 +132,24 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
           <button
             id="searchSubmitBtn"
             type="submit"
-            className="w-full sm:w-auto px-8 py-3 bg-[#1e40af] hover:bg-[#1e3a8a] text-white text-xs font-display font-bold tracking-widest uppercase rounded-xl shadow-md hover:shadow-lg active:scale-95 transition-all flex items-center justify-center space-x-2"
+            disabled={loading}
+            className={`w-full sm:w-auto px-8 py-3 text-white text-xs font-display font-bold tracking-widest uppercase rounded-xl shadow-md transition-all flex items-center justify-center space-x-2 ${
+              loading 
+                ? 'bg-neutral-400 cursor-not-allowed' 
+                : 'bg-[#1e40af] hover:bg-[#1e3a8a] hover:shadow-lg active:scale-95'
+            }`}
           >
-            <Search className="w-4 h-4" />
-            <span>TRA CỨU NGAY</span>
+            {loading ? (
+              <>
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                <span>ĐANG TRA CỨU...</span>
+              </>
+            ) : (
+              <>
+                <Search className="w-4 h-4" />
+                <span>TRA CỨU NGAY</span>
+              </>
+            )}
           </button>
         </form>
       </div>
