@@ -7,7 +7,10 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
-import firebaseConfig from "./firebase-applet-config.json";
+
+const firebaseConfig = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
+);
 
 function convertToSlug(text: string): string {
   if (!text) return "";
@@ -37,7 +40,9 @@ const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 // Middleware to parse JSON payloads
 app.use(express.json({ limit: '10mb' }));
 
-  const TOKEN_PATH = path.join(process.cwd(), "gmail-token.json");
+  const TOKEN_PATH = process.env.VERCEL 
+    ? "/tmp/gmail-token.json" 
+    : path.join(process.cwd(), "gmail-token.json");
 
   // Endpoint to store Gmail credentials securely on the server
   app.post("/api/gmail/store-token", async (req, res) => {
@@ -47,15 +52,20 @@ app.use(express.json({ limit: '10mb' }));
     }
 
     try {
-      // 1. Write to local file cache
-      fs.writeFileSync(
-        TOKEN_PATH,
-        JSON.stringify({
-          accessToken,
-          email,
-          updatedAt: new Date().toISOString(),
-        }, null, 2)
-      );
+      // 1. Try to write to local file cache (non-blocking)
+      try {
+        fs.writeFileSync(
+          TOKEN_PATH,
+          JSON.stringify({
+            accessToken,
+            email,
+            updatedAt: new Date().toISOString(),
+          }, null, 2)
+        );
+        console.log(`[Gmail Auth] Token cached locally at ${TOKEN_PATH}`);
+      } catch (cacheErr: any) {
+        console.warn(`[Gmail Auth] Could not write to local cache (non-blocking):`, cacheErr.message);
+      }
 
       // 2. Write to Firestore for durable persistence across restarts and rebuilds
       try {
@@ -66,13 +76,12 @@ app.use(express.json({ limit: '10mb' }));
         });
         console.log(`[Gmail Auth] Token stored successfully in Firestore for ${email}`);
       } catch (fsErr: any) {
-        console.warn(`[Gmail Auth] Firestore write failed (falling back to local file cache):`, fsErr.message);
+        console.warn(`[Gmail Auth] Firestore write failed:`, fsErr.message);
       }
 
-      console.log(`[Gmail Auth] Token stored successfully in local file for ${email}`);
       res.json({ success: true, email });
     } catch (err: any) {
-      console.error("[Gmail Auth] Error storing token in local file:", err);
+      console.error("[Gmail Auth] Error storing token:", err);
       res.status(500).json({ error: "Could not save Gmail token: " + err.message });
     }
   });
@@ -80,8 +89,12 @@ app.use(express.json({ limit: '10mb' }));
   // Endpoint to clear stored Gmail credentials
   app.post("/api/gmail/clear-token", async (req, res) => {
     try {
-      if (fs.existsSync(TOKEN_PATH)) {
-        fs.unlinkSync(TOKEN_PATH);
+      try {
+        if (fs.existsSync(TOKEN_PATH)) {
+          fs.unlinkSync(TOKEN_PATH);
+        }
+      } catch (cacheErr: any) {
+        console.warn(`[Gmail Auth] Could not delete local cache (non-blocking):`, cacheErr.message);
       }
       // Delete from Firestore too
       try {
@@ -99,13 +112,17 @@ app.use(express.json({ limit: '10mb' }));
   app.get("/api/gmail/status", async (req, res) => {
     try {
       // 1. Try reading from local file cache
-      if (fs.existsSync(TOKEN_PATH)) {
-        const data = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        return res.json({
-          connected: true,
-          email: data.email,
-          updatedAt: data.updatedAt,
-        });
+      try {
+        if (fs.existsSync(TOKEN_PATH)) {
+          const data = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+          return res.json({
+            connected: true,
+            email: data.email,
+            updatedAt: data.updatedAt,
+          });
+        }
+      } catch (cacheErr: any) {
+        console.warn(`[Gmail Auth] Local cache read failed (non-blocking):`, cacheErr.message);
       }
 
       // 2. If missing on local disk, check Firestore
@@ -114,10 +131,14 @@ app.use(express.json({ limit: '10mb' }));
         if (docSnap.exists()) {
           const data = docSnap.data();
           // Write back to local cache
-          fs.writeFileSync(
-            TOKEN_PATH,
-            JSON.stringify(data, null, 2)
-          );
+          try {
+            fs.writeFileSync(
+              TOKEN_PATH,
+              JSON.stringify(data, null, 2)
+            );
+          } catch (cacheErr: any) {
+            console.warn(`[Gmail Auth] Failed to write back to cache (non-blocking):`, cacheErr.message);
+          }
           return res.json({
             connected: true,
             email: data?.email,
@@ -135,6 +156,177 @@ app.use(express.json({ limit: '10mb' }));
   });
 
   // Secure API endpoint to send emails using stored Gmail token
+  app.post("/api/orders/notify-new", async (req, res) => {
+    const { order } = req.body;
+    if (!order || !order.id) {
+      return res.status(400).json({ error: "Thông tin đơn hàng không hợp lệ." });
+    }
+
+    // Immediately respond to the client to make it completely non-blocking
+    res.json({ success: true, message: "Thông báo đang được gửi ngầm." });
+
+    // Execute background sending asynchronously
+    (async () => {
+      try {
+        console.log(`[Order Background Notify] Starting background notify for order #${order.id}`);
+        let tokenData;
+        // 1. Try reading local file cache
+        if (fs.existsSync(TOKEN_PATH)) {
+          try {
+            tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+          } catch (err: any) {
+            console.error("Could not parse local gmail token:", err);
+          }
+        }
+
+        // 2. If not found in local file, restore from Firestore automatically
+        if (!tokenData) {
+          try {
+            const docSnap = await getDoc(gmailDocRef);
+            if (docSnap.exists()) {
+              tokenData = docSnap.data();
+              try {
+                fs.writeFileSync(
+                  TOKEN_PATH,
+                  JSON.stringify(tokenData, null, 2)
+                );
+              } catch (writeErr: any) {
+                console.warn("Could not cache token to disk:", writeErr.message);
+              }
+            }
+          } catch (err: any) {
+            console.error("Error loading Gmail token from Firestore:", err.message);
+          }
+        }
+
+        if (!tokenData) {
+          console.warn(`[Order Background Notify] No Gmail token connected in database/cache. Skipping background mail.`);
+          return;
+        }
+
+        const { accessToken, email: senderEmail } = tokenData;
+
+        // Detail the ordered items for the notification mail
+        const itemsDetail = (order.items ?? []).map((item: any) => 
+          `- <strong>${item.product?.name || 'Sản phẩm'}</strong> (Phân loại: <em>${item.version || '—'}</em>) x${item.quantity}`
+        ).join("<br/>");
+
+        const subtotalFormatted = Number(order.subtotal || 0).toLocaleString("vi-VN") + " đ";
+        const customerName = order.shipping?.receiverName || "Khách hàng";
+        const phone = order.shipping?.phone || "Chưa có SĐT";
+        const address = order.shipping?.address || "Chưa có địa chỉ";
+        const email = order.contact?.email || "Chưa có email";
+        const snsLink = order.contact?.snsLink || "Không có";
+        const note = order.note || "Không có";
+
+        const subject = `[Yeng Corner] 🚨 CÓ ĐƠN HÀNG MỚI CHỜ DUYỆT #${order.id}`;
+        const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+
+        const notificationHtml = `
+<div style="background-color: #f8fafc; padding: 30px 15px; font-family: 'Segoe UI', Arial, sans-serif; color: #334155;">
+  <div style="max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); background-color: #ffffff;">
+    <div style="background-color: #1e3a8a; padding: 25px 20px; text-align: center; color: #ffffff;">
+      <h2 style="margin: 0; font-size: 18px; font-weight: 700; uppercase tracking-wider;">🚨 BÁO CÁO ĐƠN HÀNG MỚI</h2>
+      <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Đơn hàng #${order.id} vừa được đặt trên website và đang chờ bạn duyệt!</p>
+    </div>
+    
+    <div style="padding: 30px; line-height: 1.6;">
+      <h3 style="margin-top: 0; color: #1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; font-size: 15px;">👤 THÔNG TIN KHÁCH HÀNG</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 20px;">
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500; width: 140px;">Họ tên:</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${customerName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Số điện thoại:</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${phone}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Email:</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${email}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Mạng xã hội (SNS):</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${snsLink}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Địa chỉ nhận hàng:</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #1e293b;">${address}</td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Ghi chú:</td>
+          <td style="padding: 6px 0; font-weight: 600; color: #b91c1c;">${note}</td>
+        </tr>
+      </table>
+
+      <h3 style="color: #1e3a8a; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; font-size: 15px;">📦 CHI TIẾT SẢN PHẨM</h3>
+      <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; font-size: 13.5px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+        ${itemsDetail}
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 15px;">
+        <tr>
+          <td style="color: #64748b; font-weight: 500;">TỔNG GIÁ TRỊ ĐƠN HÀNG:</td>
+          <td style="text-align: right; font-weight: 700; color: #1e3a8a; font-size: 16px;">${subtotalFormatted}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b; font-weight: 500; padding-top: 5px;">HÌNH THỨC THANH TOÁN:</td>
+          <td style="text-align: right; font-weight: 700; color: #0f766e; padding-top: 5px;">${order.payment?.method === '50%' ? "Đặt cọc 50%" : "Thanh toán 100%"}</td>
+        </tr>
+      </table>
+
+      <div style="text-align: center; margin-top: 30px;">
+        <a href="https://${req.get("host") || "yengcorner.vercel.app"}/admin" style="background-color: #1e3a8a; color: #ffffff; padding: 12px 30px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(30,58,138,0.15);">
+          Truy cập trang Admin để Duyệt Đơn ⚡
+        </a>
+      </div>
+    </div>
+    
+    <div style="background-color: #f1f5f9; padding: 15px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #e2e8f0;">
+      Đây là email thông báo tự động từ hệ thống website Yeng Corner.
+    </div>
+  </div>
+</div>
+        `;
+
+        const rawParts = [
+          `From: "Yeng Corner Bot" <${senderEmail}>`,
+          `To: ${senderEmail}`, // Send to the admin's email itself
+          `Subject: ${subjectEncoded}`,
+          "MIME-Version: 1.0",
+          "Content-Type: text/html; charset=utf-8",
+          "",
+          notificationHtml
+        ];
+        const raw = rawParts.join("\r\n");
+        const base64Safe = Buffer.from(raw)
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
+
+        const googleRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ raw: base64Safe }),
+        });
+
+        if (googleRes.ok) {
+          console.log(`[Order Background Notify] Email successfully sent to admin ${senderEmail}`);
+        } else {
+          const errText = await googleRes.text();
+          console.error(`[Order Background Notify] Google API response error:`, errText);
+        }
+      } catch (bgErr: any) {
+        console.error(`[Order Background Notify] Exception during background notify:`, bgErr.message);
+      }
+    })();
+  });
+
+  // Secure API endpoint to send emails using stored Gmail token
   app.post("/api/gmail/send", async (req, res) => {
     const { to, subject, bodyHtml } = req.body;
 
@@ -145,12 +337,12 @@ app.use(express.json({ limit: '10mb' }));
     let tokenData;
 
     // 1. Try reading local file cache
-    if (fs.existsSync(TOKEN_PATH)) {
-      try {
+    try {
+      if (fs.existsSync(TOKEN_PATH)) {
         tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      } catch (err: any) {
-        console.error("Could not parse local gmail token:", err);
       }
+    } catch (err: any) {
+      console.warn("Could not read local gmail token cache:", err.message);
     }
 
     // 2. If not found in local file, restore from Firestore automatically
@@ -160,14 +352,18 @@ app.use(express.json({ limit: '10mb' }));
         if (docSnap.exists()) {
           tokenData = docSnap.data();
           // Cache it locally on disk
-          fs.writeFileSync(
-            TOKEN_PATH,
-            JSON.stringify(tokenData, null, 2)
-          );
+          try {
+            fs.writeFileSync(
+              TOKEN_PATH,
+              JSON.stringify(tokenData, null, 2)
+            );
+          } catch (cacheErr: any) {
+            console.warn("Could not cache token locally:", cacheErr.message);
+          }
           console.log(`[Gmail Send] Restored Gmail token for ${tokenData.email} from Firestore`);
         }
       } catch (err: any) {
-        console.error("Error loading Gmail token from Firestore (relying on local cache fallback):", err.message);
+        console.error("Error loading Gmail token from Firestore:", err.message);
       }
     }
 
