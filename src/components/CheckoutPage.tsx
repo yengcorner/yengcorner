@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw } from 'lucide-react';
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
+import { deductProductStock } from '../utils/products';
 import { initAuth, googleSignIn } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
@@ -58,11 +59,6 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     const bodyHtml = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 25px; border: 1px solid #e5e5e5; border-radius: 16px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-        <!-- Logo Header -->
-        <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
-          <h1 style="color: #1e3a8a; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; text-transform: uppercase;">YENG CORNER</h1>
-        </div>
-
         <div style="margin-bottom: 25px;">
           <p style="font-size: 14px; color: #374151; margin: 0 0 10px;">Xin chào <strong>${order.shipping.receiverName}</strong>,</p>
           <p style="font-size: 13px; color: #4b5563; line-height: 1.6; margin: 0;">
@@ -401,6 +397,18 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
       setSubmitting(false);
       saveOrder(completeOrderObj);
+
+      // Deduct stock for all ordered items in Firestore
+      completeOrderObj.items.forEach(async (item) => {
+        if (item.product && item.product.id) {
+          try {
+            await deductProductStock(item.product.id, item.version, item.quantity);
+          } catch (e) {
+            console.error("Lỗi khi trừ kho sản phẩm:", e);
+          }
+        }
+      });
+
       setGeneratedOrder(completeOrderObj);
       setOrderConfirmed(true);
       console.log("=== ĐƠN HÀNG XÁC NHẬN CHÍNH THỨC ===", completeOrderObj);
@@ -899,6 +907,9 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
                   placeholder="Yêu cầu riêng về đóng bọc chống df, hoãn giao, gom chung, v.v..."
                   className="w-full px-3.5 py-2.5 border border-neutral-300 rounded-lg text-sm bg-neutral-50 focus:ring-1 focus:ring-blue-400 focus:outline-none focus:bg-white resize-none"
                 />
+                <p className="text-[11px] text-neutral-500 italic font-sans pl-1">
+                  Nếu mua bảo hiểm vận chuyển nội địa thì note ở đây.
+                </p>
               </div>
             </div>
 
