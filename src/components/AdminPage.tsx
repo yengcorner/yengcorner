@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs } from 'firebase/firestore';
@@ -195,11 +195,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
       body = `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-  <!-- Logo Header -->
-  <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
-    <h1 style="color: #1e3a8a; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; text-transform: uppercase;">YENG CORNER</h1>
-  </div>
-
   <div style="margin-bottom: 20px;">
     <p>Xin chào <strong>${order.shipping?.receiverName || 'Khách hàng'}</strong>,</p>
     <p>Đơn hàng <strong>#${order.id}</strong> của bạn đã được khởi tạo thành công trên hệ thống. Dưới đây là thông tin chi tiết đơn hàng của bạn:</p>
@@ -272,17 +267,42 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     } else if (templateType === 'shipping') {
       subject = `[Yeng Corner] Thông báo vận chuyển đơn hàng #${order.id}`;
       body = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-  <!-- Logo Header -->
-  <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f0f0f0; padding-bottom: 15px;">
-    <h1 style="color: #1e3a8a; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; text-transform: uppercase;">YENG CORNER</h1>
-  </div>
-
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1a202c; line-height: 1.6;">
   <div style="margin-bottom: 20px;">
     <p>Xin chào <strong>${order.shipping?.receiverName}</strong>,</p>
     <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${order.shipping?.method ?? ""}</strong>.</p>
-    <p>Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 15px;">${order.trackingCode || ''}</strong>.</p>
-    <p>Bạn có thể kiểm tra hành trình đơn hàng nhé!</p>
+    
+    <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0; color: #1e40af; font-size: 13.5px; font-weight: 600;">
+      📍 Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 16px;">${order.trackingCode || ''}</strong>
+    </div>
+
+    <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e2e8f0;">
+      <h3 style="margin-top: 0; color: #1e293b; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">DANH SÁCH SẢN PHẨM ĐÃ MUA</h3>
+      <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #64748b;">
+            <th style="padding: 6px 0;">Sản phẩm</th>
+            <th style="padding: 6px 0;">Phiên bản</th>
+            <th style="padding: 6px 0; text-align: right;">Số lượng</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(order?.items ?? []).map(item => `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 8px 0; font-weight: bold;">${item?.product?.name || "Sản phẩm"}</td>
+              <td style="padding: 8px 0; color: #475569;">${item?.version || "—"}</td>
+              <td style="padding: 8px 0; text-align: right;">${item?.quantity || 1}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <p style="font-size: 14px; color: #374151;">
+      Bạn có thể theo dõi hành trình đơn hàng với mã vận đơn trên qua trang web của đơn vị vận chuyển bạn chọn!<br/>
+      Sau khi nhận hàng thành công, hãy cho shop xin feedback qua facebook/ instagram hoặc thread của shop nhé.<br/>
+      Cảm ơn bạn đã ủng hộ Yeng corner!
+    </p>
   </div>
   
   <p style="font-size: 11px; color: #64748b; text-align: center; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 10px; font-weight: 500;">Đây là thư một chiều. Vui lòng không trả lời thư này! Nếu khách muốn thay đổi thông tin cá nhân, hãy liên hệ qua facebook của shop!</p>
@@ -652,16 +672,39 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         const subject = `ĐƠN HÀNG ${order.id} CỦA BẠN ĐÃ ĐƯỢC GIAO CHO ĐVVC!`;
         const bodyHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1a202c; line-height: 1.6;">
-            <div style="text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #edf2f7;">
-              <h2 style="color: #1a365d; margin: 0; font-size: 20px; font-weight: 700;">YENG CORNER</h2>
-              <p style="color: #718096; margin: 4px 0 0 0; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600;">Thông báo hành trình đơn hàng</p>
-            </div>
             <p style="margin-top: 0; font-size: 14px;">Chào bạn, đơn hàng của bạn đã được Yeng Corner chuẩn bị xong và bàn giao cho đơn vị vận chuyển.</p>
-            <div style="background-color: #f7fafc; border-left: 4px solid #3182ce; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
-              <p style="margin: 0; font-size: 15px; font-weight: 700; color: #2b6cb0;">- Mã vận đơn của bạn là: ${order.trackingCode}</p>
+            
+            <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0; color: #1e40af; font-size: 13.5px; font-weight: 600;">
+              📍 Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 16px;">${order.trackingCode || ''}</strong>
             </div>
-            <p style="font-size: 14px;">Bạn có thể dùng mã này để tra cứu hành trình đơn hàng của mình nhé.</p>
-            <p style="font-size: 14px; margin-bottom: 24px;">Cảm ơn bạn đã ủng hộ shop!</p>
+
+            <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e2e8f0;">
+              <h3 style="margin-top: 0; color: #1e293b; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">DANH SÁCH SẢN PHẨM</h3>
+              <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                <thead>
+                  <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #64748b;">
+                    <th style="padding: 6px 0;">Sản phẩm</th>
+                    <th style="padding: 6px 0;">Phiên bản</th>
+                    <th style="padding: 6px 0; text-align: right;">Số lượng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${(order?.items ?? []).map(item => `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                      <td style="padding: 8px 0; font-weight: bold;">${item?.product?.name || "Sản phẩm"}</td>
+                      <td style="padding: 8px 0; color: #475569;">${item?.version || "—"}</td>
+                      <td style="padding: 8px 0; text-align: right;">${item?.quantity || 1}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <p style="font-size: 14px; color: #374151; margin-bottom: 24px;">
+              Bạn có thể theo dõi hành trình đơn hàng với mã vận đơn trên qua trang web của đơn vị vận chuyển bạn chọn!<br/>
+              Sau khi nhận hàng thành công, hãy cho shop xin feedback qua facebook/ instagram hoặc thread của shop nhé.<br/>
+              Cảm ơn bạn đã ủng hộ Yeng corner!
+            </p>
             <div style="text-align: center; font-size: 11px; color: #a0aec0; border-top: 1px solid #edf2f7; padding-top: 16px;">
               <p style="margin: 0; font-weight: 500;">Đây là thư một chiều. Vui lòng không trả lời thư này! Nếu khách muốn thay đổi thông tin cá nhân, hãy liên hệ qua facebook của shop!</p>
             </div>
@@ -822,7 +865,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     attribute1OptionsText: '',
     attribute2Name: '',
     attribute2OptionsText: '',
-    stock: 99
+    stock: 99,
+    shippingFeeIncluded: ''
   });
   const [customCategories, setCustomCategories] = useState<string[]>(() => {
     try {
@@ -991,6 +1035,22 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const handleUpdateStatus = async (id: string, newStatus: string) => { // 👈 Thêm chữ async
     const updated = await updateOrderStatus(id, newStatus);               // 👈 Thêm chữ await
     setOrders(updated);
+  };
+
+  // Update paid amount of a specific order
+  const handleUpdatePaidAmount = async (id: string, amount: number) => {
+    try {
+      const updated = await updateOrderPaidAmount(id, amount);
+      setOrders(updated);
+      showToast("💵 Cập nhật số tiền đã thanh toán thành công!", "success");
+      
+      const updatedOrder = updated.find(o => o.id === id);
+      if (updatedOrder) {
+        syncOrderToGoogleSheets(updatedOrder);
+      }
+    } catch (err: any) {
+      showToast(`⚠️ Lỗi cập nhật số tiền: ${err.message || err}`, "error");
+    }
   };
   
   // Confirm order and send automatic confirmation email
@@ -1164,7 +1224,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                           paymentMethod.toLowerCase().includes('cọc') || 
                           paymentMethod.toLowerCase().includes('đặt cọc');
     const subtotalVal = ord.subtotal ?? 0;
-    const calculatedPaid = isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal;
+    const calculatedPaid = ord.paidAmount !== undefined ? ord.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
 
     const payload = {
       timestamp: new Date(ord.timestamp).toLocaleString('vi-VN'),
@@ -1357,7 +1417,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         attribute2Name: prod.attribute2Name ?? '',
         attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
-        stock: prod.stock ?? 99
+        stock: prod.stock ?? 99,
+        shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
       setFormVariations(Array.isArray(prod.variations) ? [...prod.variations] : []);
@@ -1387,7 +1448,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: '',
         attribute2Name: '',
         attribute2OptionsText: '',
-        stock: prod.stock ?? 99
+        stock: prod.stock ?? 99,
+        shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     }
     setIsProductModalOpen(true);
@@ -1456,7 +1518,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute2Name: productForm.attribute2Name,
         attribute2Options: opts2,
         variantMatrix: variantMatrix,
-        stock: productForm.stock
+        stock: productForm.stock,
+        shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
     } else {
       // Parse versions
@@ -1487,7 +1550,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         artist: productForm.artist,
         variationName: productForm.variationName,
         variations: formVariations.length > 0 ? formVariations : undefined,
-        stock: productForm.stock
+        stock: productForm.stock,
+        shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
     }
 
@@ -2377,6 +2441,52 @@ function getColumnLetter(colIndex) {
                             <div className="flex justify-between items-center text-xs pb-2 border-b">
                               <span className="text-neutral-500 font-sans">Hình thức GD:</span>
                               <span className="font-mono text-[10px] font-bold text-blue-800 bg-blue-5 px-2 py-0.5 rounded border border-blue-200">{ord.payment?.method || "Chưa xác định"}</span>
+                            </div>
+
+                            {/* Cập nhật Số tiền đã chuyển (paidAmount) */}
+                            <div className="pt-2 pb-2 border-b space-y-1.5">
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="text-neutral-500 font-sans">Đã chuyển:</span>
+                                <strong className="font-mono text-emerald-700 font-extrabold">
+                                  {(ord.paidAmount !== undefined 
+                                    ? ord.paidAmount 
+                                    : (ord.payment?.method?.toLowerCase().includes('50%') || 
+                                       ord.payment?.method?.toLowerCase().includes('cọc') || 
+                                       ord.payment?.method?.toLowerCase().includes('đặt cọc') 
+                                        ? Math.round((ord.subtotal ?? 0) * 0.5) 
+                                        : (ord.subtotal ?? 0))
+                                  ).toLocaleString('vi-VN')} đ
+                                </strong>
+                              </div>
+                              <div className="flex items-center space-x-1.5">
+                                <input
+                                  type="number"
+                                  placeholder="Sửa số tiền..."
+                                  id={`paid-amount-${ord.id}`}
+                                  defaultValue={ord.paidAmount !== undefined 
+                                    ? ord.paidAmount 
+                                    : (ord.payment?.method?.toLowerCase().includes('50%') || 
+                                       ord.payment?.method?.toLowerCase().includes('cọc') || 
+                                       ord.payment?.method?.toLowerCase().includes('đặt cọc') 
+                                        ? Math.round((ord.subtotal ?? 0) * 0.5) 
+                                        : (ord.subtotal ?? 0))}
+                                  className="w-full px-2 py-1 text-xs border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-neutral-800"
+                                />
+                                <button
+                                  onClick={async () => {
+                                    const inputEl = document.getElementById(`paid-amount-${ord.id}`) as HTMLInputElement;
+                                    if (inputEl) {
+                                      const val = Number(inputEl.value);
+                                      if (!isNaN(val)) {
+                                        await handleUpdatePaidAmount(ord.id, val);
+                                      }
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] uppercase font-bold rounded transition-colors whitespace-nowrap shadow-sm active:scale-95"
+                                >
+                                  Cập nhật
+                                </button>
+                              </div>
                             </div>
 
                             {/* Invoice payment proof screenshot widget display check */}
@@ -3485,16 +3595,42 @@ function getColumnLetter(colIndex) {
                   />
                 </div>
 
-                {/* BỔ SUNG: MÔ TẢ VẮN TẮT SẢN PHẨM */}
+                {/* TRƯỜNG TÙY CHỌN: PHÍ VẬN CHUYỂN HÀN - VIỆT */}
                 <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">Mô tả vắn tắt sản phẩm:</label>
-                  <input
-                    type="text"
-                    value={productForm.info}
-                    onChange={(e) => setProductForm({...productForm, info: e.target.value})}
-                    placeholder="Ví dụ: Hạn gom, tình trạng web..."
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900"
-                  />
+                  <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">Phí vận chuyển Hàn - Việt:</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-neutral-50 p-2.5 rounded-lg border border-neutral-200">
+                    <label className="flex items-center space-x-2 text-xs text-neutral-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="shippingFeeIncluded"
+                        value="Chưa bao gồm phí vận chuyển Hàn - Việt"
+                        checked={productForm.shippingFeeIncluded === "Chưa bao gồm phí vận chuyển Hàn - Việt"}
+                        onChange={(e) => setProductForm({...productForm, shippingFeeIncluded: e.target.value})}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Chưa bao gồm phí Hàn - Việt</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-xs text-neutral-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="shippingFeeIncluded"
+                        value="Đã bao gồm phí vận chuyển Hàn - Việt"
+                        checked={productForm.shippingFeeIncluded === "Đã bao gồm phí vận chuyển Hàn - Việt"}
+                        onChange={(e) => setProductForm({...productForm, shippingFeeIncluded: e.target.value})}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Đã bao gồm phí Hàn - Việt</span>
+                    </label>
+                  </div>
+                  {productForm.shippingFeeIncluded && (
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({...productForm, shippingFeeIncluded: ""})}
+                      className="text-[10px] text-red-500 hover:underline mt-1 block font-semibold"
+                    >
+                      ❌ Xóa lựa chọn (để trống)
+                    </button>
+                  )}
                 </div>
 
                 {/* 5. HẠN ORDER (DEADLINE) & 6. NGÀY PHÁT HÀNH (RELEASE) */}
