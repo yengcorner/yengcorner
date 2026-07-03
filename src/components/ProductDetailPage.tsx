@@ -27,22 +27,39 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
   const [activeImage, setActiveImage] = useState(product?.image || '');
 
-  const [selectedOpt1, setSelectedOpt1] = useState(() => {
-    return product?.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 
-      ? product.attribute1Options[0] 
-      : '';
-  });
-  
-  const [selectedOpt2, setSelectedOpt2] = useState(() => {
-    return product?.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 
-      ? product.attribute2Options[0] 
-      : '';
-  });
+  // Helper functions for finding default in-stock variants
+  const findFirstAvailableOpt1 = (prod: Product) => {
+    if (!prod?.attribute1Options || !Array.isArray(prod.attribute1Options) || prod.attribute1Options.length === 0) return '';
+    if (!prod.variantMatrix || !Array.isArray(prod.variantMatrix)) return prod.attribute1Options[0];
+    const available = prod.attribute1Options.find(opt => 
+      prod.variantMatrix!.some(v => v.option1 === opt && (v.stock === undefined || v.stock > 0))
+    );
+    return available || prod.attribute1Options[0];
+  };
+
+  const findFirstAvailableOpt2 = (prod: Product, opt1: string) => {
+    if (!prod?.attribute2Options || !Array.isArray(prod.attribute2Options) || prod.attribute2Options.length === 0) return '';
+    if (!prod.variantMatrix || !Array.isArray(prod.variantMatrix)) return prod.attribute2Options[0];
+    const available = prod.attribute2Options.find(opt => {
+      const match = prod.variantMatrix!.find(v => v.option1 === opt1 && v.option2 === opt);
+      return match ? (match.stock === undefined || match.stock > 0) : false;
+    });
+    return available || prod.attribute2Options[0];
+  };
+
+  const findFirstAvailableVariation = (prod: Product) => {
+    if (!prod?.variations || !Array.isArray(prod.variations) || prod.variations.length === 0) return '';
+    const available = prod.variations.find(v => v.stock === undefined || v.stock > 0);
+    return available ? available.name : prod.variations[0].name;
+  };
+
+  const [selectedOpt1, setSelectedOpt1] = useState(() => findFirstAvailableOpt1(product));
+  const [selectedOpt2, setSelectedOpt2] = useState(() => findFirstAvailableOpt2(product, findFirstAvailableOpt1(product)));
 
   const defaultVersion = (() => {
     if (!product) return "";
     if (Array.isArray(product.variations) && product.variations.length > 0) {
-      return product.variations[0].name;
+      return findFirstAvailableVariation(product);
     }
     return Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
   })();
@@ -53,12 +70,13 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   useEffect(() => {
     if (product) {
       setActiveImage(product.image || '');
-      setSelectedOpt1(product.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
-      setSelectedOpt2(product.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
+      const o1 = findFirstAvailableOpt1(product);
+      setSelectedOpt1(o1);
+      setSelectedOpt2(findFirstAvailableOpt2(product, o1));
       
       const nextDefaultVersion = (() => {
         if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
-          return product.variations[0].name;
+          return findFirstAvailableVariation(product);
         }
         return product.versions && Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
       })();
@@ -97,12 +115,13 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   React.useEffect(() => {
     if (product) {
       setActiveImage(product.image || '');
-      setSelectedOpt1(product.attribute1Options && Array.isArray(product.attribute1Options) && product.attribute1Options.length > 0 ? product.attribute1Options[0] : '');
-      setSelectedOpt2(product.attribute2Options && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0 ? product.attribute2Options[0] : '');
+      const o1 = findFirstAvailableOpt1(product);
+      setSelectedOpt1(o1);
+      setSelectedOpt2(findFirstAvailableOpt2(product, o1));
       
       const nextDefault = (() => {
         if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
-          return product.variations[0].name;
+          return findFirstAvailableVariation(product);
         }
         return product.versions && Array.isArray(product.versions) && product.versions.length > 0 ? product.versions[0] : "";
       })();
@@ -353,7 +372,7 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
               </div>
             </div>
           ) : (
-            ((Array.isArray(product.variations) && product.variations.length > 0) || (Array.isArray(product.versions) && product.versions.length > 0)) && (
+            (product.variationName && ((Array.isArray(product.variations) && product.variations.length > 0) || (Array.isArray(product.versions) && product.versions.length > 0))) && (
               <div className="space-y-2.5">
                 <label className="block text-xs font-mono font-bold tracking-wider text-neutral-500 uppercase">
                   ⚙️ PHÂN LOẠI ({product.variationName || "VERSION / SIZE"}):
