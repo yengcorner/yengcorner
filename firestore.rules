@@ -33,5 +33,15 @@ service cloud.firestore {
       allow get, list: if true;
       allow create, update, delete: if true;
     }
+
+    // 6. Coupons collection
+    match /coupons/{couponId} {
+      allow read, write: if true;
+    }
+
+    // 7. Orders collection
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
   }
 }
