@@ -1135,7 +1135,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       email: ord.contact?.email ?? "",
       snsLink: ord.contact?.snsLink,
       quantity: totalQty,
-      invoiceImage: ord.payment.invoiceImage || "",
+      invoiceImage: ord.payment?.invoiceImage || "",
       customerName: ord.shipping?.receiverName || '',
       phone: ord.shipping?.phone || "",
       address: ord.shipping?.address || "",
@@ -1147,7 +1147,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       // Backward compatibility fields
       orderId: ord.id,
       products: itemsFormatted,
-      paymentMethod: ord.payment.method
+      paymentMethod: ord.payment?.method || "Chưa xác định"
     };
 
     fetch(sheetsUrl, {
@@ -1219,7 +1219,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         `="${ord.shipping?.phone || ''}"`,
         ord.shipping?.address || "",
         itemsDetail,
-        ord.payment.method,
+        ord.payment?.method || "Chưa xác định",
         ord.subtotal ?? 0,
         ord.contact?.email || "",
         ord.contact?.snsLink || "",
@@ -2324,19 +2324,19 @@ function getColumnLetter(colIndex) {
                             </div>
                             <div className="flex justify-between items-center text-xs pb-2 border-b">
                               <span className="text-neutral-500 font-sans">Hình thức GD:</span>
-                              <span className="font-mono text-[10px] font-bold text-blue-800 bg-blue-5 px-2 py-0.5 rounded border border-blue-200">{ord.payment.method}</span>
+                              <span className="font-mono text-[10px] font-bold text-blue-800 bg-blue-5 px-2 py-0.5 rounded border border-blue-200">{ord.payment?.method || "Chưa xác định"}</span>
                             </div>
 
                             {/* Invoice payment proof screenshot widget display check */}
                             <div className="pt-1.5">
                               <span className="text-[9px] font-mono text-neutral-400 block mb-1 uppercase">ẢNH CHỤP GIAO DỊCH (PROOF):</span>
-                              {ord.payment.invoiceImage ? (
+                              {ord.payment?.invoiceImage ? (
                                 <button
-                                  onClick={() => setSelectedInvoiceImg(ord.payment.invoiceImage)}
+                                  onClick={() => setSelectedInvoiceImg(ord.payment?.invoiceImage || "")}
                                   className="relative group block w-full h-16 border border-neutral-300 rounded-lg overflow-hidden focus:outline-none focus:ring-1 focus:ring-blue-400"
                                 >
                                   <img 
-                                    src={ord.payment.invoiceImage} 
+                                    src={ord.payment?.invoiceImage || ""} 
                                     alt="Payment proof upload screen" 
                                     className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300"
                                     referrerPolicy="no-referrer"
