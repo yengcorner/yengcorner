@@ -181,8 +181,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const pMethod = order.payment?.method || "";
       const isHalfDeposit = pMethod.toLowerCase().includes("50%") || pMethod.toLowerCase().includes("cọc");
       const displayPaymentMethod = isHalfDeposit ? "Cọc 50%" : "Thanh toán 100%";
-      const paidAmount = isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal;
-      const remainingAmount = order.subtotal - paidAmount;
+      const subtotalVal = order.subtotal ?? 0;
+      const paidAmount = isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal;
+      const remainingAmount = subtotalVal - paidAmount;
 
       body = `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
@@ -214,7 +215,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         </tr>
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding: 8px 0; color: #1e293b; font-weight: 700; font-size: 13px;">TỔNG GIÁ TRỊ ĐƠN HÀNG: </td>
-          <td style="padding: 8px 0; font-weight: 800; color: #1e3a8a; font-size: 14px; font-family: monospace;">${order.subtotal.toLocaleString('vi-VN')} VND</td>
+          <td style="padding: 8px 0; font-weight: 800; color: #1e3a8a; font-size: 14px; font-family: monospace;">${(order.subtotal ?? 0).toLocaleString('vi-VN')} VND</td>
         </tr>
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Số tiền đã thanh toán:</td>
@@ -1126,7 +1127,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const isHalfDeposit = paymentMethod.toLowerCase().includes('50%') || 
                           paymentMethod.toLowerCase().includes('cọc') || 
                           paymentMethod.toLowerCase().includes('đặt cọc');
-    const calculatedPaid = isHalfDeposit ? Math.round(ord.subtotal * 0.5) : ord.subtotal;
+    const subtotalVal = ord.subtotal ?? 0;
+    const calculatedPaid = isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal;
 
     const payload = {
       timestamp: new Date(ord.timestamp).toLocaleString('vi-VN'),
@@ -1140,7 +1142,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       shippingMethod: ord.shipping?.method ?? "",
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
       paidAmount: calculatedPaid,
-      totalAmount: ord.subtotal,
+      totalAmount: subtotalVal,
       
       // Backward compatibility fields
       orderId: ord.id,
@@ -1218,7 +1220,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         ord.shipping?.address || "",
         itemsDetail,
         ord.payment.method,
-        ord.subtotal,
+        ord.subtotal ?? 0,
         ord.contact?.email || "",
         ord.contact?.snsLink || "",
         ord.shipping?.method ?? "",
@@ -1604,11 +1606,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   });
 
   // Calculate high quality stats widgets
-  const totalSales = orders.reduce((sum, ord) => sum + (ord.status !== "Đã hủy" ? ord.subtotal : 0), 0);
+  const totalSales = orders.reduce((sum, ord) => sum + (ord.status !== "Đã hủy" ? (ord.subtotal ?? 0) : 0), 0);
   const totalReceivedDeposit = orders.reduce((sum, ord) => {
     if (ord.status === "Đã hủy") return sum;
     const pMethod = ord.payment?.method || '';
-    return sum + (pMethod.includes('50%') ? (ord.subtotal * 0.5) : ord.subtotal);
+    return sum + (pMethod.includes('50%') ? ((ord.subtotal ?? 0) * 0.5) : (ord.subtotal ?? 0));
   }, 0);
   const countPending = orders.filter(ord => ord.status === 'Chờ xác nhận').length;
 
@@ -2080,8 +2082,20 @@ function getColumnLetter(colIndex) {
 
           {/* Orders counts text with Add Offline Order button right-aligned */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-1 my-2">
-            <div className="text-xs text-neutral-500 font-mono">
-              Đang tìm thấy: <strong>{filteredOrders.length}</strong> / <strong>{orders.length}</strong> tổng đơn
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="text-xs text-neutral-500 font-mono">
+                Đang tìm thấy: <strong>{filteredOrders.length}</strong> / <strong>{orders.length}</strong> tổng đơn
+              </div>
+              {(() => {
+                const unapprovedCount = orders.filter((ord: any) => ord.status === "Chờ xác nhận").length;
+                if (unapprovedCount === 0) return null;
+                return (
+                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-display font-bold uppercase tracking-wider rounded-lg animate-pulse">
+                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full inline-block" />
+                    <span>Tổng đơn chưa duyệt: {unapprovedCount}</span>
+                  </span>
+                );
+              })()}
             </div>
             <button
               onClick={() => setIsCreateModalOpen(true)}
@@ -2259,7 +2273,7 @@ function getColumnLetter(colIndex) {
                               }
                               return cItem.product.price;
                             };
-                            const itemPrice = getPrice(item);
+                            const itemPrice = Number(getPrice(item)) || 0;
                             return (
                               <div key={idx} className="flex items-start space-x-3 bg-neutral-50 border p-2.5 rounded-xl text-xs">
                                 {item.product.image && (
@@ -2306,7 +2320,7 @@ function getColumnLetter(colIndex) {
                           <div className="space-y-1.5">
                             <div className="flex justify-between items-center text-xs">
                               <span className="text-neutral-500 font-sans">Tổng giá trị đơn:</span>
-                              <strong className="font-mono text-neutral-900 font-extrabold">{ord.subtotal.toLocaleString('vi-VN')} đ</strong>
+                              <strong className="font-mono text-neutral-900 font-extrabold">{(ord.subtotal ?? 0).toLocaleString('vi-VN')} đ</strong>
                             </div>
                             <div className="flex justify-between items-center text-xs pb-2 border-b">
                               <span className="text-neutral-500 font-sans">Hình thức GD:</span>
@@ -2614,7 +2628,7 @@ function getColumnLetter(colIndex) {
                         </td>
                         <td className="p-4">
                           <span className="px-2 py-1 bg-emerald-50 text-emerald-800 rounded-md font-semibold font-mono">
-                            {c.discountType === 'percentage' ? `${c.discountValue}%` : `${c.discountValue.toLocaleString('vi-VN')} đ`}
+                            {c.discountType === 'percentage' ? `${c.discountValue}%` : `${(c.discountValue ?? 0).toLocaleString('vi-VN')} đ`}
                           </span>
                         </td>
                         <td className="p-4 text-neutral-650 font-medium">
