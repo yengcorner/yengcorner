@@ -170,6 +170,13 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     const docRef = doc(db, 'orders', order.id);
     await setDoc(docRef, order);
     
+    // Kích hoạt gửi email thông báo ngầm (background) về admin
+    fetch('/api/orders/notify-new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order })
+    }).catch(err => console.error("Lỗi gửi thông báo đơn hàng mới ngầm:", err));
+    
     // Lưu vào localStorage cache
     try {
       const currentOrders = await getOrdersLocalFallback();
