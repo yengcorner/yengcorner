@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs } from 'firebase/firestore';
@@ -645,7 +645,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     for (let i = 0; i < candidates.length; i++) {
       const order = candidates[i];
       
-      const updated = updateOrderStatus(order.id, "Đã giao cho đơn vị vận chuyển");
+      const updated = await updateOrderStatus(order.id, "Đã giao cho đơn vị vận chuyển");
       setOrders(updated);
 
       try {
@@ -913,12 +913,34 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Load orders and products on authentication
   useEffect(() => {
     if (isAuthenticated) {
-      // 🔄 Dùng .then để đợi Firebase trả dữ liệu về rồi mới setOrders
-      getOrders().then((data) => {
+      // 🔄 1. Đọc ngay từ localStorage cache trước để tránh màn hình trắng khi tải trang
+      try {
+        const saved = localStorage.getItem('yeng_corner_orders_v1');
+        if (saved) {
+          setOrders(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.warn("Lỗi đọc cache ban đầu:", e);
+      }
+
+      // 🔄 2. Gọi API getOrders() tải trực tiếp từ Firestore ngay lập tức để đồng bộ nhanh nhất
+      getOrders()
+        .then((data) => {
+          if (data && data.length > 0) {
+            setOrders(data);
+          }
+        })
+        .catch((err) => {
+          console.error("Lỗi getOrders khi khởi tạo AdminPage:", err);
+        });
+
+      // 🔄 3. Đăng ký lắng nghe biến động thời gian thực (real-time) từ Firestore
+      const unsubscribeOrders = listenToOrders((data) => {
+        console.log("[Firestore Sync] Đã nhận dữ liệu đơn hàng thời gian thực mới:", data.length, "đơn");
         setOrders(data);
       });
       
-      const unsubscribe = subscribeProducts((list) => {
+      const unsubscribeProducts = subscribeProducts((list) => {
         setProducts((prev) => {
           const hasDrafts = prev.length > 0 && (editedProductIdsRef.current.size > 0 || newProductIdsRef.current.size > 0);
           if (hasDrafts) {
@@ -942,7 +964,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       }
 
       return () => {
-        unsubscribe();
+        unsubscribeOrders();
+        unsubscribeProducts();
       };
     }
   }, [isAuthenticated]);
@@ -1048,17 +1071,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   };
 
   // Delete order action handler
-  const handleDeleteOrder = (id: string) => {
+  const handleDeleteOrder = async (id: string) => {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA VĨNH VIỄN đơn hàng ${id} không? Hành động này không thể hoàn tác.`)) {
-      const updated = deleteOrder(id);
+      const updated = await deleteOrder(id);
       setOrders(updated);
     }
   };
 
   // Reset order tracking lists
-  const handleResetData = () => {
+  const handleResetData = async () => {
     if (window.confirm("🔄 Bạn muốn khôi phục danh sách đơn hàng về dữ liệu mẫu ban đầu để kiểm thử / demo?")) {
-      const def = resetOrdersToDefault();
+      const def = await resetOrdersToDefault();
       setOrders(def);
     }
   };
@@ -2242,9 +2265,12 @@ function getColumnLetter(colIndex) {
                               type="text"
                               placeholder="Nhập mã vận đơn nhanh..."
                               value={ord.trackingCode || ''}
-                              onChange={(e) => {
-                                const updated = updateOrderTrackingCode(ord.id, e.target.value);
-                                setOrders(updated);
+                              onChange={async (e) => {
+                                const newVal = e.target.value;
+                                // 1. Cập nhật UI cục bộ ngay lập tức để gõ phím mượt mà không bị giật
+                                setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, trackingCode: newVal } : o));
+                                // 2. Lưu bất đồng bộ lên Firestore ngầm mà không gán Promise vào state
+                                await updateOrderTrackingCode(ord.id, newVal);
                               }}
                               className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg text-xs bg-neutral-50 placeholder-neutral-400 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 text-neutral-800"
                             />
