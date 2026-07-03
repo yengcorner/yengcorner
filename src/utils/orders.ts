@@ -266,6 +266,26 @@ export async function updateOrderTrackingCode(orderId: string, trackingCode: str
   }
 }
 
+export async function updateOrderPaidAmount(orderId: string, paidAmount: number): Promise<OrderPayload[]> {
+  try {
+    const docRef = doc(db, 'orders', orderId);
+    await updateDoc(docRef, { paidAmount });
+    return await getOrders();
+  } catch (e) {
+    console.error("Lỗi cập nhật số tiền đã thanh toán trên Firestore:", e);
+    try {
+      const currentOrders = await getOrdersLocalFallback();
+      const updated = currentOrders.map(ord => 
+        ord.id === orderId ? { ...ord, paidAmount } : ord
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      syncAllProductSpecificOrders();
+      return updated;
+    } catch (err) {}
+    return [];
+  }
+}
+
 export async function updateBulkOrdersTracking(updates: { orderId: string; trackingCode: string; status?: string }[]): Promise<OrderPayload[]> {
   try {
     const promises = updates.map(async (u) => {
