@@ -255,6 +255,11 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
             <div className="text-2xl font-mono font-bold text-black pt-1">
               {displayedPrice.toLocaleString('vi-VN')} <span className="text-sm font-sans tracking-normal">VND</span>
             </div>
+            {product.shippingFeeIncluded && (
+              <p className="text-[11px] text-neutral-500 font-sans italic mt-1 bg-neutral-100/60 inline-block px-2 py-0.5 rounded border border-neutral-200">
+                📌 {product.shippingFeeIncluded}
+              </p>
+            )}
           </div>
 
           {/* Quick highlighting block info - Replace with Hạn order, Ngày phát hành, Quà tặng Pre-order */}
