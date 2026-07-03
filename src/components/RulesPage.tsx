@@ -123,19 +123,32 @@ export default function RulesPage({ rulesAnchor, setRulesAnchor }: RulesPageProp
                   </p>
                 </div>
 
-                <div className="bg-neutral-50 p-4 border border-neutral-205 rounded-xl space-y-1">
-                  <strong className="text-xs text-[#1A73E8] uppercase block font-extrabold">VIDEO UNBOXING ĐỐI CHIẾU:</strong>
+                <div className="bg-neutral-50 p-4 border border-neutral-205 rounded-xl space-y-1.5">
+                  <strong className="text-xs text-[#1A73E8] uppercase block font-extrabold">VIDEO UNBOX ĐỐI CHIẾU:</strong>
                   <p className="text-xs text-neutral-600 leading-normal font-sans">
-                    Khi nhận và khui kiện hàng, bạn <strong>BẮT BUỘC quay rõ nét video unboxing liền mạch không cắt ghép</strong> để shop làm dữ liệu đối chứng giải quyết khiếu nại nếu sản phẩm thiếu hụt hoặc giao nhầm phiên bản.
+                    Khi nhận và khui kiện hàng, bạn <strong>BẮT BUỘC quay rõ nét video unbox liền mạch không cắt ghép</strong> để shop làm dữ liệu đối chứng giải quyết khiếu nại nếu sản phẩm thiếu hụt hoặc giao nhầm phiên bản.
                   </p>
+                  <p className="text-xs text-neutral-600 leading-normal font-sans mt-2">
+                    Trường hợp video unbox bị cắt ghép/ tua nhanh/ không rõ tình trạng đơn hàng từ đầu đến cuối hoặc không có video unbox thì shop xin từ chối giải quyết khiếu nại.
+                  </p>
+                </div>
+
+                <div className="bg-neutral-50 p-4 border border-neutral-205 rounded-xl space-y-1.5">
+                  <strong className="text-xs text-[#1A73E8] uppercase block font-extrabold">DEFECT DO VẬN CHUYỂN:</strong>
+                  <div className="text-xs text-neutral-600 leading-normal font-sans space-y-1.5">
+                    <p>Hàng bị defect do vận chuyển Hàn - Việt shop sẽ note trên bài thông báo hàng về và không giải thích/ đền bù khi khách khiếu nại.</p>
+                    <p>Hàng bị defect do vận chuyển nội địa:</p>
+                    <p className="pl-3">• Trường hợp không mua bảo hiểm: refund tối đa full tiền công shop nhận được từ đơn hàng đó tùy theo mức độ defect.</p>
+                    <p className="pl-3">• Trường hợp có mua bảo hiểm: vui lòng đọc phần ĐỀN BÙ BỞI ĐỐI TÁC VẬN CHUYỂN</p>
+                  </div>
                 </div>
 
                 <div className="bg-neutral-50 p-4 border border-neutral-205 rounded-xl space-y-1.5">
                   <strong className="text-xs text-[#1A73E8] uppercase block font-extrabold">BẢO HIỂM:</strong>
                   <div className="text-xs text-neutral-600 space-y-1.5 font-sans leading-relaxed">
-                    <p>• <strong>VTP:</strong> 0,5% giá trị đơn hàng ( tối thiểu 5.000đ/bưu gửi ).</p>
-                    <p>• <strong>GHTK:</strong> 0,5% giá trị đơn hàng ( từ 1tr trở lên ); giá trị dưới 1tr ghtk miễn phí bảo hiểm.</p>
-                    <p>• <strong>SPX:</strong> 0,5% giá trị đơn hàng ( từ 3tr trở lên ); giá trị dưới 3tr ghtk miễn phí bảo hiểm.</p>
+                    <p>• <strong>VTP:</strong> 0,5% giá trị đơn hàng + phụ phí hàng giá trị cao ( tối thiểu 5.000đ/bưu gửi ).</p>
+                    <p>• <strong>GHTK:</strong> 0,5% giá trị đơn hàng + phụ phí hàng giá trị cao ( từ 1tr trở lên ); giá trị dưới 1tr GHTK miễn phí bảo hiểm.</p>
+                    <p>• <strong>SPX:</strong> 0,5% giá trị đơn hàng + Phí xử lý hàng giá trị cao 25.000 VNĐ/đơn ( từ 3tr trở lên ); giá trị dưới 3tr SPX miễn phí bảo hiểm.</p>
                     <p className="font-semibold text-neutral-800 mt-1">Shop khuyên nên mua bảo hiểm để khi mất hàng còn có cách giải quyết ạ.</p>
                   </div>
                 </div>
