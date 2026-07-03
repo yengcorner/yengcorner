@@ -55,11 +55,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         // Auto-fetch messages
         fetchGmailMessages(token);
         // Synchronize token with backend server
-        fetch('/api/gmail/store-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: token, email: user?.email })
-        }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
+        try {
+          fetch('/api/gmail/store-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: token, email: user?.email })
+          }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
+        } catch (syncErr) {
+          console.error("Failed to sync Gmail token with backend synchronously:", syncErr);
+        }
       },
       () => {
         setGmailUser(null);
@@ -94,7 +98,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       
       if (listData.messages && listData.messages.length > 0) {
         const detailedMsgs = await Promise.all(
-          listData.messages.map(async (msg: any) => {
+          (listData.messages || []).map(async (msg: any) => {
             const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}`, {
               headers: { Authorization: `Bearer ${token}` }
             });
@@ -135,11 +139,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         setGmailToken(res.accessToken);
         fetchGmailMessages(res.accessToken);
         // Store on server
-        await fetch('/api/gmail/store-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: res.accessToken, email: res.user?.email })
-        });
+        try {
+          await fetch('/api/gmail/store-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: res.accessToken, email: res.user?.email })
+          });
+        } catch (syncErr) {
+          console.error("Lỗi khi lưu token:", syncErr);
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -240,11 +248,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         </tr>
       </thead>
       <tbody>
-        ${order.items.map(item => `
+        ${(order?.items ?? []).map(item => `
           <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 8px 0; font-weight: bold;">${item.product.name}</td>
-            <td style="padding: 8px 0; color: #475569;">${item.version}</td>
-            <td style="padding: 8px 0; text-align: right;">${item.quantity}</td>
+            <td style="padding: 8px 0; font-weight: bold;">${item?.product?.name || "Sản phẩm"}</td>
+            <td style="padding: 8px 0; color: #475569;">${item?.version || ""}</td>
+            <td style="padding: 8px 0; text-align: right;">${item?.quantity || 1}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -754,10 +762,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     if (!productFilterText) return;
     
     const query = productFilterText.trim().toLowerCase();
-    const matchedIds = orders
+    const matchedIds = (orders ?? [])
       .filter(order => 
-        order.items.some(item => 
-          item.product && item.product.name && (
+        (order?.items ?? []).some(item => 
+          item?.product && item.product.name && (
             item.product.name.toLowerCase() === query || 
             item.product.name.toLowerCase().includes(query)
           )
@@ -1206,9 +1214,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       "Ghi Chú"
     ];
 
-    const rows = ordersToExport.map(ord => {
-      const itemsDetail = (ord.items ?? []).map(item => 
-        `${item.product.name} (Phân loại: ${item.version}) x${item.quantity}`
+    const rows = (ordersToExport || []).map(ord => {
+      const itemsDetail = (ord?.items ?? []).map(item => 
+        `${item?.product?.name || "Sản phẩm"} (Phân loại: ${item?.version || ""}) x${item?.quantity || 1}`
       ).join(" | ");
 
       return [
@@ -1232,7 +1240,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     // Also, we use the BOM (\ufeff) and protect cell structure from internal newlines.
     const csvContent = "sep=,\n" + [
       headers.join(","),
-      ...rows.map(row => row.map(val => `"${String(val).replace(/\r?\n|\r/g, " ").replace(/"/g, '""')}"`).join(","))
+      ...(rows || []).map(row => (row || []).map(val => `"${String(val).replace(/\r?\n|\r/g, " ").replace(/"/g, '""')}"`).join(","))
     ].join("\n");
 
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1328,7 +1336,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setVariantMatrix([]);
       
       const versionsStr = Array.isArray(prod.variations)
-        ? prod.variations.map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
+        ? (prod.variations || []).map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
         : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''));
 
       setProductForm({
@@ -1382,7 +1390,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     // Safe ID generation: filter out non-numeric, null or undefined IDs to prevent NaN
     const getNextId = () => {
-      const validIds = products.map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
+      const validIds = (products || []).map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
       return validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
     };
     const targetId = editingProduct ? editingProduct.id : getNextId();
@@ -1397,7 +1405,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         .map(v => v.trim())
         .filter(v => v.length > 0);
 
-      generatedVersions = variantMatrix.map(v => `${v.option1} - ${v.option2}`);
+      generatedVersions = (variantMatrix || []).map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
 
       productPayload = {
         id: targetId,
@@ -1430,7 +1438,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
          .filter(v => v.length > 0);
       
       generatedVersions = formVariations.length > 0 
-         ? formVariations.map(v => v.name) 
+         ? (formVariations || []).map(v => v?.name || "") 
          : parsedVersions;
 
       productPayload = {
@@ -1460,7 +1468,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setProducts((prev) => {
         const exists = prev.some(p => Number(p.id) === Number(targetId));
         if (exists) {
-          return prev.map(p => Number(p.id) === Number(targetId) ? productPayload : p);
+          return (prev || []).map(p => Number(p?.id) === Number(targetId) ? productPayload : p);
         } else {
           return [productPayload, ...prev];
         }
@@ -1728,9 +1736,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                   title="Chọn danh mục sản phẩm để xuất dữ liệu độc lập"
                 >
                   <option value="all">📁 Tất cả các đơn</option>
-                  {products.map(p => (
-                    <option key={p.id} value={`orders_${slugify(p.name)}`}>
-                      📦 Hộp đơn: {p.name}
+                  {(products || []).map(p => (
+                    <option key={p?.id} value={`orders_${slugify(p?.name || "")}`}>
+                      📦 Hộp đơn: {p?.name}
                     </option>
                   ))}
                 </select>
@@ -2260,23 +2268,25 @@ function getColumnLetter(colIndex) {
                         <div className="space-y-3.5">
                           {(ord.items ?? []).map((item, idx) => {
                             const getPrice = (cItem: CartItem) => {
+                              if (!cItem || !cItem.product) return 0;
                               if (cItem.product.variantMatrix && cItem.product.variantMatrix.length > 0) {
                                 const matched = cItem.product.variantMatrix.find(v => {
+                                  if (!v) return false;
                                   const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
                                   return combinedName === cItem.version;
                                 });
                                 if (matched) return matched.price;
                               }
                               if (cItem.product.variations && cItem.product.variations.length > 0) {
-                                const variation = cItem.product.variations.find(v => v.name === cItem.version);
+                                const variation = cItem.product.variations.find(v => v && v.name === cItem.version);
                                 if (variation) return variation.price;
                               }
-                              return cItem.product.price;
+                              return cItem.product.price || 0;
                             };
                             const itemPrice = Number(getPrice(item)) || 0;
                             return (
                               <div key={idx} className="flex items-start space-x-3 bg-neutral-50 border p-2.5 rounded-xl text-xs">
-                                {item.product.image && (
+                                {item?.product?.image && (
                                   <img 
                                     src={item.product.image} 
                                     alt={item.product.name} 
@@ -2285,19 +2295,19 @@ function getColumnLetter(colIndex) {
                                   />
                                 )}
                                 <div className="flex-1 min-w-0 space-y-1">
-                                  <h5 className="font-bold text-neutral-900 truncate" title={item.product.name}>{item.product.name}</h5>
+                                  <h5 className="font-bold text-neutral-900 truncate" title={item?.product?.name || "Sản phẩm"}>{item?.product?.name || "Sản phẩm"}</h5>
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="text-[10px] font-semibold text-neutral-500 bg-white border px-1.5 py-0.5 rounded">
-                                      {item.version}
+                                      {item?.version || ""}
                                     </span>
                                     <span className="text-[10px] font-mono text-neutral-500 font-bold bg-white border px-1.5 py-0.5 rounded">
-                                      Qty: {item.quantity}
+                                      Qty: {item?.quantity || 1}
                                     </span>
                                   </div>
                                 </div>
                                 <div className="text-right shrink-0">
-                                  <span className="font-mono text-neutral-900 block font-bold">{(itemPrice * item.quantity).toLocaleString('vi-VN')} đ</span>
-                                  <span className="text-[9px] font-mono text-neutral-400 block font-semibold">{(itemPrice).toLocaleString('vi-VN')} đ/cái</span>
+                                  <span className="font-mono text-neutral-900 block font-bold">{((itemPrice * (item?.quantity || 1)) || 0).toLocaleString('vi-VN')} đ</span>
+                                  <span className="text-[9px] font-mono text-neutral-400 block font-semibold">{(itemPrice || 0).toLocaleString('vi-VN')} đ/cái</span>
                                 </div>
                               </div>
                             );
@@ -2448,7 +2458,7 @@ function getColumnLetter(colIndex) {
                 className="text-xs font-medium border border-neutral-300 rounded-lg py-1.5 px-3 focus:outline-none bg-neutral-50 focus:ring-1 focus:ring-blue-400 text-neutral-800 cursor-pointer"
               >
                 <option value="All">Tất cả danh mục</option>
-                {Array.from(new Set(products.map(p => p.category).filter(Boolean))).map(cat => (
+                {Array.from(new Set((products || []).map(p => p?.category).filter(Boolean))).map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
@@ -2507,7 +2517,7 @@ function getColumnLetter(colIndex) {
                       </td>
                     </tr>
                   ) : (
-                    filteredProducts.map((p) => (
+                    (filteredProducts || []).map((p) => (
                       <tr key={p.id} className="hover:bg-neutral-50/50 transition-colors">
                         <td className="p-4">
                           <img 
@@ -2540,7 +2550,7 @@ function getColumnLetter(colIndex) {
                         <td className="p-4 max-w-[180px]">
                           <div className="flex flex-wrap gap-1">
                             {Array.isArray(p.versions) && p.versions.length > 0 ? (
-                              p.versions.map((v, i) => (
+                              (p.versions || []).map((v, i) => (
                                 <span key={i} className="bg-neutral-50 border text-neutral-500 px-1 py-0.5 rounded text-[9.5px]">
                                   {v}
                                 </span>
@@ -2621,7 +2631,7 @@ function getColumnLetter(colIndex) {
                       </td>
                     </tr>
                   ) : (
-                    coupons.map((c) => (
+                    (coupons || []).map((c) => (
                       <tr key={c.code} className="hover:bg-neutral-50/50 transition-colors">
                         <td className="p-4 font-mono font-bold text-blue-900 text-sm">
                           {c.code}
@@ -2764,7 +2774,7 @@ function getColumnLetter(colIndex) {
                         className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-neutral-800"
                       >
                         <option value="">-- Chọn sản phẩm để lọc nhanh --</option>
-                        {uniqueProductNames.map(name => (
+                        {(uniqueProductNames || []).map(name => (
                           <option key={name} value={name}>{name}</option>
                         ))}
                       </select>
@@ -2859,7 +2869,7 @@ function getColumnLetter(colIndex) {
                       ) : (
                         (orders ?? []).map((o) => {
                           const isChecked = selectedOrderIds.includes(o.id);
-                          const productsSummary = o.items.map(i => `${i.product.name} (x${i.quantity})`).join(', ');
+                          const productsSummary = (o?.items ?? []).map(i => `${i?.product?.name || "SP"} (x${i?.quantity || 1})`).join(', ');
                           return (
                             <label
                               key={o.id}
@@ -2926,7 +2936,7 @@ function getColumnLetter(colIndex) {
                     </label>
                     <input
                       type="email"
-                      value={selectedOrderIds.length > 1 ? (selectedOrderIds ?? []).map(id => orders.find(o => o.id === id)?.contact?.email).filter(Boolean).join(', ') : emailFormTo}
+                      value={selectedOrderIds.length > 1 ? (selectedOrderIds ?? []).map(id => (orders || []).find(o => o.id === id)?.contact?.email).filter(Boolean).join(', ') : emailFormTo}
                       onChange={(e) => {
                         if (selectedOrderIds.length <= 1) {
                           setEmailFormTo(e.target.value);
@@ -3159,8 +3169,8 @@ function getColumnLetter(colIndex) {
                     onChange={(e) => handleProductChange(Number(e.target.value))}
                     className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
                   >
-                    {products.map(p => (
-                      <option key={p.id} value={p.id}>{p.name.substring(0, 32)}...</option>
+                    {(products || []).map(p => (
+                      <option key={p?.id} value={p?.id}>{(p?.name || "").substring(0, 32)}...</option>
                     ))}
                   </select>
                 </div>
@@ -3172,7 +3182,7 @@ function getColumnLetter(colIndex) {
                     onChange={(e) => setNewOrderForm({...newOrderForm, productVersion: e.target.value})}
                     className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
                   >
-                    {(products.find(p => p.id === Number(newOrderForm.productId))?.versions || [""]).map((ver, i) => (
+                    {(((products || []).find(p => p?.id === Number(newOrderForm.productId))?.versions || [""])).map((ver, i) => (
                       <option key={i} value={ver}>{ver || "—"}</option>
                     ))}
                   </select>
@@ -3325,7 +3335,7 @@ function getColumnLetter(colIndex) {
                     >
                       <option value="" disabled>-- Chọn sẵn --</option>
                       {Array.from(new Set([
-                        ...products.map(p => p.category).filter(Boolean),
+                        ...(products || []).map(p => p?.category).filter(Boolean),
                         ...customCategories
                       ])).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -3412,7 +3422,7 @@ function getColumnLetter(colIndex) {
                     >
                       <option value="" disabled>-- Chọn sẵn --</option>
                       {Array.from(new Set([
-                        ...products.map(p => p.artist).filter(Boolean),
+                        ...(products || []).map(p => p?.artist).filter(Boolean),
                         ...customArtists
                       ])).map(art => (
                         <option key={art} value={art}>{art}</option>
@@ -3534,7 +3544,7 @@ function getColumnLetter(colIndex) {
                   
                   {additionalImages.length > 0 && (
                     <div className="grid grid-cols-4 gap-2 pb-2">
-                      {additionalImages.map((img, index) => (
+                      {(additionalImages || []).map((img, index) => (
                         <div key={index} className="relative group aspect-square border border-neutral-200 rounded-lg overflow-hidden bg-neutral-100 shadow-sm">
                           <img src={img} className="w-full h-full object-cover" alt={`Gallery preview ${index + 1}`} referrerPolicy="no-referrer" />
                           <button
@@ -3771,7 +3781,7 @@ function getColumnLetter(colIndex) {
                         📋 Danh sách tùy chọn đã nhận diện ({formVariations.length}):
                       </span>
                       <div className="flex flex-wrap gap-1.5">
-                        {formVariations.map((v, i) => (
+                        {(formVariations || []).map((v, i) => (
                           <span key={i} className="px-2.5 py-1 bg-white border border-emerald-200 text-emerald-900 text-[11px] font-semibold rounded-lg shadow-sm">
                             {v.name}
                           </span>
@@ -3786,7 +3796,7 @@ function getColumnLetter(colIndex) {
                         📋 Danh sách tổ hợp ma trận đã nhận diện ({variantMatrix.length}):
                       </span>
                       <div className="flex flex-wrap gap-1.5">
-                        {variantMatrix.map((v, i) => (
+                        {(variantMatrix || []).map((v, i) => (
                           <span key={i} className="px-2.5 py-1 bg-white border border-emerald-200 text-emerald-900 text-[11px] font-semibold rounded-lg shadow-sm flex items-center space-x-1">
                             <span className="font-mono text-[9px] text-emerald-500 mr-0.5">#{i + 1}</span>
                             <span>{v.option1} - {v.option2}</span>
@@ -3808,7 +3818,7 @@ function getColumnLetter(colIndex) {
                     </div>
 
                     <div className="space-y-3.5 max-h-80 overflow-y-auto pr-1">
-                      {formVariations.map((v, idx) => (
+                      {(formVariations || []).map((v, idx) => (
                         <div key={idx} className="bg-white p-3.5 rounded-xl border border-neutral-200 shadow-sm space-y-2 hover:border-blue-300 transition-colors">
                           <div className="flex justify-between items-center bg-neutral-50 px-2.5 py-1.5 rounded-lg border border-neutral-200">
                             <span className="font-bold text-neutral-800 text-xs font-mono uppercase tracking-wide">
@@ -3879,7 +3889,7 @@ function getColumnLetter(colIndex) {
                     </div>
 
                     <div className="space-y-3.5 max-h-80 overflow-y-auto pr-1">
-                      {variantMatrix.map((v, idx) => (
+                      {(variantMatrix || []).map((v, idx) => (
                         <div key={idx} className="bg-white p-3.5 rounded-xl border border-neutral-200 shadow-sm space-y-2 hover:border-blue-300 transition-colors animate-fade-in">
                           <div className="flex justify-between items-center bg-neutral-50 px-2.5 py-1.5 rounded-lg border border-neutral-200">
                             <span className="font-bold text-blue-900 text-xs font-mono uppercase tracking-wide">
@@ -4047,8 +4057,8 @@ function getColumnLetter(colIndex) {
                   <option value="Pre-order">Pre-order</option>
                   <option value="Sẵn hàng">Sẵn hàng</option>
                   <option value="Order web">Order web</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.name}>{p.name} (Sản phẩm)</option>
+                  {(products || []).map(p => (
+                    <option key={p?.id} value={p?.name}>{p?.name} (Sản phẩm)</option>
                   ))}
                 </select>
               </div>
@@ -4191,7 +4201,7 @@ function getColumnLetter(colIndex) {
                     📊 Danh sách mã vận đơn đã phân tích ({parsedImports.length} dòng):
                   </span>
                   <div className="max-h-40 overflow-y-auto border border-neutral-200 rounded-xl bg-neutral-50 divide-y text-[11px] font-mono text-neutral-700">
-                    {parsedImports.map((item, idx) => (
+                    {(parsedImports || []).map((item, idx) => (
                       <div key={idx} className="p-2 flex justify-between items-center bg-white">
                         <span>Đơn: <strong className="text-blue-800">{item.orderId}</strong></span>
                         <span>Mã vận đơn: <strong className="text-neutral-900">{item.trackingCode}</strong></span>
