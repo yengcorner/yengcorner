@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, HelpCircle, Heart, ShoppingBag, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -265,7 +265,8 @@ export default function ShopAllPage({
                               alert("⚠️ Sản phẩm này đã hết hàng!");
                               return;
                             }
-                            addToCart(product, 1, product.versions && product.versions.length > 0 ? product.versions[0] : "");
+                            const defaultVer = resolveDefaultVersionForProduct(product);
+                            addToCart(product, 1, defaultVer);
                           }}
                           disabled={isSoldOut}
                           className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
