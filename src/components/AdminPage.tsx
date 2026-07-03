@@ -271,7 +271,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   <div style="margin-bottom: 20px;">
     <p>Xin chào <strong>${order.shipping?.receiverName}</strong>,</p>
-    <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${ord.shipping?.method ?? ""}</strong>.</p>
+    <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${order.shipping?.method ?? ""}</strong>.</p>
     <p>Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 15px;">${order.trackingCode || ''}</strong>.</p>
     <p>Bạn có thể kiểm tra hành trình đơn hàng nhé!</p>
   </div>
@@ -1135,7 +1135,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       quantity: totalQty,
       invoiceImage: ord.payment.invoiceImage || "",
       customerName: ord.shipping?.receiverName || '',
-      phone: shipping.phone,
+      phone: ord.shipping?.phone || "",
       address: ord.shipping?.address || "",
       shippingMethod: ord.shipping?.method ?? "",
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
@@ -1214,7 +1214,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         new Date(ord.timestamp).toLocaleString('vi-VN'),
         ord.status,
         ord.shipping?.receiverName,
-        `="${shipping.phone}"`,
+        `="${ord.shipping?.phone || ''}"`,
         ord.shipping?.address || "",
         itemsDetail,
         ord.payment.method,
