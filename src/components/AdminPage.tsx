@@ -1072,9 +1072,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Delete order action handler
   const handleDeleteOrder = async (id: string) => {
-    if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA VĨNH VIỄN đơn hàng ${id} không? Hành động này không thể hoàn tác.`)) {
-      const updated = await deleteOrder(id);
-      setOrders(updated);
+    if (window.confirm("⚠️ Bạn có chắc chắn muốn xóa đơn hàng này? Hành động này không thể hoàn tác!")) {
+      try {
+        const updated = await deleteOrder(id);
+        setOrders(updated);
+        showToast("🗑️ Đã xóa đơn hàng thành công khỏi Firestore!", "success");
+      } catch (err: any) {
+        showToast(`⚠️ Lỗi khi xóa đơn hàng: ${err.message || err}`, "error");
+      }
     }
   };
 
@@ -2217,9 +2222,20 @@ function getColumnLetter(colIndex) {
                         </span>
                       </div>
                       
-                      <div className="flex items-center space-x-3 text-[11px] text-neutral-400 font-mono">
-                        <Calendar className="w-3.5 h-3.5" />
-                        <span>{new Date(ord.timestamp).toLocaleString('vi-VN')}</span>
+                      <div className="flex items-center space-x-4 text-[11px] text-neutral-400 font-mono w-full sm:w-auto justify-between sm:justify-end">
+                        <div className="flex items-center space-x-1.5">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{new Date(ord.timestamp).toLocaleString('vi-VN')}</span>
+                        </div>
+                        
+                        <button
+                          onClick={() => handleDeleteOrder(ord.id)}
+                          className="px-2.5 py-1 text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors flex items-center space-x-1.5 border border-red-200 font-sans font-bold"
+                          title="Xóa vĩnh viễn đơn hàng này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                          <span className="text-[10px] uppercase tracking-wider">Xóa đơn</span>
+                        </button>
                       </div>
                     </div>
 
