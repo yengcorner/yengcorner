@@ -28,6 +28,7 @@ export interface Product {
   stock?: number;
   status?: string;
   hasInsurance?: boolean;
+  shippingFeeIncluded?: string;
   
   // Multi-tier variants properties
   attribute1Name?: string;
@@ -69,6 +70,7 @@ export interface OrderPayload {
   note: string;
   timestamp: string;
   trackingCode?: string;
+  paidAmount?: number;
 }
 
 export interface Coupon {
