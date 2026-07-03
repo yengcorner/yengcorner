@@ -87,13 +87,31 @@ try {
   cachedProducts = INITIAL_PRODUCTS;
 }
 
+// Map to keep track of product.id -> Firestore document ID
+const productIdToDocIdMap = new Map<number, string>();
+
 // Set up real-time listener to keep cachedProducts and localStorage in sync with Firestore
 onSnapshot(collection(db, "products"), (snapshot) => {
   const list: Product[] = [];
   snapshot.forEach((docSnap) => {
     const data = docSnap.data();
     if (data) {
-      data.id = Number(data.id);
+      let numericId = Number(data.id);
+      if (isNaN(numericId) || !numericId) {
+        numericId = Number(docSnap.id);
+      }
+      if (isNaN(numericId) || !numericId) {
+        // Generate a stable unique numeric ID from the string docSnap.id
+        let hash = 0;
+        const str = docSnap.id;
+        for (let i = 0; i < str.length; i++) {
+          hash = (hash << 5) - hash + str.charCodeAt(i);
+          hash |= 0;
+        }
+        numericId = Math.abs(hash);
+      }
+      data.id = numericId;
+      productIdToDocIdMap.set(numericId, docSnap.id);
       list.push(data as Product);
     }
   });
@@ -141,7 +159,8 @@ export const saveProduct = async (product: Product): Promise<void> => {
     // Recursive data sanitization to remove all undefined values for Firestore compatibility
     const sanitizedProduct = sanitizeData(product);
     
-    const docRef = doc(db, "products", product.id.toString());
+    const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
+    const docRef = doc(db, "products", docId);
     await setDoc(docRef, sanitizedProduct);
 
     // Update memory cache safely and immediately
@@ -165,7 +184,8 @@ export const saveProduct = async (product: Product): Promise<void> => {
 
 export const deleteProduct = async (productId: number): Promise<void> => {
   try {
-    const docRef = doc(db, "products", productId.toString());
+    const docId = productIdToDocIdMap.get(productId) || productId.toString();
+    const docRef = doc(db, "products", docId);
     await deleteDoc(docRef);
 
     // Update memory cache safely and immediately
@@ -241,3 +261,35 @@ export const addProductWithAddDoc = async (formData: {
     throw err;
   }
 };
+
+/**
+ * Tìm phân loại/phiên bản đầu tiên khả dụng (còn hàng) cho sản phẩm
+ */
+export function resolveDefaultVersionForProduct(product: Product): string {
+  // 1. Multi-tier variantMatrix
+  if (product.attribute1Name && product.variantMatrix && product.variantMatrix.length > 0) {
+    const availableMatrix = product.variantMatrix.find(v => v.stock === undefined || v.stock > 0);
+    if (availableMatrix) {
+      return availableMatrix.option2 
+        ? `${availableMatrix.option1} - ${availableMatrix.option2}` 
+        : availableMatrix.option1;
+    }
+  }
+
+  // 2. Variations
+  if (product.variations && product.variations.length > 0) {
+    const availableVar = product.variations.find(v => v.stock === undefined || (v.stock !== undefined && v.stock > 0));
+    if (availableVar) {
+      return availableVar.name;
+    }
+    return product.variations[0].name;
+  }
+
+  // 3. Versions
+  if (product.versions && product.versions.length > 0) {
+    return product.versions[0];
+  }
+
+  return "";
+}
+
