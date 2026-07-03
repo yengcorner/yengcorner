@@ -175,7 +175,22 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
         })
       });
 
-      const data = await response.json();
+      let data: any = {};
+      try {
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch (jsonErr) {
+          if (text && text.length < 200) {
+            data = { error: text };
+          } else {
+            data = { error: `Server returned HTML/plain response (HTTP ${response.status}).` };
+          }
+        }
+      } catch (readErr: any) {
+        data = { error: `Failed to read response: ${readErr.message}` };
+      }
+
       if (!response.ok) {
         console.error("Failed to send auto-confirmation email:", data.error);
         return { success: false, error: data.error || `Lỗi từ Google Mail API (${response.status})` };
@@ -360,6 +375,11 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           note: formData.note && formData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${formData.note}` : itemsFormatted,
           paidAmount: calculatedPaid,
           totalAmount: finalTotal,
+          cartItems: cart.map(item => ({
+            productName: item.product.name,
+            version: item.version,
+            quantity: item.quantity
+          })),
 
           // Backward compatibility fields
           orderId: orderId,
@@ -482,9 +502,9 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
           {/* Gmail Confirmation Integration - title removed, only green box remains */}
           <div className="bg-white p-5 rounded-xl border border-neutral-250 shadow-sm text-left space-y-3">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-center space-x-2">
-              <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
-              <span>Bạn có thể kiểm tra shop đã xác nhận đơn hay chưa bằng cách điền số điện thoại vào trang tra cứu</span>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-start space-x-2">
+              <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0 mt-0.5" />
+              <span>Bạn sẽ nhận được mail xác nhận đơn hàng qua email đặt hàng sau khi shop xác nhận đơn trên wedsite.<br />Nếu sau 12 giờ kể từ khi đặt hàng, bạn chưa nhận được mail thì vui lòng liên hệ shop qua facebook hoặc instagram.</span>
             </div>
           </div>
 
