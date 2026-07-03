@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc, getDoc, updateDoc } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -292,4 +292,89 @@ export function resolveDefaultVersionForProduct(product: Product): string {
 
   return "";
 }
+
+export async function deductProductStock(productId: number, version: string, quantityToDeduct: number): Promise<void> {
+  try {
+    const docId = productIdToDocIdMap.get(productId) || productId.toString();
+    const docRef = doc(db, "products", docId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      console.warn(`Product document not found for stock deduction: ${productId}`);
+      return;
+    }
+    const product = docSnap.data() as Product;
+    
+    // Case 1: Multi-tier variant (has variantMatrix)
+    if (product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
+      let updatedMatrix = [...product.variantMatrix];
+      let matchedIdx = updatedMatrix.findIndex(v => {
+        const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
+        return combinedName === version;
+      });
+      
+      if (matchedIdx > -1) {
+        let currentStock = updatedMatrix[matchedIdx].stock !== undefined ? updatedMatrix[matchedIdx].stock! : 99;
+        let nextStock = Math.max(0, currentStock - quantityToDeduct);
+        updatedMatrix[matchedIdx] = {
+          ...updatedMatrix[matchedIdx],
+          stock: nextStock
+        };
+        
+        // Check if all matrix options are now out of stock
+        const totalStockRemaining = updatedMatrix.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
+        let nextStatus = product.status;
+        if (totalStockRemaining === 0) {
+          nextStatus = "Hết hàng";
+        }
+        
+        await updateDoc(docRef, {
+          variantMatrix: updatedMatrix,
+          status: nextStatus
+        });
+      }
+    } 
+    // Case 2: Simple variations list (variations)
+    else if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+      let updatedVariations = [...product.variations];
+      let matchedIdx = updatedVariations.findIndex(v => v.name === version);
+      if (matchedIdx > -1) {
+        let currentStock = updatedVariations[matchedIdx].stock !== undefined ? updatedVariations[matchedIdx].stock! : 99;
+        let nextStock = Math.max(0, currentStock - quantityToDeduct);
+        updatedVariations[matchedIdx] = {
+          ...updatedVariations[matchedIdx],
+          stock: nextStock
+        };
+        
+        // Check if all variations are out of stock
+        const totalStockRemaining = updatedVariations.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
+        let nextStatus = product.status;
+        if (totalStockRemaining === 0) {
+          nextStatus = "Hết hàng";
+        }
+        
+        await updateDoc(docRef, {
+          variations: updatedVariations,
+          status: nextStatus
+        });
+      }
+    } 
+    // Case 3: Base product (no variants, just base stock)
+    else {
+      let currentStock = product.stock !== undefined ? product.stock : 99;
+      let nextStock = Math.max(0, currentStock - quantityToDeduct);
+      let nextStatus = product.status;
+      if (nextStock === 0) {
+        nextStatus = "Hết hàng";
+      }
+      
+      await updateDoc(docRef, {
+        stock: nextStock,
+        status: nextStatus
+      });
+    }
+  } catch (err) {
+    console.error(`Lỗi trừ kho hàng của sản phẩm #${productId} (phân loại: ${version}):`, err);
+  }
+}
+
 
