@@ -512,7 +512,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           <div className="bg-white p-5 rounded-xl border border-neutral-250 shadow-sm text-left space-y-3">
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-start space-x-2">
               <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0 mt-0.5" />
-              <span>Bạn sẽ nhận được mail xác nhận đơn hàng qua email đặt hàng sau khi shop xác nhận đơn trên wedsite.<br />Nếu sau 12 giờ kể từ khi đặt hàng, bạn chưa nhận được mail thì vui lòng liên hệ shop qua facebook hoặc instagram.</span>
+              <span>Bạn sẽ nhận được mail xác nhận đơn hàng qua email đặt hàng sau khi shop xác nhận đơn trên website.<br />Nếu sau 12 giờ kể từ khi đặt hàng, bạn chưa nhận được mail thì vui lòng liên hệ shop qua facebook hoặc instagram.</span>
             </div>
           </div>
 
