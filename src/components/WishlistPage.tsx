@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ArrowRight, ShoppingBag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
 
 interface WishlistPageProps {
   wishlist: number[];
@@ -159,6 +159,13 @@ export default function WishlistPage({
                       CHI TIẾT
                     </button>
                     {(() => {
+                      let hasAvailableVariant = true;
+                      if (product.attribute1Name && product.variantMatrix && product.variantMatrix.length > 0) {
+                        hasAvailableVariant = product.variantMatrix.some(v => v.stock === undefined || v.stock > 0);
+                      } else if (product.variations && product.variations.length > 0) {
+                        hasAvailableVariant = product.variations.some(v => v.stock === undefined || v.stock > 0);
+                      }
+
                       const isSoldOut = 
                         product.status?.toLowerCase() === 'sold_out' || 
                         product.status?.toLowerCase() === 'sold out' || 
@@ -166,7 +173,8 @@ export default function WishlistPage({
                         product.tag?.toLowerCase().trim() === 'sold_out' || 
                         product.tag?.toLowerCase().trim() === 'sold out' || 
                         product.tag?.toLowerCase().trim() === 'hết hàng' ||
-                        (product.stock !== undefined && product.stock <= 0);
+                        (product.stock !== undefined && product.stock <= 0) ||
+                        !hasAvailableVariant;
 
                       return (
                         <button 
@@ -175,7 +183,8 @@ export default function WishlistPage({
                               alert("⚠️ Sản phẩm này đã hết hàng!");
                               return;
                             }
-                            addToCart(product, 1, product.versions && product.versions.length > 0 ? product.versions[0] : "");
+                            const defaultVer = resolveDefaultVersionForProduct(product);
+                            addToCart(product, 1, defaultVer);
                           }}
                           disabled={isSoldOut}
                           className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
