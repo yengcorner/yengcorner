@@ -133,29 +133,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   const handleAdminGmailLogin = async () => {
     try {
-      const res = await googleSignIn();
-      if (res) {
-        setGmailUser(res.user);
-        setGmailToken(res.accessToken);
-        fetchGmailMessages(res.accessToken);
-        // Store on server
-        try {
-          await fetch('/api/gmail/store-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken: res.accessToken, email: res.user?.email })
-          });
-        } catch (syncErr) {
-          console.error("Lỗi khi lưu token:", syncErr);
-        }
-      }
+      await googleSignIn();
     } catch (err: any) {
       console.error(err);
       const isIframe = window.self !== window.top;
       if (isIframe || err?.code === 'auth/cancelled-popup-request' || err?.message?.includes('cancelled-popup-request')) {
         alert(
           "⚠️ ĐĂNG NHẬP THẤT BẠI DO HẠN CHẾ IFRAME (BẢO MẬT TRÌNH DUYỆT)\n\n" +
-          "Trình duyệt đã chặn hoặc tự động hủy yêu cầu popup của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
+          "Trình duyệt đã chặn hoặc tự động hủy yêu cầu của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
           "HƯỚNG DẪN KHẮC PHỤC:\n" +
           "1. Hãy nhấn vào nút \"Mở trong tab mới\" (Open in a new tab) ở góc trên cùng bên phải màn hình xem thử để chạy ứng dụng độc lập.\n" +
           "2. Ở tab mới đó, bạn bấm lại nút \"Kết nối Gmail\" để thực hiện kết nối.\n" +
