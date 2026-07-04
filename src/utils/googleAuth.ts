@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -45,6 +45,25 @@ export const initAuth = (
     }
   }
 
+  // Handle redirect result from Google sign-in
+  getRedirectResult(auth)
+    .then((result) => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(result.user));
+          if (onAuthSuccess) {
+            onAuthSuccess(result.user, credential.accessToken);
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      console.error('Error handling redirect result:', error);
+    });
+
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
       const storedToken = localStorage.getItem('yeng_gmail_access_token');
@@ -76,19 +95,10 @@ export const initAuth = (
 };
 
 // Must be called from a button click or user interaction
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (): Promise<void> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Không thể nhận Access Token từ Firebase Auth.');
-    }
-
-    cachedAccessToken = credential.accessToken;
-    localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-    localStorage.setItem('yeng_gmail_user', JSON.stringify(result.user));
-    return { user: result.user, accessToken: cachedAccessToken };
+    await signInWithRedirect(auth, provider);
   } catch (error: any) {
     console.error('Đăng nhập thất bại:', error);
     throw error;
