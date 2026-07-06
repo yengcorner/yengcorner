@@ -345,7 +345,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
     };
 
     // Low latency simulation for extra high fidelity premium look
-    setTimeout(() => {
+    setTimeout(async () => {
       // Sync order to Google Sheets if configured
       const sheetsUrl = localStorage.getItem('yeng_google_sheets_url');
       if (sheetsUrl) {
@@ -396,7 +396,14 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       }
 
       setSubmitting(false);
-      saveOrder(completeOrderObj);
+      
+      try {
+        await saveOrder(completeOrderObj);
+      } catch (err: any) {
+        console.error("Lỗi khi lưu đơn hàng:", err);
+        // Alert already handled inside saveOrder, but we double check here to make absolutely sure
+        alert("Lỗi lưu đơn: " + (err.message || String(err)));
+      }
 
       // Deduct stock for all ordered items in Firestore
       completeOrderObj.items.forEach(async (item) => {
