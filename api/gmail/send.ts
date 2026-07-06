@@ -6,7 +6,9 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
-import firebaseConfig from "../../firebase-applet-config.json";
+import { createRequire } from "module";
+const localRequire = typeof require !== "undefined" ? require : createRequire(import.meta.url);
+const firebaseConfig = localRequire("../../firebase-applet-config.json");
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
