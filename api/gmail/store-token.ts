@@ -7,9 +7,9 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
-import storeTokenHandler from "./api/gmail/store-token";
-import clearTokenHandler from "./api/gmail/clear-token";
-import sendHandler from "./api/gmail/send";
+import storeTokenHandler from "./store-token"; 
+import clearTokenHandler from "./clear-token"; 
+import sendHandler from "./send";
 
 const firebaseConfig = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
