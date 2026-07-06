@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -208,11 +208,55 @@ export const googleSignIn = async (): Promise<void> => {
   try {
     isSigningIn = true;
     sessionStorage.setItem('yeng_signing_in_google', 'true');
-    await signInWithRedirect(auth, provider);
+
+    // Check if we are running inside an iframe (like the AI Studio development environment preview)
+    const isInIframe = window.self !== window.top;
+
+    if (!isInIframe) {
+      console.log("[GoogleAuth] Detected top-level window (Vercel/Direct). Using high-stability signInWithPopup...");
+      const result = await signInWithPopup(auth, provider);
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          const userObj = result.user;
+
+          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+
+          const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+          try {
+            const snap = await getDoc(gmailDocRef);
+            const existingData = snap.exists() ? snap.data() : {};
+            await setDoc(gmailDocRef, {
+              ...existingData,
+              accessToken: cachedAccessToken,
+              email: userObj.email || "yengcorner@gmail.com",
+              updatedAt: new Date().toISOString()
+            });
+            console.log("Successfully synchronized Google access token via popup directly to Firestore.");
+          } catch (dbErr) {
+            console.error("Failed to write token to Firestore from popup result:", dbErr);
+          }
+          // Reload the page or invoke callbacks to update UI
+          window.location.reload();
+          return;
+        }
+      }
+    } else {
+      console.log("[GoogleAuth] Detected iframe environment (AI Studio). Using signInWithRedirect...");
+      await signInWithRedirect(auth, provider);
+    }
   } catch (error: any) {
-    console.error('Đăng nhập thất bại:', error);
-    sessionStorage.removeItem('yeng_signing_in_google');
-    throw error;
+    console.error('Đăng nhập thất bại, đang chuyển hướng fallback:', error);
+    try {
+      console.log("[GoogleAuth] Fallback to signInWithRedirect...");
+      await signInWithRedirect(auth, provider);
+    } catch (fallbackErr) {
+      console.error('Redirect fallback failed:', fallbackErr);
+      sessionStorage.removeItem('yeng_signing_in_google');
+      throw fallbackErr;
+    }
   } finally {
     isSigningIn = false;
   }
