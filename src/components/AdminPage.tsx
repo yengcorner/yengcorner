@@ -1167,7 +1167,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     };
 
     await saveOrder(manualOrder);
-    syncOrderToGoogleSheets(manualOrder);
     getOrders().then((data) => {
       setOrders(data);
     });
