@@ -6,6 +6,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /gmail/{document} {
+      allow read, create: if true;
+      allow update: if request.resource.data.refreshToken != null || resource.data.refreshToken == null;
+    }
+  }
+}
+
     // 2. Gmail config collection - secure lookup via unguessable ID or settings ID
     match /gmail/{configId} {
       allow get: if configId == "config_YengCornerSecret_3bf8d79a29e4" || configId == "settings";
