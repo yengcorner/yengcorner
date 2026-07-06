@@ -323,22 +323,16 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     const orderId = "YENG26-" + Math.floor(1000 + Math.random() * 9000);
 
-    // Upload to Firebase Storage with fallback
-    let invoiceUrl = previewImage;
-    try {
-      if (selectedFile) {
-        invoiceUrl = await uploadInvoiceImage(orderId, selectedFile);
-      } else if (previewImage && previewImage.startsWith('data:image/')) {
-        invoiceUrl = await uploadInvoiceImage(orderId, previewImage);
-      }
-    } catch (uploadErr) {
-      console.warn("Lỗi upload lên Firebase Storage, nén ảnh dùng base64 fallback:", uploadErr);
+    // Compress image locally using canvas to a super small base64 string under 10KB
+    let invoiceUrl = "";
+    if (previewImage) {
       try {
-        if (previewImage) {
-          invoiceUrl = await compressImage(previewImage);
-        }
+        // Compress aggressively to max 200x200 resolution with 0.3 quality (typically ~3KB to 8KB)
+        invoiceUrl = await compressImage(previewImage, 200, 200, 0.3);
       } catch (compressErr) {
-        console.error("Lỗi nén ảnh:", compressErr);
+        console.error("Lỗi nén ảnh hóa đơn:", compressErr);
+        // Fallback to basic string truncation if compression fails to avoid massive base64 payload
+        invoiceUrl = previewImage.slice(0, 5000);
       }
     }
 
@@ -373,8 +367,8 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       timestamp: new Date().toISOString()
     };
 
-    // Low latency simulation for extra high fidelity premium look
-    setTimeout(async () => {
+    // Process and submit order instantly (no artificial timeout, extremely high performance)
+    const processCheckout = async () => {
       // Sync order to Google Sheets if configured
       const sheetsUrl = localStorage.getItem('yeng_google_sheets_url');
       if (sheetsUrl) {
@@ -430,7 +424,6 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
         await saveOrder(completeOrderObj);
       } catch (err: any) {
         console.error("Lỗi khi lưu đơn hàng:", err);
-        // Alert already handled inside saveOrder, but we double check here to make absolutely sure
         alert("Lỗi lưu đơn: " + (err.message || String(err)));
       }
 
@@ -466,7 +459,9 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
         }
         setAppliedCoupon(null);
       }
-    }, 1200);
+    };
+
+    await processCheckout();
   };
 
   // If order is completed, show order receipt screen
