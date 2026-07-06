@@ -10,10 +10,7 @@ import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 import storeTokenHandler from "./api/gmail/store-token";
 import clearTokenHandler from "./api/gmail/clear-token";
 import sendHandler from "./api/gmail/send";
-
-const firebaseConfig = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
-);
+import firebaseConfig from "./firebase-applet-config.json";
 
 function convertToSlug(text: string): string {
   if (!text) return "";
@@ -38,19 +35,20 @@ const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 // Initialize Firebase Admin SDK for robust server-side Firestore operations with bypass access
 let dbAdmin: any = null;
 try {
-  if (admin.apps.length === 0) {
-    admin.initializeApp({
+  const adminAny = admin as any;
+  if (adminAny.apps.length === 0) {
+    adminAny.initializeApp({
       projectId: firebaseConfig.projectId
     });
   } else {
     // Already initialized
   }
-  dbAdmin = getFirestoreAdmin(admin.apps[0] || admin.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
   console.log("[Firebase Admin] Initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
   console.warn("[Firebase Admin] Initialization failed, trying fallback:", adminErr.message);
   try {
-    dbAdmin = getFirestoreAdmin(admin.apps[0], firebaseConfig.firestoreDatabaseId);
+    dbAdmin = getFirestoreAdmin((admin as any).apps[0], firebaseConfig.firestoreDatabaseId);
   } catch (err2: any) {
     console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", err2.message);
   }
