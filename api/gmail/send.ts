@@ -15,6 +15,86 @@ const TOKEN_PATH = process.env.VERCEL
   ? "/tmp/gmail-token.json" 
   : path.join(process.cwd(), "gmail-token.json");
 
+// Helper function to fetch Gmail & Sheets configuration from Firestore using ultra-reliable REST API with Client SDK fallbacks
+async function fetchGmailConfigFromFirestore(): Promise<any> {
+  // 1. Try reading from local file cache first (extremely fast)
+  if (fs.existsSync(TOKEN_PATH)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+      if (cached && (cached.googleSheetsUrl || cached.accessToken)) {
+        console.log("[Firestore Config Helper Send] Found valid config in local disk cache.");
+        return cached;
+      }
+    } catch (err: any) {
+      console.warn("[Firestore Config Helper Send] Failed to parse local disk cache (non-blocking):", err.message);
+    }
+  }
+
+  // 2. Query Firestore via Google REST API (100% reliable in stateless serverless/Vercel/multi-container environments)
+  try {
+    const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
+    console.log(`[Firestore Config Helper Send] Fetching fresh config via REST API from: ${url}`);
+    
+    const response = await fetch(url);
+    if (response.ok) {
+      const docObj = await response.json();
+      if (docObj && docObj.fields) {
+        const result: any = {};
+        for (const key of Object.keys(docObj.fields)) {
+          const valObj = docObj.fields[key];
+          if (valObj.stringValue !== undefined) {
+            result[key] = valObj.stringValue;
+          } else if (valObj.integerValue !== undefined) {
+            result[key] = parseInt(valObj.integerValue, 10);
+          } else if (valObj.doubleValue !== undefined) {
+            result[key] = parseFloat(valObj.doubleValue);
+          } else if (valObj.booleanValue !== undefined) {
+            result[key] = valObj.booleanValue;
+          } else if (valObj.mapValue !== undefined) {
+            result[key] = valObj.mapValue;
+          } else {
+            result[key] = valObj;
+          }
+        }
+        if (result.googleSheetsUrl || result.accessToken) {
+          console.log("[Firestore Config Helper Send] Successfully restored config from Firestore via REST API.");
+          // Cache back to local disk
+          try {
+            fs.writeFileSync(TOKEN_PATH, JSON.stringify(result, null, 2));
+          } catch (writeErr: any) {
+            console.warn("[Firestore Config Helper Send] Could not cache to local disk:", writeErr.message);
+          }
+          return result;
+        }
+      }
+    } else {
+      console.warn(`[Firestore Config Helper Send] REST API returned non-OK status: ${response.status}`);
+    }
+  } catch (err: any) {
+    console.error("[Firestore Config Helper Send] Error during Firestore REST request:", err.message);
+  }
+
+  // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
+  try {
+    console.log("[Firestore Config Helper Send] Falling back to Firebase Client SDK...");
+    const docSnap = await getDoc(gmailDocRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      try {
+        fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
+      } catch (writeErr: any) {
+        console.warn("[Firestore Config Helper Send] Could not cache SDK result:", writeErr.message);
+      }
+      return data;
+    }
+  } catch (err: any) {
+    console.error("[Firestore Config Helper Send] Client SDK fetch failed:", err.message);
+  }
+
+  return null;
+}
+
 export default async function handler(req: Request, res: Response) {
   // Set CORS headers
   res.setHeader("Access-Control-Allow-Credentials", "true");
@@ -36,34 +116,8 @@ export default async function handler(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "Thiếu thông tin người nhận, tiêu đề hoặc nội dung email." });
     }
 
-    let tokenData: any = null;
-
-    // 1. Try reading local file cache
-    try {
-      if (fs.existsSync(TOKEN_PATH)) {
-        tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      }
-    } catch (err: any) {
-      console.warn("Could not read local gmail token cache:", err.message);
-    }
-
-    // 2. If not found in local file, restore from Firestore automatically
-    if (!tokenData) {
-      try {
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          tokenData = docSnap.data();
-          // Cache it locally on disk
-          try {
-            fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
-          } catch (cacheErr: any) {
-            console.warn("Could not cache token locally:", cacheErr.message);
-          }
-        }
-      } catch (err: any) {
-        console.error("Error loading Gmail token from Firestore:", err.message);
-      }
-    }
+    // Fetch configuration using the ultra-reliable REST & local disk fallback helper
+    const tokenData = await fetchGmailConfigFromFirestore();
 
     if (!tokenData || !tokenData.accessToken) {
       return res.status(400).json({
