@@ -35,8 +35,26 @@ const PORT = 3000;
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
-// Always use Firebase Client SDK (db) on the server because Admin SDK does not have permission on the custom named database
-const dbAdmin: any = null;
+// Initialize Firebase Admin SDK for robust server-side Firestore operations with bypass access
+let dbAdmin: any = null;
+try {
+  if (admin.apps.length === 0) {
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId
+    });
+  } else {
+    // Already initialized
+  }
+  dbAdmin = getFirestoreAdmin(admin.apps[0] || admin.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+  console.log("[Firebase Admin] Initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
+} catch (adminErr: any) {
+  console.warn("[Firebase Admin] Initialization failed, trying fallback:", adminErr.message);
+  try {
+    dbAdmin = getFirestoreAdmin(admin.apps[0], firebaseConfig.firestoreDatabaseId);
+  } catch (err2: any) {
+    console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", err2.message);
+  }
+}
 
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
@@ -53,7 +71,7 @@ app.use(express.json({ limit: '10mb' }));
   // Endpoint to clear stored Gmail credentials
   app.post("/api/gmail/clear-token", clearTokenHandler);
 
-  // Helper function to fetch Gmail & Sheets configuration from Firestore using ultra-reliable REST API with Client SDK fallbacks
+  // Helper function to fetch Gmail & Sheets configuration from Firestore using Firebase Admin SDK with ultra-reliable REST API fallbacks
   async function fetchGmailConfigFromFirestore(): Promise<any> {
     // 1. Try reading from local file cache first (extremely fast)
     if (fs.existsSync(TOKEN_PATH)) {
@@ -68,7 +86,31 @@ app.use(express.json({ limit: '10mb' }));
       }
     }
 
-    // 2. Query Firestore via Google REST API (100% reliable in stateless serverless/Vercel/multi-container environments)
+    // 2. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
+    if (dbAdmin) {
+      try {
+        console.log("[Firestore Config Helper] Fetching configuration via Firebase Admin SDK...");
+        const docSnap = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          if (data && (data.googleSheetsUrl || data.accessToken)) {
+            console.log("[Firestore Config Helper] Successfully retrieved config via Admin SDK.");
+            try {
+              fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
+            } catch (writeErr: any) {
+              console.warn("[Firestore Config Helper] Could not cache Admin SDK result to disk:", writeErr.message);
+            }
+            return data;
+          }
+        } else {
+          console.log("[Firestore Config Helper] Admin SDK completed, but document does not exist yet.");
+        }
+      } catch (err: any) {
+        console.error("[Firestore Config Helper] Admin SDK fetch failed, trying fallbacks:", err.message);
+      }
+    }
+
+    // 3. Query Firestore via Google REST API (secondary reliable fallback)
     try {
       const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
       const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
@@ -113,7 +155,7 @@ app.use(express.json({ limit: '10mb' }));
       console.error("[Firestore Config Helper] Error during Firestore REST request:", err.message);
     }
 
-    // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
+    // 4. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
     try {
       console.log("[Firestore Config Helper] Falling back to Firebase Client SDK...");
       const docSnap = await getDoc(gmailDocRef);
