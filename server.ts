@@ -145,7 +145,72 @@ app.use(express.json({ limit: '10mb' }));
         }
 
         if (!tokenData) {
-          console.warn(`[Order Background Notify] No Gmail token connected in database/cache. Skipping background mail.`);
+          console.warn(`[Order Background Notify] No Gmail or Sheets configuration found in database/cache.`);
+          return;
+        }
+
+        // 3. Sync to Google Sheets if configured
+        if (tokenData.googleSheetsUrl) {
+          console.log(`[Order Background Notify] Syncing order #${order.id} to Google Sheets: ${tokenData.googleSheetsUrl}`);
+          try {
+            const itemsFormatted = (order.items ?? []).map((item: any) => 
+              `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
+            ).join(", ");
+
+            const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
+            const subtotalVal = order.subtotal ?? 0;
+            const isHalfDeposit = order.payment?.method === '50%';
+            const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+
+            const sheetPayload = {
+              timestamp: new Date(order.timestamp || Date.now()).toLocaleString('vi-VN'),
+              email: order.contact?.email || "",
+              snsLink: order.contact?.snsLink || "",
+              quantity: totalQty,
+              invoiceImage: order.payment?.invoiceImage || "",
+              customerName: order.shipping?.receiverName || "",
+              phone: order.shipping?.phone || "",
+              address: order.shipping?.address || "",
+              shippingMethod: order.shipping?.method || "",
+              note: order.note && order.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${order.note}` : itemsFormatted,
+              paidAmount: calculatedPaid,
+              totalAmount: subtotalVal,
+              items: (order.items ?? []).map((item: any) => ({
+                name: item.product?.name || 'Sản phẩm',
+                version: item.version || 'Mặc định',
+                quantity: item.quantity || 1
+              })),
+              cartItems: (order.items ?? []).map((item: any) => ({
+                productName: item.product?.name || 'Sản phẩm',
+                version: item.version || 'Mặc định',
+                quantity: item.quantity || 1
+              })),
+              productName: order.items?.[0]?.product?.name || "",
+              version: order.items?.[0]?.version || "",
+
+              // Backward compatibility fields
+              orderId: order.id,
+              products: itemsFormatted,
+              paymentMethod: order.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
+            };
+
+            fetch(tokenData.googleSheetsUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(sheetPayload)
+            })
+            .then(() => console.log(`[Order Background Notify] Successfully synced order #${order.id} to Google Sheets via server.`))
+            .catch(sheetErr => console.error(`[Order Background Notify] Google Sheets sync fetch failed:`, sheetErr.message));
+          } catch (sheetSyncErr: any) {
+            console.error(`[Order Background Notify] Error preparing Google Sheets payload:`, sheetSyncErr.message);
+          }
+        }
+
+        // 4. Send Gmail notification if configured
+        if (!tokenData.accessToken) {
+          console.warn(`[Order Background Notify] No Gmail accessToken connected in database/cache. Skipping background mail.`);
           return;
         }
 
