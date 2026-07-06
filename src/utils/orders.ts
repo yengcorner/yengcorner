@@ -195,6 +195,34 @@ export function listenToOrders(callback: (orders: OrderPayload[]) => void): () =
   });
 }
 
+// Helper to recursively remove all undefined values from an object/array for Firestore safety
+export function cleanUndefined<T>(obj: T): T {
+  if (obj === undefined) {
+    return "" as unknown as T;
+  }
+  if (obj === null) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefined(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val === undefined) {
+          // Omit undefined properties entirely
+          continue;
+        }
+        cleaned[key] = cleanUndefined(val);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
 export async function saveOrder(order: OrderPayload): Promise<void> {
   try {
     // Failsafe sanitization right before writing to Firestore
@@ -225,20 +253,23 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
       }
     }
 
-    const docRef = doc(db, 'orders', sanitizedOrder.id);
-    await setDoc(docRef, sanitizedOrder);
+    // 3. Clean all undefined fields recursively to prevent any Firestore crash
+    const finalCleanedOrder = cleanUndefined(sanitizedOrder);
+
+    const docRef = doc(db, 'orders', finalCleanedOrder.id);
+    await setDoc(docRef, finalCleanedOrder);
     
     // Kích hoạt gửi email thông báo ngầm (background) về admin
     fetch('/api/orders/notify-new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: sanitizedOrder })
+      body: JSON.stringify({ order: finalCleanedOrder })
     }).catch(err => console.error("Lỗi gửi thông báo đơn hàng mới ngầm:", err));
     
     // Lưu vào localStorage cache
     try {
       const currentOrders = await getOrdersLocalFallback();
-      const updatedOrders = [sanitizedOrder, ...currentOrders.filter(o => o.id !== sanitizedOrder.id)];
+      const updatedOrders = [finalCleanedOrder, ...currentOrders.filter(o => o.id !== finalCleanedOrder.id)];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
       syncAllProductSpecificOrders();
     } catch (e) {}
