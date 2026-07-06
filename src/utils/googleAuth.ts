@@ -33,6 +33,15 @@ export const db = tempDb;
 // Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    // If the admin already has a stored Google token, or is currently in the middle of a Google redirect sign-in,
+    // do NOT run signInAnonymously(auth) as it will cancel the redirect result exchange or disconnect the admin session.
+    const hasStoredToken = !!localStorage.getItem('yeng_gmail_access_token');
+    const isSigningInGoogle = sessionStorage.getItem('yeng_signing_in_google') === 'true';
+    if (hasStoredToken || isSigningInGoogle) {
+      console.log("[GoogleAuth] Skipping passive anonymous sign-in to protect Admin/Gmail Google login flow.");
+      return;
+    }
+
     try {
       await signInAnonymously(auth);
       console.log("Đăng nhập ẩn danh thành công làm Khách");
@@ -78,6 +87,7 @@ export const initAuth = (
   // Handle redirect result from Google sign-in
   getRedirectResult(auth)
     .then((result) => {
+      sessionStorage.removeItem('yeng_signing_in_google');
       if (result) {
         const credential = GoogleAuthProvider.credentialFromResult(result);
         if (credential?.accessToken) {
@@ -91,6 +101,7 @@ export const initAuth = (
       }
     })
     .catch((error) => {
+      sessionStorage.removeItem('yeng_signing_in_google');
       console.error('Error handling redirect result:', error);
     });
 
@@ -118,8 +129,12 @@ export const initAuth = (
           return;
         } catch (e) {}
       }
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
+      // If we are currently handling redirect result or are in middle of google login, do NOT wipe active session cache
+      const isSigningInGoogle = sessionStorage.getItem('yeng_signing_in_google') === 'true';
+      if (!isSigningInGoogle) {
+        cachedAccessToken = null;
+        if (onAuthFailure) onAuthFailure();
+      }
     }
   });
 };
@@ -128,9 +143,11 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<void> => {
   try {
     isSigningIn = true;
+    sessionStorage.setItem('yeng_signing_in_google', 'true');
     await signInWithRedirect(auth, provider);
   } catch (error: any) {
     console.error('Đăng nhập thất bại:', error);
+    sessionStorage.removeItem('yeng_signing_in_google');
     throw error;
   } finally {
     isSigningIn = false;
