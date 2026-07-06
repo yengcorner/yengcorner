@@ -1224,6 +1224,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
       paidAmount: calculatedPaid,
       totalAmount: subtotalVal,
+      items: (ord.items ?? []).map(item => ({
+        name: item.product?.name || 'Sản phẩm',
+        version: item.version || 'Mặc định',
+        quantity: item.quantity || 1
+      })),
+      cartItems: (ord.items ?? []).map(item => ({
+        productName: item.product?.name || 'Sản phẩm',
+        version: item.version || 'Mặc định',
+        quantity: item.quantity || 1
+      })),
+      productName: ord.items?.[0]?.product?.name || "",
+      version: ord.items?.[0]?.version || "",
       
       // Backward compatibility fields
       orderId: ord.id,
