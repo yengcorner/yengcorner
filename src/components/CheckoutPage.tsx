@@ -369,6 +369,16 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     // Process and submit order instantly (no artificial timeout, extremely high performance)
     const processCheckout = async () => {
+      try {
+        await saveOrder(completeOrderObj);
+        console.log("Đơn hàng lưu thành công vào Firestore:", completeOrderObj);
+      } catch (err: any) {
+        console.error("Lỗi khi lưu đơn hàng vào Firestore:", err);
+        alert("Lỗi lưu đơn: " + (err.message || String(err)));
+        setSubmitting(false);
+        return; // Stop processing checkout if Firestore save fails
+      }
+
       // Sync order to Google Sheets if configured
       const sheetsUrl = localStorage.getItem('yeng_google_sheets_url');
       if (sheetsUrl) {
@@ -426,13 +436,6 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       }
 
       setSubmitting(false);
-      
-      try {
-        await saveOrder(completeOrderObj);
-      } catch (err: any) {
-        console.error("Lỗi khi lưu đơn hàng:", err);
-        alert("Lỗi lưu đơn: " + (err.message || String(err)));
-      }
 
       // Deduct stock for all ordered items in Firestore
       completeOrderObj.items.forEach(async (item) => {
