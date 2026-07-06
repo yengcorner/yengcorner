@@ -9,7 +9,7 @@ import { OrderPayload, Product, CartItem, Coupon } from '../types';
 import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 export const dynamic = 'force-dynamic';
 
 interface AdminPageProps {
@@ -1903,8 +1903,20 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                 className="flex-1 px-3 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-neutral-50 font-mono text-xs text-neutral-800 placeholder-neutral-400"
               />
               <button
-                onClick={() => {
-                  alert("🎉 Lưu cổng kết nối Google Sheets thành công!");
+                onClick={async () => {
+                  try {
+                    const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+                    const snap = await getDoc(gmailDocRef);
+                    const existingData = snap.exists() ? snap.data() : {};
+                    await setDoc(gmailDocRef, {
+                      ...existingData,
+                      googleSheetsUrl: googleSheetsUrl
+                    });
+                    alert("🎉 Lưu cổng kết nối Google Sheets thành công và đồng bộ lên hệ thống cloud!");
+                  } catch (err: any) {
+                    console.error("Lỗi khi đồng bộ Google Sheets URL lên Firestore:", err);
+                    alert("Đã lưu local, nhưng không đồng bộ được lên hệ thống: " + err.message);
+                  }
                 }}
                 className="px-6 py-2.5 bg-blue-900 hover:bg-blue-950 text-white font-display font-bold text-xs rounded-lg uppercase tracking-wider transition-all"
               >
