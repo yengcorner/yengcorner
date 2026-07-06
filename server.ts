@@ -107,132 +107,130 @@ app.use(express.json({ limit: '10mb' }));
       return res.status(400).json({ error: "Thông tin đơn hàng không hợp lệ." });
     }
 
-    // Immediately respond to the client to make it completely non-blocking
-    res.json({ success: true, message: "Thông báo đang được gửi ngầm." });
-
-    // Execute background sending asynchronously
-    (async () => {
-      try {
-        console.log(`[Order Background Notify] Starting background notify for order #${order.id}`);
-        let tokenData;
-        // 1. Try reading local file cache
-        if (fs.existsSync(TOKEN_PATH)) {
-          try {
-            tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-          } catch (err: any) {
-            console.error("Could not parse local gmail token:", err);
-          }
+    try {
+      console.log(`[Order Sync] Starting synchronous notify & sync for order #${order.id}`);
+      let tokenData;
+      // 1. Try reading local file cache
+      if (fs.existsSync(TOKEN_PATH)) {
+        try {
+          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+        } catch (err: any) {
+          console.error("Could not parse local gmail token:", err);
         }
+      }
 
-        // 2. If not found in local file, restore from Firestore automatically
-        if (!tokenData) {
-          try {
-            const docSnap = await getDoc(gmailDocRef);
-            if (docSnap.exists()) {
-              tokenData = docSnap.data();
-              try {
-                fs.writeFileSync(
-                  TOKEN_PATH,
-                  JSON.stringify(tokenData, null, 2)
-                );
-              } catch (writeErr: any) {
-                console.warn("Could not cache token to disk:", writeErr.message);
-              }
+      // 2. If not found in local file, restore from Firestore automatically
+      if (!tokenData) {
+        try {
+          const docSnap = await getDoc(gmailDocRef);
+          if (docSnap.exists()) {
+            tokenData = docSnap.data();
+            try {
+              fs.writeFileSync(
+                TOKEN_PATH,
+                JSON.stringify(tokenData, null, 2)
+              );
+            } catch (writeErr: any) {
+              console.warn("Could not cache token to disk:", writeErr.message);
             }
-          } catch (err: any) {
-            console.error("Error loading Gmail token from Firestore:", err.message);
           }
+        } catch (err: any) {
+          console.error("Error loading Gmail token from Firestore:", err.message);
         }
+      }
 
-        if (!tokenData) {
-          console.warn(`[Order Background Notify] No Gmail or Sheets configuration found in database/cache.`);
-          return;
-        }
+      if (!tokenData) {
+        console.warn(`[Order Sync] No Gmail or Sheets configuration found in database/cache.`);
+        return res.json({ success: true, message: "Đơn hàng đã nhận, chưa cấu hình đồng bộ." });
+      }
 
-        // 3. Sync to Google Sheets if configured
-        if (tokenData.googleSheetsUrl) {
-          console.log(`[Order Background Notify] Syncing order #${order.id} to Google Sheets: ${tokenData.googleSheetsUrl}`);
-          try {
-            const itemsFormatted = (order.items ?? []).map((item: any) => 
-              `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
-            ).join(", ");
+      // 3. Sync to Google Sheets if configured
+      if (tokenData.googleSheetsUrl) {
+        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${tokenData.googleSheetsUrl}`);
+        try {
+          const itemsFormatted = (order.items ?? []).map((item: any) => 
+            `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
+          ).join(", ");
 
-            const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
-            const subtotalVal = order.subtotal ?? 0;
-            const isHalfDeposit = order.payment?.method === '50%';
-            const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+          const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
+          const subtotalVal = order.subtotal ?? 0;
+          const isHalfDeposit = order.payment?.method === '50%';
+          const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
 
-            const sheetPayload = {
-              timestamp: new Date(order.timestamp || Date.now()).toLocaleString('vi-VN'),
-              email: order.contact?.email || "",
-              snsLink: order.contact?.snsLink || "",
-              quantity: totalQty,
-              invoiceImage: order.payment?.invoiceImage || "",
-              customerName: order.shipping?.receiverName || "",
-              phone: order.shipping?.phone || "",
-              address: order.shipping?.address || "",
-              shippingMethod: order.shipping?.method || "",
-              note: order.note && order.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${order.note}` : itemsFormatted,
-              paidAmount: calculatedPaid,
-              totalAmount: subtotalVal,
-              items: (order.items ?? []).map((item: any) => ({
-                name: item.product?.name || 'Sản phẩm',
-                version: item.version || 'Mặc định',
-                quantity: item.quantity || 1
-              })),
-              cartItems: (order.items ?? []).map((item: any) => ({
-                productName: item.product?.name || 'Sản phẩm',
-                version: item.version || 'Mặc định',
-                quantity: item.quantity || 1
-              })),
-              productName: order.items?.[0]?.product?.name || "",
-              version: order.items?.[0]?.version || "",
+          const sheetPayload = {
+            timestamp: new Date(order.timestamp || Date.now()).toLocaleString('vi-VN'),
+            email: order.contact?.email || "",
+            snsLink: order.contact?.snsLink || "",
+            quantity: totalQty,
+            invoiceImage: order.payment?.invoiceImage || "",
+            customerName: order.shipping?.receiverName || "",
+            phone: order.shipping?.phone || "",
+            address: order.shipping?.address || "",
+            shippingMethod: order.shipping?.method || "",
+            note: order.note && order.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${order.note}` : itemsFormatted,
+            paidAmount: calculatedPaid,
+            totalAmount: subtotalVal,
+            items: (order.items ?? []).map((item: any) => ({
+              productName: item.product?.name || 'Sản phẩm',
+              version: item.version || 'Mặc định',
+              quantity: item.quantity || 1
+            })),
+            cartItems: (order.items ?? []).map((item: any) => ({
+              productName: item.product?.name || 'Sản phẩm',
+              version: item.version || 'Mặc định',
+              quantity: item.quantity || 1
+            })),
+            productName: order.items?.[0]?.product?.name || "",
+            version: order.items?.[0]?.version || "",
 
-              // Backward compatibility fields
-              orderId: order.id,
-              products: itemsFormatted,
-              paymentMethod: order.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
-            };
+            // Backward compatibility fields
+            orderId: order.id,
+            products: itemsFormatted,
+            paymentMethod: order.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
+          };
 
-            fetch(tokenData.googleSheetsUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(sheetPayload)
-            })
-            .then(() => console.log(`[Order Background Notify] Successfully synced order #${order.id} to Google Sheets via server.`))
-            .catch(sheetErr => console.error(`[Order Background Notify] Google Sheets sync fetch failed:`, sheetErr.message));
-          } catch (sheetSyncErr: any) {
-            console.error(`[Order Background Notify] Error preparing Google Sheets payload:`, sheetSyncErr.message);
+          // Await the fetch call so Vercel does not freeze before completion!
+          const sheetsResponse = await fetch(tokenData.googleSheetsUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(sheetPayload)
+          });
+          
+          if (sheetsResponse.ok) {
+            console.log(`[Order Sync] Successfully synced order #${order.id} to Google Sheets via server.`);
+          } else {
+            const sheetErrText = await sheetsResponse.text();
+            console.error(`[Order Sync] Google Sheets sync response non-OK:`, sheetsResponse.status, sheetErrText);
           }
+        } catch (sheetSyncErr: any) {
+          console.error(`[Order Sync] Error syncing to Google Sheets:`, sheetSyncErr.message);
         }
+      }
 
-        // 4. Send Gmail notification if configured
-        if (!tokenData.accessToken) {
-          console.warn(`[Order Background Notify] No Gmail accessToken connected in database/cache. Skipping background mail.`);
-          return;
-        }
+      // 4. Send Gmail notification if configured
+      if (tokenData.accessToken) {
+        try {
+          const { accessToken, email: senderEmail } = tokenData;
 
-        const { accessToken, email: senderEmail } = tokenData;
+          // Detail the ordered items for the notification mail
+          const itemsDetail = (order.items ?? []).map((item: any) => 
+            `- <strong>${item.product?.name || 'Sản phẩm'}</strong> (Phân loại: <em>${item.version || '—'}</em>) x${item.quantity}`
+          ).join("<br/>");
 
-        // Detail the ordered items for the notification mail
-        const itemsDetail = (order.items ?? []).map((item: any) => 
-          `- <strong>${item.product?.name || 'Sản phẩm'}</strong> (Phân loại: <em>${item.version || '—'}</em>) x${item.quantity}`
-        ).join("<br/>");
+          const subtotalFormatted = Number(order.subtotal || 0).toLocaleString("vi-VN") + " đ";
+          const customerName = order.shipping?.receiverName || "Khách hàng";
+          const phone = order.shipping?.phone || "Chưa có SĐT";
+          const address = order.shipping?.address || "Chưa có địa chỉ";
+          const email = order.contact?.email || "Chưa có email";
+          const snsLink = order.contact?.snsLink || "Không có";
+          const note = order.note || "Không có";
 
-        const subtotalFormatted = Number(order.subtotal || 0).toLocaleString("vi-VN") + " đ";
-        const customerName = order.shipping?.receiverName || "Khách hàng";
-        const phone = order.shipping?.phone || "Chưa có SĐT";
-        const address = order.shipping?.address || "Chưa có địa chỉ";
-        const email = order.contact?.email || "Chưa có email";
-        const snsLink = order.contact?.snsLink || "Không có";
-        const note = order.note || "Không có";
+          const subject = `[Yeng Corner] 🚨 CÓ ĐƠN HÀNG MỚI CHỜ DUYỆT #${order.id}`;
+          const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
 
-        const subject = `[Yeng Corner] 🚨 CÓ ĐƠN HÀNG MỚI CHỜ DUYỆT #${order.id}`;
-        const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
-
-        const notificationHtml = `
+          const notificationHtml = `
 <div style="background-color: #f8fafc; padding: 30px 15px; font-family: 'Segoe UI', Arial, sans-serif; color: #334155;">
   <div style="max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); background-color: #ffffff;">
     <div style="background-color: #1e3a8a; padding: 25px 20px; text-align: center; color: #ffffff;">
@@ -299,41 +297,48 @@ app.use(express.json({ limit: '10mb' }));
 </div>
         `;
 
-        const rawParts = [
-          `From: "Yeng Corner Bot" <${senderEmail}>`,
-          `To: ${senderEmail}`, // Send to the admin's email itself
-          `Subject: ${subjectEncoded}`,
-          "MIME-Version: 1.0",
-          "Content-Type: text/html; charset=utf-8",
-          "",
-          notificationHtml
-        ];
-        const raw = rawParts.join("\r\n");
-        const base64Safe = Buffer.from(raw)
-          .toString("base64")
-          .replace(/\+/g, "-")
-          .replace(/\//g, "_")
-          .replace(/=+$/, "");
+          const rawParts = [
+            `From: "Yeng Corner Bot" <${senderEmail}>`,
+            `To: ${senderEmail}`, // Send to the admin's email itself
+            `Subject: ${subjectEncoded}`,
+            "MIME-Version: 1.0",
+            "Content-Type: text/html; charset=utf-8",
+            "",
+            notificationHtml
+          ];
+          const raw = rawParts.join("\r\n");
+          const base64Safe = Buffer.from(raw)
+            .toString("base64")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
 
-        const googleRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ raw: base64Safe }),
-        });
+          const googleRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ raw: base64Safe }),
+          });
 
-        if (googleRes.ok) {
-          console.log(`[Order Background Notify] Email successfully sent to admin ${senderEmail}`);
-        } else {
-          const errText = await googleRes.text();
-          console.error(`[Order Background Notify] Google API response error:`, errText);
+          if (googleRes.ok) {
+            console.log(`[Order Sync] Email successfully sent to admin ${senderEmail}`);
+          } else {
+            const errText = await googleRes.text();
+            console.error(`[Order Sync] Google API response error:`, errText);
+          }
+        } catch (mailErr: any) {
+          console.error(`[Order Sync] Error sending Gmail:`, mailErr.message);
         }
-      } catch (bgErr: any) {
-        console.error(`[Order Background Notify] Exception during background notify:`, bgErr.message);
       }
-    })();
+
+      // Trao phản hồi thành công sau khi đã hoàn thành các tác vụ đồng bộ
+      return res.json({ success: true, message: "Đồng bộ hóa và gửi thông báo thành công!" });
+    } catch (err: any) {
+      console.error(`[Order Sync Error]`, err.message);
+      return res.json({ success: true, warning: "Đã lưu đơn thành công nhưng đồng bộ ngầm gặp sự cố." });
+    }
   });
 
   // Secure API endpoint to send emails using stored Gmail token
