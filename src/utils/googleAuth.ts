@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -149,107 +148,52 @@ export const logout = async () => {
   localStorage.removeItem('yeng_gmail_user');
 };
 
-export const storage = getStorage(app);
-
-export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-
-      if (width > height) {
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-      } else {
-        if (height > maxHeight) {
-          width = Math.round((width * maxHeight) / height);
-          height = maxHeight;
-        }
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, width, height);
-        try {
-          const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-          resolve(compressedBase64);
-        } catch (err) {
-          console.warn("Lỗi khi toDataURL canvas, dùng base64 gốc:", err);
-          resolve(base64Str);
-        }
-      } else {
-        resolve(base64Str);
-      }
-    };
-    img.onerror = () => {
-      resolve(base64Str);
-    };
-  });
-};
-
-export const dataURLtoBlob = (dataurl: string): Blob => {
-  try {
-    const arr = dataurl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], { type: mime });
-  } catch (e) {
-    console.error("Lỗi parse dataURLtoBlob:", e);
-    throw e;
-  }
-};
-
 export const uploadInvoiceImage = async (orderId: string, fileOrBase64: File | string): Promise<string> => {
   try {
-    let blob: Blob;
-    let fileName = `invoice_${orderId}.jpg`;
+    const formData = new FormData();
+    const apiKey = '1048f7663e271a06a33703c737c3539a';
 
     if (fileOrBase64 instanceof File) {
-      // If it's a raw File, we can read it, compress it first to ensure we aren't uploading multiple MBs
-      const fileBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(fileOrBase64);
-      });
-      const compressed = await compressImage(fileBase64);
-      blob = dataURLtoBlob(compressed);
-      fileName = fileOrBase64.name;
+      formData.append('image', fileOrBase64);
     } else {
-      // It's a base64 string
-      const compressed = await compressImage(fileOrBase64);
-      blob = dataURLtoBlob(compressed);
+      let base64Data = fileOrBase64;
+      if (base64Data.startsWith('data:image/')) {
+        const parts = base64Data.split(';base64,');
+        if (parts.length > 1) {
+          base64Data = parts[1];
+        }
+      }
+      formData.append('image', base64Data);
     }
 
-    const storageRef = ref(storage, `invoices/${orderId}_${Date.now()}_${fileName}`);
-    const snapshot = await uploadBytes(storageRef, blob);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return downloadURL;
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`ImgBB upload failed with status ${response.status}: ${errText}`);
+    }
+
+    const resJson = await response.json();
+    if (resJson && resJson.success && resJson.data && resJson.data.url) {
+      return resJson.data.url;
+    } else {
+      throw new Error(resJson?.error?.message || "Invalid response structure from ImgBB");
+    }
   } catch (error: any) {
-    console.error("Lỗi khi tải ảnh lên Firebase Storage:", error);
+    console.error("Lỗi khi tải ảnh lên ImgBB:", error);
     throw error;
   }
 };
 
 export const sanitizeProductForOrder = async (product: Product): Promise<Product> => {
-  // Let's create a lean clone of the product to prevent bloating the order document
   const leanProduct: Product = {
     id: product.id,
     name: product.name,
     price: product.price,
-    image: product.image, // We will compress this image if it is a base64 string
+    image: product.image,
     category: product.category,
     artist: product.artist || "",
     orderDeadline: product.orderDeadline || "",
@@ -259,7 +203,6 @@ export const sanitizeProductForOrder = async (product: Product): Promise<Product
     tag: product.tag,
   };
 
-  // If there is a variantMatrix or variations, keep them lean
   if (product.variantMatrix) {
     leanProduct.variantMatrix = product.variantMatrix.map(v => ({
       option1: v.option1,
@@ -276,12 +219,13 @@ export const sanitizeProductForOrder = async (product: Product): Promise<Product
     }));
   }
 
-  // Compress product image if it's a base64 string to tiny size (under 5KB)
+  // If product image is base64, upload to ImgBB to keep document light and clean
   if (leanProduct.image && leanProduct.image.startsWith('data:image/')) {
     try {
-      leanProduct.image = await compressImage(leanProduct.image, 100, 100, 0.5);
+      leanProduct.image = await uploadInvoiceImage(String(product.id), leanProduct.image);
     } catch (e) {
-      console.warn("Could not compress product image for order:", e);
+      console.warn("Could not upload product base64 image to ImgBB:", e);
+      leanProduct.image = leanProduct.image.slice(0, 1000);
     }
   }
 
