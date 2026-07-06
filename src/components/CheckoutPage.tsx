@@ -3,7 +3,7 @@ import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIc
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
 import { deductProductStock } from '../utils/products';
-import { initAuth, googleSignIn } from '../utils/googleAuth';
+import { initAuth, googleSignIn, uploadInvoiceImage, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
   cart: CartItem[];
@@ -223,6 +223,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
   const [paymentMethod, setPaymentMethod] = useState<'50%' | '100%'>('50%');
   const [shippingMethod, setShippingMethod] = useState('SPX');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [copiedBankNum, setCopiedBankNum] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -245,6 +246,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
   const processFile = (file: File) => {
     if (file && file.type.startsWith('image/')) {
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onload = (e) => {
         if (e.target?.result) {
@@ -288,7 +290,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
     setTimeout(() => setCopiedBankNum(false), 2000);
   };
 
-  const handleSubmitOrder = (e: React.FormEvent) => {
+  const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Ràng buộc bắt buộc (Required Fields Validation)
@@ -321,10 +323,37 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     const orderId = "YENG26-" + Math.floor(1000 + Math.random() * 9000);
 
+    // Upload to Firebase Storage with fallback
+    let invoiceUrl = previewImage;
+    try {
+      if (selectedFile) {
+        invoiceUrl = await uploadInvoiceImage(orderId, selectedFile);
+      } else if (previewImage && previewImage.startsWith('data:image/')) {
+        invoiceUrl = await uploadInvoiceImage(orderId, previewImage);
+      }
+    } catch (uploadErr) {
+      console.warn("Lỗi upload lên Firebase Storage, nén ảnh dùng base64 fallback:", uploadErr);
+      try {
+        if (previewImage) {
+          invoiceUrl = await compressImage(previewImage);
+        }
+      } catch (compressErr) {
+        console.error("Lỗi nén ảnh:", compressErr);
+      }
+    }
+
+    // Sanitize and shrink all cart products to prevent bloating the order document size
+    const sanitizedCartItems = await Promise.all(
+      cart.map(async (item) => ({
+        ...item,
+        product: await sanitizeProductForOrder(item.product)
+      }))
+    );
+
     const completeOrderObj: OrderPayload = {
       id: orderId,
       status: "Chờ xác nhận",
-      items: cart,
+      items: sanitizedCartItems,
       subtotal: finalTotal,
       contact: {
         email: formData.email,
@@ -332,7 +361,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       },
       payment: {
         method: paymentMethod === '50%' ? "Cọc 50%" : "Thanh toán 100%",
-        invoiceImage: previewImage
+        invoiceImage: invoiceUrl || ""
       },
       shipping: {
         receiverName: formData.customerName,
@@ -363,7 +392,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           email: formData.email,
           snsLink: formData.snsLink,
           quantity: totalQty,
-          invoiceImage: previewImage || "",
+          invoiceImage: invoiceUrl || "",
           customerName: formData.customerName,
           phone: formData.phone,
           address: formData.address,
