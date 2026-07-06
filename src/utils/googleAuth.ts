@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -145,4 +147,143 @@ export const logout = async () => {
   cachedAccessToken = null;
   localStorage.removeItem('yeng_gmail_access_token');
   localStorage.removeItem('yeng_gmail_user');
+};
+
+export const storage = getStorage(app);
+
+export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressedBase64);
+        } catch (err) {
+          console.warn("Lỗi khi toDataURL canvas, dùng base64 gốc:", err);
+          resolve(base64Str);
+        }
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+  });
+};
+
+export const dataURLtoBlob = (dataurl: string): Blob => {
+  try {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.error("Lỗi parse dataURLtoBlob:", e);
+    throw e;
+  }
+};
+
+export const uploadInvoiceImage = async (orderId: string, fileOrBase64: File | string): Promise<string> => {
+  try {
+    let blob: Blob;
+    let fileName = `invoice_${orderId}.jpg`;
+
+    if (fileOrBase64 instanceof File) {
+      // If it's a raw File, we can read it, compress it first to ensure we aren't uploading multiple MBs
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (err) => reject(err);
+        reader.readAsDataURL(fileOrBase64);
+      });
+      const compressed = await compressImage(fileBase64);
+      blob = dataURLtoBlob(compressed);
+      fileName = fileOrBase64.name;
+    } else {
+      // It's a base64 string
+      const compressed = await compressImage(fileOrBase64);
+      blob = dataURLtoBlob(compressed);
+    }
+
+    const storageRef = ref(storage, `invoices/${orderId}_${Date.now()}_${fileName}`);
+    const snapshot = await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  } catch (error: any) {
+    console.error("Lỗi khi tải ảnh lên Firebase Storage:", error);
+    throw error;
+  }
+};
+
+export const sanitizeProductForOrder = async (product: Product): Promise<Product> => {
+  // Let's create a lean clone of the product to prevent bloating the order document
+  const leanProduct: Product = {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    image: product.image, // We will compress this image if it is a base64 string
+    category: product.category,
+    artist: product.artist || "",
+    orderDeadline: product.orderDeadline || "",
+    releaseDate: product.releaseDate || "",
+    stock: product.stock,
+    status: product.status,
+    tag: product.tag,
+  };
+
+  // If there is a variantMatrix or variations, keep them lean
+  if (product.variantMatrix) {
+    leanProduct.variantMatrix = product.variantMatrix.map(v => ({
+      option1: v.option1,
+      option2: v.option2,
+      price: v.price,
+      stock: v.stock
+    }));
+  }
+  if (product.variations) {
+    leanProduct.variations = product.variations.map(v => ({
+      name: v.name,
+      price: v.price,
+      stock: v.stock
+    }));
+  }
+
+  // Compress product image if it's a base64 string to tiny size (under 5KB)
+  if (leanProduct.image && leanProduct.image.startsWith('data:image/')) {
+    try {
+      leanProduct.image = await compressImage(leanProduct.image, 100, 100, 0.5);
+    } catch (e) {
+      console.warn("Could not compress product image for order:", e);
+    }
+  }
+
+  return leanProduct;
 };
