@@ -1,6 +1,6 @@
 import { OrderPayload, CartItem, Product, Coupon } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
-import { db, uploadInvoiceImage, sanitizeProductForOrder } from './googleAuth';
+import { db, compressImage, sanitizeProductForOrder } from './googleAuth';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // Helper to generate some high-fidelity mock orders for first-time administration view
@@ -244,12 +244,12 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
       sanitizedOrder.items = sanitizedItems;
     }
 
-    // 2. Double-check and upload invoice image to ImgBB if it's still base64
+    // 2. Double-check and compress invoice image locally if it's still uncompressed base64
     if (sanitizedOrder.payment && sanitizedOrder.payment.invoiceImage && sanitizedOrder.payment.invoiceImage.startsWith('data:image/')) {
       try {
-        sanitizedOrder.payment.invoiceImage = await uploadInvoiceImage(sanitizedOrder.id, sanitizedOrder.payment.invoiceImage);
+        sanitizedOrder.payment.invoiceImage = await compressImage(sanitizedOrder.payment.invoiceImage, 800, 800, 0.6);
       } catch (err) {
-        console.warn("Could not upload invoiceImage to ImgBB in saveOrder failsafe:", err);
+        console.warn("Could not compress invoiceImage in saveOrder failsafe:", err);
       }
     }
 
