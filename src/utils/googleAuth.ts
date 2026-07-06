@@ -278,10 +278,10 @@ export const logout = async () => {
 };
 
 /**
- * Highly optimized HTML5 Canvas image compressor designed specifically to output ultra-lightweight
- * images (< 50KB) by recursively lowering quality and scale when needed, protecting Firestore quotas.
+ * Highly optimized HTML5 Canvas image compressor designed specifically to output ultra-lightweight but highly readable
+ * images (~100KB-150KB) by recursively lowering quality and scale when needed, protecting Firestore quotas.
  */
-export const compressImage = (base64Str: string, maxWidth = 500, maxHeight = 500, quality = 0.4): Promise<string> => {
+export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
   return new Promise((resolve) => {
     // If it is not a base64 string (e.g. standard unsplash/http URL), return immediately
     if (!base64Str || !base64Str.startsWith('data:image/')) {
@@ -318,21 +318,21 @@ export const compressImage = (base64Str: string, maxWidth = 500, maxHeight = 500
         let currentQuality = quality;
         let result = canvas.toDataURL('image/jpeg', currentQuality);
         
-        // Iteratively reduce quality if file is still larger than ~50KB (approx 68,000 characters for base64)
-        while (result.length > 68000 && currentQuality > 0.1) {
-          currentQuality -= 0.08;
+        // Iteratively reduce quality if file is still larger than ~150KB (approx 200,000 characters for base64) to ensure high readability
+        while (result.length > 200000 && currentQuality > 0.1) {
+          currentQuality -= 0.05;
           result = canvas.toDataURL('image/jpeg', currentQuality);
         }
         
-        // If still too big, scale down further to guarantee it is under < 50KB
-        if (result.length > 68000) {
+        // If still too big, scale down further to guarantee it is under ~150KB
+        if (result.length > 200000) {
           const smallCanvas = document.createElement('canvas');
-          smallCanvas.width = Math.round(width * 0.6);
-          smallCanvas.height = Math.round(height * 0.6);
+          smallCanvas.width = Math.round(width * 0.7);
+          smallCanvas.height = Math.round(height * 0.7);
           const sCtx = smallCanvas.getContext('2d');
           if (sCtx) {
             sCtx.drawImage(canvas, 0, 0, smallCanvas.width, smallCanvas.height);
-            result = smallCanvas.toDataURL('image/jpeg', 0.15);
+            result = smallCanvas.toDataURL('image/jpeg', 0.4);
           }
         }
         
