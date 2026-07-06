@@ -3,34 +3,29 @@ import fs from "fs";
 import path from "path";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc } from "firebase/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
+import * as admin from "firebase-admin";
+import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-
-const gmailDocRef = doc(
-  db,
-  "gmail",
-  "config_YengCornerSecret_3bf8d79a29e4"
-);
-
-export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const { accessToken, email } = req.body;
-
-  if (!accessToken || !email) {
-    return res.status(400).json({
-      error: "Missing accessToken or email",
-    });
-// Initialize Firebase using the configuration file
-const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const firebaseConfig = require("../../firebase-applet-config.json");
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+
+// Initialize Firebase Admin SDK for 100% reliable server writes
+let dbAdmin: any = null;
+try {
+  const adminAny = admin as any;
+  if (adminAny.apps.length === 0) {
+    adminAny.initializeApp({
+      projectId: firebaseConfig.projectId
+    });
+  }
+  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+} catch (adminErr: any) {
+  console.warn("[Gmail Auth Admin Store] Admin SDK initialization skipped/failed:", adminErr.message);
+}
 
 const TOKEN_PATH = process.env.VERCEL 
   ? "/tmp/gmail-token.json" 
@@ -48,27 +43,21 @@ export default async function handler(req: Request, res: Response) {
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
-}
+  }
 
-try {
-    await setDoc(gmailDocRef, {
+  try {
     const { accessToken, email, refreshToken } = req.body;
     if (!accessToken || !email) {
       return res.status(400).json({ success: false, error: "Missing accessToken or email" });
     }
 
     const tokenData = {
-accessToken,
-email,
+      accessToken,
+      email,
       refreshToken: refreshToken || null,
-updatedAt: new Date().toISOString(),
-    });
+      updatedAt: new Date().toISOString(),
     };
 
-    return res.json({
-      success: true,
-      email,
-    });
     // 1. Try to write to local file cache (non-blocking)
     try {
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
@@ -77,20 +66,18 @@ updatedAt: new Date().toISOString(),
       console.warn(`[Gmail Auth] Could not write to local cache (non-blocking):`, cacheErr.message);
     }
 
-    // 2. Write to Firestore for durable persistence
-    await setDoc(gmailDocRef, tokenData);
+    // 2. Write to Firestore for durable persistence using Admin SDK if available
+    if (dbAdmin) {
+      console.log(`[Gmail Auth] Storing token in Firestore via Admin SDK...`);
+      await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").set(tokenData);
+    } else {
+      console.log(`[Gmail Auth] Falling back to Client SDK to store token...`);
+      await setDoc(gmailDocRef, tokenData);
+    }
     console.log(`[Gmail Auth] Token stored successfully in Firestore for ${email}`);
 
     return res.status(200).json({ success: true, email });
-} catch (err: any) {
-  console.error(err);
-
-  return res.status(500).json({
-    error: err?.message,
-    stack: err?.stack,
-    name: err?.name,
-  });
-  }}
+  } catch (err: any) {
     console.error("[Gmail Auth] Error storing token:", err);
     return res.status(500).json({ success: false, error: "Could not save Gmail token: " + err.message });
   }
