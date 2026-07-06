@@ -2,9 +2,10 @@ import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
+import { getApps } from "firebase-admin/app";
 
 import { createRequire } from "module";
 const localRequire = typeof require !== "undefined" ? require : createRequire(import.meta.url);
@@ -16,13 +17,15 @@ const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 // Initialize Firebase Admin SDK for 100% reliable server reads
 let dbAdmin: any = null;
 try {
-  const adminAny = admin as any;
-  if (adminAny.apps.length === 0) {
-    adminAny.initializeApp({
+  // Thay vì dùng adminAny.apps, ta dùng getApps() chính chủ của SDK
+  const apps = getApps();
+  if (apps.length === 0) {
+    admin.initializeApp({
       projectId: firebaseConfig.projectId
     });
   }
-  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+  // Sửa adminAny.apps[0] thành admin.app() xịn để không bao giờ bị báo lỗi property nữa
+  dbAdmin = getFirestoreAdmin(admin.app(), firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
   console.warn("[Gmail Send Admin] Admin SDK initialization skipped/failed:", adminErr.message);
 }
@@ -232,7 +235,10 @@ export default async function handler(req: Request, res: Response) {
               tokenData.updatedAt = new Date().toISOString();
 
               // Update Firestore and Local cache with the new accessToken
-              await setDoc(gmailDocRef, tokenData);
+              await updateDoc(gmailDocRef, {
+                accessToken: accessToken,
+                updatedAt: new Date().toISOString()
+              });
               try {
                 fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
               } catch (e) {}
