@@ -247,7 +247,7 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     // 2. Double-check and compress invoice image locally if it's still uncompressed base64
     if (sanitizedOrder.payment && sanitizedOrder.payment.invoiceImage && sanitizedOrder.payment.invoiceImage.startsWith('data:image/')) {
       try {
-        sanitizedOrder.payment.invoiceImage = await compressImage(sanitizedOrder.payment.invoiceImage, 500, 500, 0.4);
+        sanitizedOrder.payment.invoiceImage = await compressImage(sanitizedOrder.payment.invoiceImage, 800, 800, 0.6);
       } catch (err) {
         console.warn("Could not compress invoiceImage in saveOrder failsafe:", err);
       }
