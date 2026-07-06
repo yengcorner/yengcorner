@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
+import { getFirestore, doc, setDoc, updateDoc } from "firebase/firestore"; 
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
@@ -51,12 +51,42 @@ export default async function handler(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "Missing accessToken or email" });
     }
 
-    const tokenData = {
+    // Thay vì tạo object tokenData cũ, ta tạo updateData thông minh chỉ lấy những gì có sẵn
+    const updateData: any = {
       accessToken,
       email,
-      refreshToken: refreshToken || null,
       updatedAt: new Date().toISOString(),
     };
+    
+    // Nếu có refreshToken truyền lên thì mới cập nhật, không thì thôi chứ tuyệt đối không gán bằng null
+    if (refreshToken) {
+      updateData.refreshToken = refreshToken;
+    }
+
+    // 1. Ghi vào cache file cục bộ (Gộp dữ liệu cũ nếu có để tránh lỗi cache)
+    try {
+      let existingCache = {};
+      if (fs.existsSync(TOKEN_PATH)) {
+        try { existingCache = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8")); } catch(_) {}
+      }
+      const newCache = { ...existingCache, ...updateData };
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(newCache, null, 2));
+      console.log(`[Gmail Auth] Token cached locally at ${TOKEN_PATH}`);
+    } catch (cacheErr: any) {
+      console.warn(`[Gmail Auth] Could not write to local cache (non-blocking):`, cacheErr.message);
+    }
+
+    // 2. Ghi vào Firestore dùng UPDATE để bảo vệ các trường khác (nhuy googleSheetsUrl)
+    if (dbAdmin) {
+      console.log(`[Gmail Auth] Updating token in Firestore via Admin SDK...`);
+      // Sử dụng { merge: true } giúp Admin SDK hiểu là chỉ cập nhật (UPDATE) chứ không ghi đè xóa file
+      await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").set(updateData, { merge: true });
+    } else {
+      console.log(`[Gmail Auth] Falling back to Client SDK to update token...`);
+      // Dùng updateDoc của Client SDK để giữ an toàn dữ liệu
+      await updateDoc(gmailDocRef, updateData);
+    }
+    console.log(`[Gmail Auth] Token updated successfully in Firestore for ${email}`);
 
     // 1. Try to write to local file cache (non-blocking)
     try {
