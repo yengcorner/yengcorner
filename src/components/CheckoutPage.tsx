@@ -394,11 +394,18 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           note: formData.note && formData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${formData.note}` : itemsFormatted,
           paidAmount: calculatedPaid,
           totalAmount: finalTotal,
+          items: cart.map(item => ({
+            name: item.product.name,
+            version: item.version,
+            quantity: item.quantity
+          })),
           cartItems: cart.map(item => ({
             productName: item.product.name,
             version: item.version,
             quantity: item.quantity
           })),
+          productName: cart[0]?.product.name || "",
+          version: cart[0]?.version || "",
 
           // Backward compatibility fields
           orderId: orderId,
