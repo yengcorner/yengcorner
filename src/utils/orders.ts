@@ -214,8 +214,9 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
       syncAllProductSpecificOrders();
     } catch (e) {}
-  } catch (e) {
+  } catch (e: any) {
     console.error("Lỗi ghi order vào Firestore:", e);
+    alert("Lỗi lưu đơn: " + (e.message || String(e)));
     // Ghi local cache làm cứu cánh
     try {
       const currentOrders = await getOrdersLocalFallback();
@@ -223,6 +224,7 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
       syncAllProductSpecificOrders();
     } catch (err) {}
+    throw e; // Throw so that CheckoutPage is aware
   }
 }
 
