@@ -82,14 +82,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       });
       
       if (listRes.status === 401) {
-        console.warn("Gmail token is expired. Cleaning up expired session...");
-        await googleLogout();
-        setGmailUser(null);
-        setGmailToken(null);
+        console.warn("Gmail token is expired. Setting empty messages list.");
         setGmailMessages([]);
-        showToast("⚠️ Phiên kết nối Gmail đã hết hạn. Vui lòng nhấn 'Kết nối Gmail' để đăng nhập lại.", "info");
-        // Clear token on the server too
-        fetch('/api/gmail/clear-token', { method: 'POST' }).catch(() => {});
+        showToast("⚠️ Phiên kết nối Gmail đã hết hạn. Vui lòng nhấn nút 'Kết nối Gmail' để làm mới.", "info");
         return;
       }
       
