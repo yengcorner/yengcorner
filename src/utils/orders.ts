@@ -259,12 +259,22 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     const docRef = doc(db, 'orders', finalCleanedOrder.id);
     await setDoc(docRef, finalCleanedOrder);
     
-    // Kích hoạt gửi email thông báo ngầm (background) về admin
-    fetch('/api/orders/notify-new', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: finalCleanedOrder })
-    }).catch(err => console.error("Lỗi gửi thông báo đơn hàng mới ngầm:", err));
+    // Kích hoạt đồng bộ hóa đơn hàng lên Google Sheets và gửi Gmail thông báo về admin thông qua server
+    try {
+      console.log("[Order Sync] Requesting server-side sync & notify...");
+      const syncResponse = await fetch('/api/orders/notify-new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: finalCleanedOrder })
+      });
+      if (syncResponse.ok) {
+        console.log("[Order Sync] Server-side sync and Gmail notification completed successfully.");
+      } else {
+        console.error("[Order Sync] Server responded with error status:", syncResponse.status);
+      }
+    } catch (err: any) {
+      console.error("[Order Sync] Failed to trigger server-side sync & notify:", err.message);
+    }
     
     // Lưu vào localStorage cache
     try {
