@@ -38,19 +38,24 @@ const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 // Initialize Firebase Admin SDK for robust server-side Firestore operations with bypass access
 let dbAdmin: any = null;
 try {
-  if (admin.apps.length === 0) {
+  // Thay vì dùng admin.apps.length, ta dùng admin.app() trong try/catch để check xem app đã được tạo chưa
+  try {
+    admin.app();
+  } catch (e) {
+    // Nếu chưa có app nào được khởi tạo, admin.app() sẽ báo lỗi -> ta tiến hành initializeApp
     admin.initializeApp({
       projectId: firebaseConfig.projectId
     });
-  } else {
-    // Already initialized
   }
-  dbAdmin = getFirestoreAdmin(admin.apps[0] || admin.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+
+  // Thay admin.apps[0] bằng admin.app() chuẩn chỉnh của Admin SDK
+  dbAdmin = getFirestoreAdmin(admin.app(), firebaseConfig.firestoreDatabaseId);
   console.log("[Firebase Admin] Initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
   console.warn("[Firebase Admin] Initialization failed, trying fallback:", adminErr.message);
   try {
-    dbAdmin = getFirestoreAdmin(admin.apps[0], firebaseConfig.firestoreDatabaseId);
+    // Đoạn fallback này cũng sửa admin.apps[0] thành admin.app() luôn
+    dbAdmin = getFirestoreAdmin(admin.app(), firebaseConfig.firestoreDatabaseId);
   } catch (err2: any) {
     console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", err2.message);
   }
