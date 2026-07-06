@@ -53,47 +53,97 @@ app.use(express.json({ limit: '10mb' }));
   // Endpoint to clear stored Gmail credentials
   app.post("/api/gmail/clear-token", clearTokenHandler);
 
+  // Helper function to fetch Gmail & Sheets configuration from Firestore using ultra-reliable REST API with Client SDK fallbacks
+  async function fetchGmailConfigFromFirestore(): Promise<any> {
+    // 1. Try reading from local file cache first (extremely fast)
+    if (fs.existsSync(TOKEN_PATH)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+        if (cached && (cached.googleSheetsUrl || cached.accessToken)) {
+          console.log("[Firestore Config Helper] Found valid config in local disk cache.");
+          return cached;
+        }
+      } catch (err: any) {
+        console.warn("[Firestore Config Helper] Failed to parse local disk cache (non-blocking):", err.message);
+      }
+    }
+
+    // 2. Query Firestore via Google REST API (100% reliable in stateless serverless/Vercel/multi-container environments)
+    try {
+      const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
+      console.log(`[Firestore Config Helper] Fetching fresh config via REST API from: ${url}`);
+      
+      const response = await fetch(url);
+      if (response.ok) {
+        const docObj = await response.json();
+        if (docObj && docObj.fields) {
+          const result: any = {};
+          for (const key of Object.keys(docObj.fields)) {
+            const valObj = docObj.fields[key];
+            if (valObj.stringValue !== undefined) {
+              result[key] = valObj.stringValue;
+            } else if (valObj.integerValue !== undefined) {
+              result[key] = parseInt(valObj.integerValue, 10);
+            } else if (valObj.doubleValue !== undefined) {
+              result[key] = parseFloat(valObj.doubleValue);
+            } else if (valObj.booleanValue !== undefined) {
+              result[key] = valObj.booleanValue;
+            } else if (valObj.mapValue !== undefined) {
+              result[key] = valObj.mapValue;
+            } else {
+              result[key] = valObj;
+            }
+          }
+          if (result.googleSheetsUrl || result.accessToken) {
+            console.log("[Firestore Config Helper] Successfully restored config from Firestore via REST API.");
+            // Cache back to local disk
+            try {
+              fs.writeFileSync(TOKEN_PATH, JSON.stringify(result, null, 2));
+            } catch (writeErr: any) {
+              console.warn("[Firestore Config Helper] Could not cache to local disk:", writeErr.message);
+            }
+            return result;
+          }
+        }
+      } else {
+        console.warn(`[Firestore Config Helper] REST API returned non-OK status: ${response.status}`);
+      }
+    } catch (err: any) {
+      console.error("[Firestore Config Helper] Error during Firestore REST request:", err.message);
+    }
+
+    // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
+    try {
+      console.log("[Firestore Config Helper] Falling back to Firebase Client SDK...");
+      const docSnap = await getDoc(gmailDocRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        try {
+          fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
+        } catch (writeErr: any) {
+          console.warn("[Firestore Config Helper] Could not cache SDK result:", writeErr.message);
+        }
+        return data;
+      }
+    } catch (err: any) {
+      console.error("[Firestore Config Helper] Client SDK fetch failed:", err.message);
+    }
+
+    return null;
+  }
+
   // Endpoint to retrieve active Gmail connection status
   app.get("/api/gmail/status", async (req, res) => {
     try {
-      // 1. Try reading from local file cache
-      try {
-        if (fs.existsSync(TOKEN_PATH)) {
-          const data = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-          return res.json({
-            connected: true,
-            email: data.email,
-            updatedAt: data.updatedAt,
-          });
-        }
-      } catch (cacheErr: any) {
-        console.warn(`[Gmail Auth] Local cache read failed (non-blocking):`, cacheErr.message);
+      const data = await fetchGmailConfigFromFirestore();
+      if (data && data.accessToken) {
+        return res.json({
+          connected: true,
+          email: data.email,
+          updatedAt: data.updatedAt || new Date().toISOString(),
+        });
       }
-
-      // 2. If missing on local disk, check Firestore
-      try {
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          // Write back to local cache
-          try {
-            fs.writeFileSync(
-              TOKEN_PATH,
-              JSON.stringify(data, null, 2)
-            );
-          } catch (cacheErr: any) {
-            console.warn(`[Gmail Auth] Failed to write back to cache (non-blocking):`, cacheErr.message);
-          }
-          return res.json({
-            connected: true,
-            email: data?.email,
-            updatedAt: data?.updatedAt,
-          });
-        }
-      } catch (fsErr: any) {
-        console.warn(`[Gmail Auth] Firestore get failed:`, fsErr.message);
-      }
-
       res.json({ connected: false, email: null, updatedAt: null });
     } catch (err) {
       res.json({ connected: false, email: null, updatedAt: null });
@@ -109,37 +159,9 @@ app.use(express.json({ limit: '10mb' }));
 
     try {
       console.log(`[Order Sync] Starting synchronous notify & sync for order #${order.id}`);
-      let tokenData;
       
-      // 1. Try reading the fresh configuration from Firestore first (Source of Truth)
-      try {
-        console.log("[Order Sync] Fetching latest Gmail/Sheets configuration from Firestore...");
-        const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          tokenData = docSnap.data();
-          // Cache to local disk for fallback
-          try {
-            fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
-            console.log("[Order Sync] Cached latest configuration to local disk.");
-          } catch (writeErr: any) {
-            console.warn("[Order Sync] Could not cache config to disk (non-blocking):", writeErr.message);
-          }
-        } else {
-          console.log("[Order Sync] No configuration found in Firestore.");
-        }
-      } catch (err: any) {
-        console.error("[Order Sync] Failed to load configuration from Firestore, falling back to local disk:", err.message);
-      }
-
-      // 2. If Firestore loading failed or returned empty, fall back to local disk cache
-      if (!tokenData && fs.existsSync(TOKEN_PATH)) {
-        try {
-          console.log("[Order Sync] Reading fallback configuration from local disk...");
-          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        } catch (err: any) {
-          console.error("[Order Sync] Could not parse fallback local configuration:", err.message);
-        }
-      }
+      // Load configuration using the ultra-reliable REST & local disk fallback helper
+      const tokenData = await fetchGmailConfigFromFirestore();
 
       if (!tokenData) {
         console.warn(`[Order Sync] No Gmail or Sheets configuration found in database/cache.`);
@@ -536,32 +558,8 @@ app.use(express.json({ limit: '10mb' }));
         return res.json({ success: true, sentCount: 0, message: "Không có khách hàng nào đăng ký nhận tin." });
       }
 
-      let tokenData;
-
-      // 1. Try reading local file cache
-      if (fs.existsSync(TOKEN_PATH)) {
-        try {
-          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        } catch (err: any) {
-          console.error("Could not parse local gmail token:", err);
-        }
-      }
-
-      // 2. If not found in local file, restore from Firestore automatically
-      if (!tokenData) {
-        try {
-          const docSnap = await getDoc(gmailDocRef);
-          if (docSnap.exists()) {
-            tokenData = docSnap.data();
-            fs.writeFileSync(
-              TOKEN_PATH,
-              JSON.stringify(tokenData, null, 2)
-            );
-          }
-        } catch (err: any) {
-          console.error("Error loading Gmail token from Firestore:", err.message);
-        }
-      }
+      // Load configuration using the ultra-reliable REST & local disk fallback helper
+      const tokenData = await fetchGmailConfigFromFirestore();
 
       if (!tokenData) {
         return res.status(400).json({
