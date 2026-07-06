@@ -110,32 +110,34 @@ app.use(express.json({ limit: '10mb' }));
     try {
       console.log(`[Order Sync] Starting synchronous notify & sync for order #${order.id}`);
       let tokenData;
-      // 1. Try reading local file cache
-      if (fs.existsSync(TOKEN_PATH)) {
-        try {
-          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        } catch (err: any) {
-          console.error("Could not parse local gmail token:", err);
+      
+      // 1. Try reading the fresh configuration from Firestore first (Source of Truth)
+      try {
+        console.log("[Order Sync] Fetching latest Gmail/Sheets configuration from Firestore...");
+        const docSnap = await getDoc(gmailDocRef);
+        if (docSnap.exists()) {
+          tokenData = docSnap.data();
+          // Cache to local disk for fallback
+          try {
+            fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
+            console.log("[Order Sync] Cached latest configuration to local disk.");
+          } catch (writeErr: any) {
+            console.warn("[Order Sync] Could not cache config to disk (non-blocking):", writeErr.message);
+          }
+        } else {
+          console.log("[Order Sync] No configuration found in Firestore.");
         }
+      } catch (err: any) {
+        console.error("[Order Sync] Failed to load configuration from Firestore, falling back to local disk:", err.message);
       }
 
-      // 2. If not found in local file, restore from Firestore automatically
-      if (!tokenData) {
+      // 2. If Firestore loading failed or returned empty, fall back to local disk cache
+      if (!tokenData && fs.existsSync(TOKEN_PATH)) {
         try {
-          const docSnap = await getDoc(gmailDocRef);
-          if (docSnap.exists()) {
-            tokenData = docSnap.data();
-            try {
-              fs.writeFileSync(
-                TOKEN_PATH,
-                JSON.stringify(tokenData, null, 2)
-              );
-            } catch (writeErr: any) {
-              console.warn("Could not cache token to disk:", writeErr.message);
-            }
-          }
+          console.log("[Order Sync] Reading fallback configuration from local disk...");
+          tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
         } catch (err: any) {
-          console.error("Error loading Gmail token from Firestore:", err.message);
+          console.error("[Order Sync] Could not parse fallback local configuration:", err.message);
         }
       }
 
@@ -154,7 +156,7 @@ app.use(express.json({ limit: '10mb' }));
 
           const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
           const subtotalVal = order.subtotal ?? 0;
-          const isHalfDeposit = order.payment?.method === '50%';
+          const isHalfDeposit = order.payment?.method === '50%' || order.payment?.method === 'Cọc 50%';
           const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
 
           const sheetPayload = {
