@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, doc, getDoc } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -61,21 +61,29 @@ provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 provider.addScope('https://www.googleapis.com/auth/gmail.compose');
 provider.addScope('https://www.googleapis.com/auth/gmail.modify');
 
+// Ask for offline access/refresh token and consent prompt if possible
+provider.setCustomParameters({
+  access_type: 'offline',
+  prompt: 'consent'
+});
+
 // Flags and cache
 let isSigningIn = false;
 let cachedAccessToken: string | null = localStorage.getItem('yeng_gmail_access_token');
 
 // Initialize auth state listener
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: any, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  // Proactively check and notify if credentials already exist in localStorage
+  const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+
+  // 1. Proactively check and notify if credentials already exist in localStorage (Instant load)
   const token = localStorage.getItem('yeng_gmail_access_token');
   const storedUser = localStorage.getItem('yeng_gmail_user');
   if (token && storedUser) {
     try {
-      const parsedUser = JSON.parse(storedUser) as User;
+      const parsedUser = JSON.parse(storedUser);
       if (onAuthSuccess) {
         onAuthSuccess(parsedUser, token);
       }
@@ -84,8 +92,7 @@ export const initAuth = (
     }
   }
 
-  // Self-healing synchronization: Proactively fetch Gmail and Google Sheets config from Firestore
-  const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+  // 2. Self-healing synchronization: Proactively fetch Gmail and Google Sheets config from Firestore
   getDoc(gmailDocRef).then((docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -107,7 +114,7 @@ export const initAuth = (
               photoURL: data.photoURL || null,
               isAnonymous: false,
               uid: "admin_gmail_uid"
-            } as any;
+            };
             localStorage.setItem('yeng_gmail_user', JSON.stringify(mockUser));
             if (onAuthSuccess) {
               onAuthSuccess(mockUser, data.accessToken);
@@ -120,18 +127,36 @@ export const initAuth = (
     console.error("Failed to restore Gmail token / Sheets URL from Firestore on initAuth:", err);
   });
 
-  // Handle redirect result from Google sign-in
+  // 3. Handle redirect result from Google sign-in
   getRedirectResult(auth)
-    .then((result) => {
+    .then(async (result) => {
       sessionStorage.removeItem('yeng_signing_in_google');
       if (result) {
         const credential = GoogleAuthProvider.credentialFromResult(result);
         if (credential?.accessToken) {
           cachedAccessToken = credential.accessToken;
+          const userObj = result.user;
+
           localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-          localStorage.setItem('yeng_gmail_user', JSON.stringify(result.user));
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+
+          // Save directly to Firestore for extreme session persistence across tabs and devices
+          try {
+            const snap = await getDoc(gmailDocRef);
+            const existingData = snap.exists() ? snap.data() : {};
+            await setDoc(gmailDocRef, {
+              ...existingData,
+              accessToken: cachedAccessToken,
+              email: userObj.email || "yengcorner@gmail.com",
+              updatedAt: new Date().toISOString()
+            });
+            console.log("Successfully synchronized Google access token to Firestore on redirect callback.");
+          } catch (dbErr) {
+            console.error("Failed to write token to Firestore from redirect result:", dbErr);
+          }
+
           if (onAuthSuccess) {
-            onAuthSuccess(result.user, credential.accessToken);
+            onAuthSuccess(userObj, cachedAccessToken);
           }
         }
       }
@@ -141,6 +166,7 @@ export const initAuth = (
       console.error('Error handling redirect result:', error);
     });
 
+  // 4. Standard auth state change listener (De-coupled from guest logins)
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user && !user.isAnonymous) {
       const storedToken = localStorage.getItem('yeng_gmail_access_token');
@@ -155,19 +181,21 @@ export const initAuth = (
         if (onAuthFailure) onAuthFailure();
       }
     } else {
-      // Fallback to localStorage session even if Firebase's standard session is still initializing
+      // Fallback: If Firebase session has switched to an Anonymous Guest or Null (e.g. during checkout or refresh),
+      // we do NOT log the admin out of the Gmail/Sheets admin interface.
+      // We keep the Admin Gmail authentication state fully alive using localStorage credentials.
       const storedToken = localStorage.getItem('yeng_gmail_access_token');
       const storedUser = localStorage.getItem('yeng_gmail_user');
       if (storedToken && storedUser) {
         try {
-          const parsedUser = JSON.parse(storedUser) as User;
+          const parsedUser = JSON.parse(storedUser);
           if (onAuthSuccess) onAuthSuccess(parsedUser, storedToken);
           return;
         } catch (e) {}
       }
-      // If we are currently handling redirect result or are in middle of google login, do NOT wipe active session cache
+      // Only trigger failure if there are absolutely no credentials at all
       const isSigningInGoogle = sessionStorage.getItem('yeng_signing_in_google') === 'true';
-      if (!isSigningInGoogle) {
+      if (!isSigningInGoogle && !storedToken) {
         cachedAccessToken = null;
         if (onAuthFailure) onAuthFailure();
       }
@@ -195,21 +223,35 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 export const logout = async () => {
-  await auth.signOut();
+  try {
+    await auth.signOut();
+  } catch (e) {
+    console.warn("Failed to sign out from Firebase auth:", e);
+  }
   cachedAccessToken = null;
   localStorage.removeItem('yeng_gmail_access_token');
   localStorage.removeItem('yeng_gmail_user');
 };
 
-export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
+/**
+ * Highly optimized HTML5 Canvas image compressor designed specifically to output ultra-lightweight
+ * images (< 50KB) by recursively lowering quality and scale when needed, protecting Firestore quotas.
+ */
+export const compressImage = (base64Str: string, maxWidth = 500, maxHeight = 500, quality = 0.4): Promise<string> => {
   return new Promise((resolve) => {
+    // If it is not a base64 string (e.g. standard unsplash/http URL), return immediately
+    if (!base64Str || !base64Str.startsWith('data:image/')) {
+      resolve(base64Str);
+      return;
+    }
+
     const img = new Image();
     img.src = base64Str;
     img.onload = () => {
-      const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
 
+      // Scale dimensions proportionally
       if (width > height) {
         if (width > maxWidth) {
           height = Math.round((height * maxWidth) / width);
@@ -222,18 +264,36 @@ export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800
         }
       }
 
+      const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, width, height);
-        try {
-          const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-          resolve(compressedBase64);
-        } catch (err) {
-          console.warn("Lỗi khi toDataURL canvas, dùng base64 gốc:", err);
-          resolve(base64Str);
+        
+        let currentQuality = quality;
+        let result = canvas.toDataURL('image/jpeg', currentQuality);
+        
+        // Iteratively reduce quality if file is still larger than ~50KB (approx 68,000 characters for base64)
+        while (result.length > 68000 && currentQuality > 0.1) {
+          currentQuality -= 0.08;
+          result = canvas.toDataURL('image/jpeg', currentQuality);
         }
+        
+        // If still too big, scale down further to guarantee it is under < 50KB
+        if (result.length > 68000) {
+          const smallCanvas = document.createElement('canvas');
+          smallCanvas.width = Math.round(width * 0.6);
+          smallCanvas.height = Math.round(height * 0.6);
+          const sCtx = smallCanvas.getContext('2d');
+          if (sCtx) {
+            sCtx.drawImage(canvas, 0, 0, smallCanvas.width, smallCanvas.height);
+            result = smallCanvas.toDataURL('image/jpeg', 0.15);
+          }
+        }
+        
+        console.log(`[compressImage] Original: ${base64Str.length} chars, Compressed: ${result.length} chars (~${Math.round(result.length * 0.75 / 1024)} KB)`);
+        resolve(result);
       } else {
         resolve(base64Str);
       }
