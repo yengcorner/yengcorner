@@ -6,9 +6,7 @@ import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import * as admin from "firebase-admin";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
-// Initialize Firebase using the configuration file
-const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+import firebaseConfig from "../../firebase-applet-config.json";
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
@@ -16,12 +14,13 @@ const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 // Initialize Firebase Admin SDK for 100% reliable server reads
 let dbAdmin: any = null;
 try {
-  if (admin.apps.length === 0) {
-    admin.initializeApp({
+  const adminAny = admin as any;
+  if (adminAny.apps.length === 0) {
+    adminAny.initializeApp({
       projectId: firebaseConfig.projectId
     });
   }
-  dbAdmin = getFirestoreAdmin(admin.apps[0] || admin.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
   console.warn("[Gmail Send Admin] Admin SDK initialization skipped/failed:", adminErr.message);
 }
