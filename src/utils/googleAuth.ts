@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, doc, getDoc } from 'firebase/firestore';
 import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -83,6 +83,42 @@ export const initAuth = (
       console.error('Error parsing stored user:', e);
     }
   }
+
+  // Self-healing synchronization: Proactively fetch Gmail and Google Sheets config from Firestore
+  const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+  getDoc(gmailDocRef).then((docSnap) => {
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data) {
+        if (data.googleSheetsUrl) {
+          const localSheetsUrl = localStorage.getItem('yeng_google_sheets_url');
+          if (localSheetsUrl !== data.googleSheetsUrl) {
+            localStorage.setItem('yeng_google_sheets_url', data.googleSheetsUrl);
+          }
+        }
+        if (data.accessToken) {
+          const localToken = localStorage.getItem('yeng_gmail_access_token');
+          if (!localToken || localToken !== data.accessToken) {
+            localStorage.setItem('yeng_gmail_access_token', data.accessToken);
+            
+            const mockUser = {
+              email: data.email || "yengcorner@gmail.com",
+              displayName: "Yeng Corner Admin",
+              photoURL: data.photoURL || null,
+              isAnonymous: false,
+              uid: "admin_gmail_uid"
+            } as any;
+            localStorage.setItem('yeng_gmail_user', JSON.stringify(mockUser));
+            if (onAuthSuccess) {
+              onAuthSuccess(mockUser, data.accessToken);
+            }
+          }
+        }
+      }
+    }
+  }).catch((err) => {
+    console.error("Failed to restore Gmail token / Sheets URL from Firestore on initAuth:", err);
+  });
 
   // Handle redirect result from Google sign-in
   getRedirectResult(auth)
