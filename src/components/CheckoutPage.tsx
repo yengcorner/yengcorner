@@ -3,7 +3,7 @@ import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIc
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
 import { deductProductStock } from '../utils/products';
-import { initAuth, googleSignIn, uploadInvoiceImage, sanitizeProductForOrder } from '../utils/googleAuth';
+import { initAuth, googleSignIn, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
   cart: CartItem[];
@@ -323,17 +323,16 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     const orderId = "YENG26-" + Math.floor(1000 + Math.random() * 9000);
 
-    // Upload image directly to free ImgBB API
+    // Compress image locally using HTML5 Canvas to keep base64 extremely lightweight yet clear
     let invoiceUrl = "";
     if (previewImage) {
       try {
-        const fileToUpload = selectedFile || previewImage;
-        invoiceUrl = await uploadInvoiceImage(orderId, fileToUpload);
-      } catch (uploadErr: any) {
-        console.error("Lỗi tải ảnh hóa đơn lên ImgBB:", uploadErr);
-        setSubmitting(false);
-        alert("Lỗi tải ảnh hóa đơn: " + (uploadErr.message || String(uploadErr)));
-        return;
+        // Compress to maximum 800x800 resolution with 0.6 quality (creates a very small base64 under ~50KB)
+        invoiceUrl = await compressImage(previewImage, 800, 800, 0.6);
+      } catch (compressErr: any) {
+        console.error("Lỗi nén ảnh hóa đơn:", compressErr);
+        // Fallback to previewImage directly if compression fails to avoid breaking flow
+        invoiceUrl = previewImage;
       }
     }
 
