@@ -3,7 +3,7 @@ import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIc
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
 import { deductProductStock } from '../utils/products';
-import { initAuth, googleSignIn, uploadInvoiceImage, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
+import { initAuth, googleSignIn, uploadInvoiceImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
   cart: CartItem[];
@@ -323,16 +323,17 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     const orderId = "YENG26-" + Math.floor(1000 + Math.random() * 9000);
 
-    // Compress image locally using canvas to a super small base64 string under 10KB
+    // Upload image directly to free ImgBB API
     let invoiceUrl = "";
     if (previewImage) {
       try {
-        // Compress aggressively to max 200x200 resolution with 0.3 quality (typically ~3KB to 8KB)
-        invoiceUrl = await compressImage(previewImage, 200, 200, 0.3);
-      } catch (compressErr) {
-        console.error("Lỗi nén ảnh hóa đơn:", compressErr);
-        // Fallback to basic string truncation if compression fails to avoid massive base64 payload
-        invoiceUrl = previewImage.slice(0, 5000);
+        const fileToUpload = selectedFile || previewImage;
+        invoiceUrl = await uploadInvoiceImage(orderId, fileToUpload);
+      } catch (uploadErr: any) {
+        console.error("Lỗi tải ảnh hóa đơn lên ImgBB:", uploadErr);
+        setSubmitting(false);
+        alert("Lỗi tải ảnh hóa đơn: " + (uploadErr.message || String(uploadErr)));
+        return;
       }
     }
 
