@@ -378,63 +378,6 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
         setSubmitting(false);
         return; // Stop processing checkout if Firestore save fails
       }
-
-      // Sync order to Google Sheets if configured
-      const sheetsUrl = localStorage.getItem('yeng_google_sheets_url');
-      if (sheetsUrl) {
-        console.log("Sending checkout details to Google Sheets...");
-        const itemsFormatted = cart.map(item => 
-          `${item.product.name} (Phân loại: ${item.version}) x${item.quantity}`
-        ).join(", ");
-
-        const totalQty = cart.reduce((sum, item) => sum + item.quantity, 0);
-        const isHalfDeposit = paymentMethod === '50%';
-        const calculatedPaid = isHalfDeposit ? Math.round(finalTotal * 0.5) : finalTotal;
-
-        const payload = {
-          timestamp: new Date().toLocaleString('vi-VN'),
-          email: formData.email,
-          snsLink: formData.snsLink,
-          quantity: totalQty,
-          invoiceImage: invoiceUrl || "",
-          customerName: formData.customerName,
-          phone: formData.phone,
-          address: formData.address,
-          shippingMethod: shippingMethod,
-          note: formData.note && formData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${formData.note}` : itemsFormatted,
-          paidAmount: calculatedPaid,
-          totalAmount: finalTotal,
-          items: cart.map(item => ({
-            name: item.product.name,
-            version: item.version,
-            quantity: item.quantity
-          })),
-          cartItems: cart.map(item => ({
-            productName: item.product.name,
-            version: item.version,
-            quantity: item.quantity
-          })),
-          productName: cart[0]?.product.name || "",
-          version: cart[0]?.version || "",
-
-          // Backward compatibility fields
-          orderId: orderId,
-          products: itemsFormatted,
-          paymentMethod: paymentMethod === '50%' ? "Cọc 50%" : "Thanh toán 100%"
-        };
-
-        fetch(sheetsUrl, {
-          method: "POST",
-          mode: "no-cors",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        })
-        .then(() => console.log("Google Sheets sync triggered successfully from checkout!"))
-        .catch(err => console.error("Google Sheets sync failed:", err));
-      }
-
       setSubmitting(false);
 
       // Deduct stock for all ordered items in Firestore
