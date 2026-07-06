@@ -1,473 +1,236 @@
-import { OrderPayload, CartItem, Product, Coupon } from '../types';
-import { INITIAL_PRODUCTS } from '../data/products';
-import { db, uploadInvoiceImage, sanitizeProductForOrder } from './googleAuth';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithRedirect, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
+import { Product } from '../types';
+import firebaseConfig from '../../firebase-applet-config.json';
 
-// Helper to generate some high-fidelity mock orders for first-time administration view
-const getInitialMockOrders = (): OrderPayload[] => {
-  const pNct = INITIAL_PRODUCTS.find(p => p.id === 1) || INITIAL_PRODUCTS[0];
-  const pAespa = INITIAL_PRODUCTS.find(p => p.id === 2) || INITIAL_PRODUCTS[1];
-  const pJacket = INITIAL_PRODUCTS.find(p => p.id === 3) || INITIAL_PRODUCTS[2];
-  const pIllit = INITIAL_PRODUCTS.find(p => p.id === 5) || INITIAL_PRODUCTS[4];
+// Initialize Firebase
+export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
 
-  return [
-    {
-      id: "YENG26-8431",
-      status: "Đang gom hàng",
-      items: [
-        {
-          product: pNct,
-          quantity: 2,
-          version: pNct.versions ? pNct.versions[1] : "Standard Version"
-        }
-      ],
-      subtotal: pNct.price * 2,
-      contact: {
-        email: "nguyenha99@gmail.com",
-        snsLink: "fb.com/ha.nguyen.nctzen"
-      },
-      payment: {
-        method: "Cọc 50%",
-        invoiceImage: "https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?w=400&q=80"
-      },
-      shipping: {
-        receiverName: "Nguyễn Thị Hà",
-        phone: "0912345678",
-        address: "128/4 Lê Văn Sỹ, Phường 13, Quận Phú Nhuận, TP. Hồ Chí Minh",
-        method: "GHTK"
-      },
-      note: "Gói xốp nổ bọc dày chống df giúp mình nha shop iu!",
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // 1 day ago
-    },
-    {
-      id: "YENG26-1940",
-      status: "Đã bay kho Hàn",
-      items: [
-        {
-          product: pJacket,
-          quantity: 1,
-          version: "Size M (Black)"
-        }
-      ],
-      subtotal: pJacket.price,
-      contact: {
-        email: "khangtran.kstyle@gmail.com",
-        snsLink: "instagram.com/khang_jennie_stan"
-      },
-      payment: {
-        method: "Thanh toán 100%",
-        invoiceImage: "https://images.unsplash.com/photo-1628157582853-a796fa650a6a?w=400&q=80"
-      },
-      shipping: {
-        receiverName: "Trần Minh Khang",
-        phone: "0987654321",
-        address: "Số 15 Ngõ 82, Chùa Láng, Đống Đa, Hà Nội",
-        method: "SPX"
-      },
-      note: "Hàng về hoãn giao đến đầu tháng giúp mình do đi công tác.",
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days ago
-    },
-    {
-      id: "YENG26-4712",
-      status: "Đã về Sài Gòn",
-      items: [
-        {
-          product: pAespa,
-          quantity: 1,
-          version: "Supernova Ver. (Spark)"
-        },
-        {
-          product: pIllit,
-          quantity: 1,
-          version: "Màu Đen (Carbon Black)"
-        }
-      ],
-      subtotal: pAespa.price + pIllit.price,
-      contact: {
-        email: "thaonguyen.aespa@yahoo.com",
-        snsLink: "t.me/thaonguyenbunny"
-      },
-      payment: {
-        method: "Thanh toán 100%",
-        invoiceImage: "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=400&q=80"
-      },
-      shipping: {
-        receiverName: "Lê Thảo Nguyên",
-        phone: "0356123456",
-        address: "Chung cư Sunrise City, Nguyễn Hữu Thọ, Quận 7, TP. Hồ Chí Minh",
-        method: "Viettel Post"
-      },
-      note: "Hàng có quà pre-order đầy đủ đúng không ạ?",
-      timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() // 5 days ago
+// Initialize Firestore with robust local offline caching to handle network fluctuations and iframe container isolation smoothly
+let tempDb: Firestore;
+const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
+
+try {
+  tempDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, firestoreDbId);
+} catch (error) {
+  console.warn("Could not initialize Firestore with persistent cache, falling back to getFirestore:", error);
+  try {
+    tempDb = getFirestore(app, firestoreDbId);
+  } catch (err2) {
+    console.error("Failed to initialize Firestore with custom DB ID:", err2);
+    tempDb = getFirestore(app);
+  }
+}
+
+export const db = tempDb;
+
+// Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    try {
+      await signInAnonymously(auth);
+      console.log("Đăng nhập ẩn danh thành công làm Khách");
+    } catch (err) {
+      console.warn("Lỗi đăng nhập ẩn danh tự động:", err);
     }
-  ];
+  } else {
+    console.log("Người dùng hiện tại:", user.isAnonymous ? "Khách ẩn danh" : user.email);
+  }
+});
+
+const provider = new GoogleAuthProvider();
+// Request Workspace Gmail scopes (already requested and approved by user in the UI)
+provider.addScope('https://mail.google.com/');
+provider.addScope('https://www.googleapis.com/auth/gmail.send');
+provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+provider.addScope('https://www.googleapis.com/auth/gmail.compose');
+provider.addScope('https://www.googleapis.com/auth/gmail.modify');
+
+// Flags and cache
+let isSigningIn = false;
+let cachedAccessToken: string | null = localStorage.getItem('yeng_gmail_access_token');
+
+// Initialize auth state listener
+export const initAuth = (
+  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthFailure?: () => void
+) => {
+  // Proactively check and notify if credentials already exist in localStorage
+  const token = localStorage.getItem('yeng_gmail_access_token');
+  const storedUser = localStorage.getItem('yeng_gmail_user');
+  if (token && storedUser) {
+    try {
+      const parsedUser = JSON.parse(storedUser) as User;
+      if (onAuthSuccess) {
+        onAuthSuccess(parsedUser, token);
+      }
+    } catch (e) {
+      console.error('Error parsing stored user:', e);
+    }
+  }
+
+  // Handle redirect result from Google sign-in
+  getRedirectResult(auth)
+    .then((result) => {
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(result.user));
+          if (onAuthSuccess) {
+            onAuthSuccess(result.user, credential.accessToken);
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      console.error('Error handling redirect result:', error);
+    });
+
+  return onAuthStateChanged(auth, async (user: User | null) => {
+    if (user && !user.isAnonymous) {
+      const storedToken = localStorage.getItem('yeng_gmail_access_token');
+      if (storedToken) {
+        cachedAccessToken = storedToken;
+        if (onAuthSuccess) onAuthSuccess(user, storedToken);
+      } else if (cachedAccessToken) {
+        localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+        localStorage.setItem('yeng_gmail_user', JSON.stringify(user));
+        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      } else if (!isSigningIn) {
+        if (onAuthFailure) onAuthFailure();
+      }
+    } else {
+      // Fallback to localStorage session even if Firebase's standard session is still initializing
+      const storedToken = localStorage.getItem('yeng_gmail_access_token');
+      const storedUser = localStorage.getItem('yeng_gmail_user');
+      if (storedToken && storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser) as User;
+          if (onAuthSuccess) onAuthSuccess(parsedUser, storedToken);
+          return;
+        } catch (e) {}
+      }
+      cachedAccessToken = null;
+      if (onAuthFailure) onAuthFailure();
+    }
+  });
 };
 
-const STORAGE_KEY = 'yeng_corner_orders_v1';
-
-export function slugify(text: string): string {
-  if (!text) return 'unknown';
-  const from = "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ";
-  const to   = "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd";
-  let str = text.toLowerCase().trim();
-  for (let i = 0; i < from.length; i++) {
-    str = str.replace(new RegExp(from.charAt(i), 'g'), to.charAt(i));
-  }
-  return str
-    .replace(/[^a-z0-9_\s-]/g, "") // remove invalid chars
-    .replace(/[\s-]+/g, "_")      // replace spaces/hyphens with underscore
-    .replace(/^_+|_+$/g, "");     // trim underscores
-}
-
-export function syncAllProductSpecificOrders(): void {
+// Must be called from a button click or user interaction
+export const googleSignIn = async (): Promise<void> => {
   try {
-    // Clear old orders_ prefixed keys to free up localStorage quota immediately
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith("orders_") && key !== STORAGE_KEY) {
-        localStorage.removeItem(key);
+    isSigningIn = true;
+    await signInWithRedirect(auth, provider);
+  } catch (error: any) {
+    console.error('Đăng nhập thất bại:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+};
+
+export const getAccessToken = async (): Promise<string | null> => {
+  return cachedAccessToken || localStorage.getItem('yeng_gmail_access_token');
+};
+
+export const logout = async () => {
+  await auth.signOut();
+  cachedAccessToken = null;
+  localStorage.removeItem('yeng_gmail_access_token');
+  localStorage.removeItem('yeng_gmail_user');
+};
+
+export const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.6): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
       }
-    });
-  } catch (e) {
-    console.error("Lỗi dọn dẹp chi tiết sản phẩm:", e);
-  }
-}
 
-// Internal localStorage helper to avoid nested getOrders() recursion
-async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-export async function getOrders(): Promise<OrderPayload[]> {
-  try {
-    const q = collection(db, 'orders');
-    const querySnapshot = await getDocs(q);
-    const list: OrderPayload[] = [];
-    querySnapshot.forEach((doc) => {
-      list.push(doc.data() as OrderPayload);
-    });
-    
-    // Sắp xếp đơn hàng giảm dần theo thời gian (mới nhất lên đầu)
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Đồng bộ vào localStorage cache để các tính năng offline/truy xuất nhanh hoạt động mượt mà
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    return list;
-  } catch (e) {
-    console.warn("Lỗi đọc orders từ Firestore, sử dụng localStorage fallback:", e);
-    const localList = await getOrdersLocalFallback();
-    localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return localList;
-  }
-}
-
-export function listenToOrders(callback: (orders: OrderPayload[]) => void): () => void {
-  const q = collection(db, 'orders');
-  
-  return onSnapshot(q, (querySnapshot) => {
-    const list: OrderPayload[] = [];
-    querySnapshot.forEach((doc) => {
-      list.push(doc.data() as OrderPayload);
-    });
-    
-    // Sắp xếp đơn hàng giảm dần theo thời gian (mới nhất lên đầu)
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Đồng bộ vào localStorage cache để đồng bộ mượt mà
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    } catch (e) {
-      console.warn("Lỗi lưu cache localStorage:", e);
-    }
-    
-    callback(list);
-  }, (error) => {
-    console.error("Lỗi listenToOrders từ Firestore:", error);
-    // Fallback to local storage if listener fails or is unauthorized
-    getOrdersLocalFallback().then(localList => {
-      localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      callback(localList);
-    });
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressedBase64);
+        } catch (err) {
+          console.warn("Lỗi khi toDataURL canvas, dùng base64 gốc:", err);
+          resolve(base64Str);
+        }
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
   });
-}
+};
 
-// Helper to recursively remove all undefined values from an object/array for Firestore safety
-export function cleanUndefined<T>(obj: T): T {
-  if (obj === undefined) {
-    return "" as unknown as T;
+export const sanitizeProductForOrder = async (product: Product): Promise<Product> => {
+  const leanProduct: Product = {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    image: product.image,
+    category: product.category,
+    artist: product.artist || "",
+    orderDeadline: product.orderDeadline || "",
+    releaseDate: product.releaseDate || "",
+    stock: product.stock,
+    status: product.status,
+    tag: product.tag,
+  };
+
+  if (product.variantMatrix) {
+    leanProduct.variantMatrix = product.variantMatrix.map(v => ({
+      option1: v.option1,
+      option2: v.option2,
+      price: v.price,
+      stock: v.stock
+    }));
   }
-  if (obj === null) {
-    return null as unknown as T;
+  if (product.variations) {
+    leanProduct.variations = product.variations.map(v => ({
+      name: v.name,
+      price: v.price,
+      stock: v.stock
+    }));
   }
-  if (Array.isArray(obj)) {
-    return obj.map(item => cleanUndefined(item)) as unknown as T;
-  }
-  if (typeof obj === 'object') {
-    const cleaned: any = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const val = obj[key];
-        if (val === undefined) {
-          // Omit undefined properties entirely
-          continue;
-        }
-        cleaned[key] = cleanUndefined(val);
-      }
+
+  // Compress product image if it's base64 to save document space
+  if (leanProduct.image && leanProduct.image.startsWith('data:image/')) {
+    try {
+      leanProduct.image = await compressImage(leanProduct.image, 100, 100, 0.5);
+    } catch (e) {
+      console.warn("Could not compress product base64 image:", e);
+      leanProduct.image = leanProduct.image.slice(0, 1000);
     }
-    return cleaned as T;
   }
-  return obj;
-}
 
-export async function saveOrder(order: OrderPayload): Promise<void> {
-  try {
-    // Failsafe sanitization right before writing to Firestore
-    const sanitizedOrder = { ...order };
-    
-    // 1. Sanitize product items
-    if (sanitizedOrder.items && sanitizedOrder.items.length > 0) {
-      const sanitizedItems = await Promise.all(
-        sanitizedOrder.items.map(async (item) => {
-          if (item.product) {
-            return {
-              ...item,
-              product: await sanitizeProductForOrder(item.product)
-            };
-          }
-          return item;
-        })
-      );
-      sanitizedOrder.items = sanitizedItems;
-    }
-
-    // 2. Double-check and upload invoice image to ImgBB if it's still base64
-    if (sanitizedOrder.payment && sanitizedOrder.payment.invoiceImage && sanitizedOrder.payment.invoiceImage.startsWith('data:image/')) {
-      try {
-        sanitizedOrder.payment.invoiceImage = await uploadInvoiceImage(sanitizedOrder.id, sanitizedOrder.payment.invoiceImage);
-      } catch (err) {
-        console.warn("Could not upload invoiceImage to ImgBB in saveOrder failsafe:", err);
-      }
-    }
-
-    // 3. Clean all undefined fields recursively to prevent any Firestore crash
-    const finalCleanedOrder = cleanUndefined(sanitizedOrder);
-
-    const docRef = doc(db, 'orders', finalCleanedOrder.id);
-    await setDoc(docRef, finalCleanedOrder);
-    
-    // Kích hoạt gửi email thông báo ngầm (background) về admin
-    fetch('/api/orders/notify-new', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order: finalCleanedOrder })
-    }).catch(err => console.error("Lỗi gửi thông báo đơn hàng mới ngầm:", err));
-    
-    // Lưu vào localStorage cache
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updatedOrders = [finalCleanedOrder, ...currentOrders.filter(o => o.id !== finalCleanedOrder.id)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
-      syncAllProductSpecificOrders();
-    } catch (e) {}
-  } catch (e: any) {
-    console.error("Lỗi ghi order vào Firestore:", e);
-    alert("Lỗi lưu đơn: " + (e.message || String(e)));
-    // Ghi local cache làm cứu cánh
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updatedOrders = [order, ...currentOrders.filter(o => o.id !== order.id)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
-      syncAllProductSpecificOrders();
-    } catch (err) {}
-    throw e; // Throw so that CheckoutPage is aware
-  }
-}
-
-export async function updateOrderStatus(orderId: string, status: string): Promise<OrderPayload[]> {
-  try {
-    const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { status });
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi cập nhật trạng thái đơn hàng trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, status } : ord
-      );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function updateOrderTrackingCode(orderId: string, trackingCode: string): Promise<OrderPayload[]> {
-  try {
-    const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { trackingCode });
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi cập nhật mã vận đơn trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, trackingCode } : ord
-      );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function updateOrderPaidAmount(orderId: string, paidAmount: number): Promise<OrderPayload[]> {
-  try {
-    const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { paidAmount });
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi cập nhật số tiền đã thanh toán trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, paidAmount } : ord
-      );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function updateBulkOrdersTracking(updates: { orderId: string; trackingCode: string; status?: string }[]): Promise<OrderPayload[]> {
-  try {
-    const promises = updates.map(async (u) => {
-      const docRef = doc(db, 'orders', u.orderId);
-      const dataToUpdate: any = { trackingCode: u.trackingCode };
-      if (u.status !== undefined) {
-        dataToUpdate.status = u.status;
-      }
-      return updateDoc(docRef, dataToUpdate);
-    });
-    await Promise.all(promises);
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi cập nhật hàng loạt mã vận đơn trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.map(ord => {
-        const match = updates.find(u => u.orderId === ord.id);
-        if (match) {
-          return { 
-            ...ord, 
-            trackingCode: match.trackingCode,
-            status: match.status !== undefined ? match.status : ord.status 
-          };
-        }
-        return ord;
-      });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
-  try {
-    const docRef = doc(db, 'orders', orderId);
-    await deleteDoc(docRef);
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi xóa đơn hàng trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.filter(ord => ord.id !== orderId);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function resetOrdersToDefault(): Promise<OrderPayload[]> {
-  try {
-    const initial = getInitialMockOrders();
-    const promises = initial.map(order => {
-      const docRef = doc(db, 'orders', order.id);
-      return setDoc(docRef, order);
-    });
-    await Promise.all(promises);
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi đặt lại đơn hàng mặc định trên Firestore:", e);
-    try {
-      const initial = getInitialMockOrders();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-      syncAllProductSpecificOrders();
-      return initial;
-    } catch (err) {}
-    return [];
-  }
-}
-
-// === COUPON UTILITIES BACKED BY FIRESTORE ===
-
-export async function getCoupons(): Promise<Coupon[]> {
-  try {
-    const q = collection(db, 'coupons');
-    const querySnapshot = await getDocs(q);
-    const list: Coupon[] = [];
-    querySnapshot.forEach((doc) => {
-      list.push(doc.data() as Coupon);
-    });
-    
-    // Đồng bộ vào local cache
-    localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    return list;
-  } catch (e) {
-    console.error("Lỗi getCoupons từ Firestore, sử dụng localStorage fallback:", e);
-    try {
-      const saved = localStorage.getItem('yeng_coupons');
-      if (saved) return JSON.parse(saved);
-    } catch (err) {}
-    return [];
-  }
-}
-
-export async function saveCoupon(coupon: Coupon): Promise<void> {
-  try {
-    const docRef = doc(db, 'coupons', coupon.code.toUpperCase());
-    await setDoc(docRef, coupon);
-    
-    // Đồng bộ local cache
-    try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
-      list.push(coupon);
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    } catch (e) {}
-  } catch (e) {
-    console.error("Lỗi lưu coupon lên Firestore:", e);
-    // Lưu tạm vào local cache làm cứu cánh
-    try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
-      list.push(coupon);
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    } catch (err) {}
-  }
-}
-
+  return leanProduct;
+};
