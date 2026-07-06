@@ -1,6 +1,6 @@
 import { OrderPayload, CartItem, Product, Coupon } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
-import { db } from './googleAuth';
+import { db, compressImage, sanitizeProductForOrder } from './googleAuth';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // Helper to generate some high-fidelity mock orders for first-time administration view
@@ -197,20 +197,48 @@ export function listenToOrders(callback: (orders: OrderPayload[]) => void): () =
 
 export async function saveOrder(order: OrderPayload): Promise<void> {
   try {
-    const docRef = doc(db, 'orders', order.id);
-    await setDoc(docRef, order);
+    // Failsafe sanitization right before writing to Firestore
+    const sanitizedOrder = { ...order };
+    
+    // 1. Sanitize product items
+    if (sanitizedOrder.items && sanitizedOrder.items.length > 0) {
+      const sanitizedItems = await Promise.all(
+        sanitizedOrder.items.map(async (item) => {
+          if (item.product) {
+            return {
+              ...item,
+              product: await sanitizeProductForOrder(item.product)
+            };
+          }
+          return item;
+        })
+      );
+      sanitizedOrder.items = sanitizedItems;
+    }
+
+    // 2. Double-check and compress invoice image if it's still base64
+    if (sanitizedOrder.payment && sanitizedOrder.payment.invoiceImage && sanitizedOrder.payment.invoiceImage.startsWith('data:image/')) {
+      try {
+        sanitizedOrder.payment.invoiceImage = await compressImage(sanitizedOrder.payment.invoiceImage, 120, 120, 0.5);
+      } catch (err) {
+        console.warn("Could not compress invoiceImage in saveOrder failsafe:", err);
+      }
+    }
+
+    const docRef = doc(db, 'orders', sanitizedOrder.id);
+    await setDoc(docRef, sanitizedOrder);
     
     // Kích hoạt gửi email thông báo ngầm (background) về admin
     fetch('/api/orders/notify-new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order })
+      body: JSON.stringify({ order: sanitizedOrder })
     }).catch(err => console.error("Lỗi gửi thông báo đơn hàng mới ngầm:", err));
     
     // Lưu vào localStorage cache
     try {
       const currentOrders = await getOrdersLocalFallback();
-      const updatedOrders = [order, ...currentOrders.filter(o => o.id !== order.id)];
+      const updatedOrders = [sanitizedOrder, ...currentOrders.filter(o => o.id !== sanitizedOrder.id)];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
       syncAllProductSpecificOrders();
     } catch (e) {}
