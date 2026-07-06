@@ -71,6 +71,8 @@ export interface OrderPayload {
   timestamp: string;
   trackingCode?: string;
   paidAmount?: number;
+  guestId?: string;
+  authId?: string;
 }
 
 export interface Coupon {
