@@ -3,35 +3,19 @@ import fs from "fs";
 import path from "path";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
-import * as admin from "firebase-admin";
-import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
-import { createRequire } from "module";
-const localRequire = typeof require !== "undefined" ? require : createRequire(import.meta.url);
-const firebaseConfig = localRequire("../../firebase-applet-config.json");
+// Initialize Firebase using the configuration file
+const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
-
-// Initialize Firebase Admin SDK for 100% reliable server reads
-let dbAdmin: any = null;
-try {
-  const adminAny = admin as any;
-  if (adminAny.apps.length === 0) {
-    adminAny.initializeApp({
-      projectId: firebaseConfig.projectId
-    });
-  }
-  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
-} catch (adminErr: any) {
-  console.warn("[Gmail Send Admin] Admin SDK initialization skipped/failed:", adminErr.message);
-}
 
 const TOKEN_PATH = process.env.VERCEL 
   ? "/tmp/gmail-token.json" 
   : path.join(process.cwd(), "gmail-token.json");
 
-// Helper function to fetch Gmail & Sheets configuration from Firestore using Firebase Admin SDK with ultra-reliable REST API fallbacks
+// Helper function to fetch Gmail & Sheets configuration from Firestore using ultra-reliable REST API with Client SDK fallbacks
 async function fetchGmailConfigFromFirestore(): Promise<any> {
   // 1. Try reading from local file cache first (extremely fast)
   if (fs.existsSync(TOKEN_PATH)) {
@@ -46,31 +30,7 @@ async function fetchGmailConfigFromFirestore(): Promise<any> {
     }
   }
 
-  // 2. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
-  if (dbAdmin) {
-    try {
-      console.log("[Firestore Config Helper Send] Fetching configuration via Firebase Admin SDK...");
-      const docSnap = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && (data.googleSheetsUrl || data.accessToken)) {
-          console.log("[Firestore Config Helper Send] Successfully retrieved config via Admin SDK.");
-          try {
-            fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
-          } catch (writeErr: any) {
-            console.warn("[Firestore Config Helper Send] Could not cache Admin SDK result to disk:", writeErr.message);
-          }
-          return data;
-        }
-      } else {
-        console.log("[Firestore Config Helper Send] Admin SDK completed, but document does not exist yet.");
-      }
-    } catch (err: any) {
-      console.error("[Firestore Config Helper Send] Admin SDK fetch failed, trying fallbacks:", err.message);
-    }
-  }
-
-  // 3. Query Firestore via Google REST API (secondary reliable fallback)
+  // 2. Query Firestore via Google REST API (100% reliable in stateless serverless/Vercel/multi-container environments)
   try {
     const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
     const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
@@ -115,7 +75,7 @@ async function fetchGmailConfigFromFirestore(): Promise<any> {
     console.error("[Firestore Config Helper Send] Error during Firestore REST request:", err.message);
   }
 
-  // 4. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
+  // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
   try {
     console.log("[Firestore Config Helper Send] Falling back to Firebase Client SDK...");
     const docSnap = await getDoc(gmailDocRef);
