@@ -1,12 +1,47 @@
 import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { initializeApp as initializeClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 
-import firebaseConfig from "../../firebase-applet-config.json";
+function loadFirebaseConfig(): any {
+  try {
+    const p = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const filename = fileURLToPath(import.meta.url);
+    const dirname = path.dirname(filename);
+    const p = path.resolve(dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const p = path.resolve(__dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const p = path.resolve("firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  throw new Error("Could not find firebase-applet-config.json!");
+}
+
+const firebaseConfig = loadFirebaseConfig();
 const firebaseApp = getClientApps().length === 0 ? initializeClientApp(firebaseConfig) : getClientApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
