@@ -50,28 +50,38 @@ const gmailDocRef = doc(db, "gmail", "settings");
 
 // Auto-seed/update Google Sheets URL to Firestore on boot
 async function ensureGoogleSheetsUrlInFirestore() {
-  const newUrl = "https://script.google.com/macros/s/AKfycbyLF7z0uuucqD9-EULsAYC8ot27EWkFJoJms0YrRg6eL9qAXKOLcim3PD5V8HhB61Nh/exec";
+  const defaultUrl = "https://script.google.com/macros/s/AKfycbyLF7z0uuucqD9-EULsAYC8ot27EWkFJoJms0YrRg6eL9qAXKOLcim3PD5V8HhB61Nh/exec";
   try {
     console.log("[Seeder] Ensuring Google Sheets URL is set in Firestore...");
     if (dbAdmin) {
       const docRefAdmin = dbAdmin.collection("gmail").doc("settings");
       const docSnap = await docRefAdmin.get();
       const existingData = docSnap.exists ? docSnap.data() : {};
-      await docRefAdmin.set({
-        ...existingData,
-        googleSheetUrl: newUrl,
-        googleSheetsUrl: newUrl
-      }, { merge: true });
-      console.log("[Seeder] Successfully wrote URL to Firestore via Admin SDK!");
+      
+      if (!existingData.googleSheetsUrl && !existingData.googleSheetUrl) {
+        await docRefAdmin.set({
+          ...existingData,
+          googleSheetUrl: defaultUrl,
+          googleSheetsUrl: defaultUrl
+        }, { merge: true });
+        console.log("[Seeder] Successfully wrote default URL to Firestore via Admin SDK!");
+      } else {
+        console.log("[Seeder] Custom Google Sheets URL already exists in Firestore settings, skipping overwrite.");
+      }
     } else {
       const docSnap = await getDoc(gmailDocRef);
       const existingData = docSnap.exists() ? docSnap.data() : {};
-      await setDoc(gmailDocRef, {
-        ...existingData,
-        googleSheetUrl: newUrl,
-        googleSheetsUrl: newUrl
-      }, { merge: true });
-      console.log("[Seeder] Successfully wrote URL to Firestore via Client SDK!");
+      
+      if (!existingData.googleSheetsUrl && !existingData.googleSheetUrl) {
+        await setDoc(gmailDocRef, {
+          ...existingData,
+          googleSheetUrl: defaultUrl,
+          googleSheetsUrl: defaultUrl
+        }, { merge: true });
+        console.log("[Seeder] Successfully wrote default URL to Firestore via Client SDK!");
+      } else {
+        console.log("[Seeder] Custom Google Sheets URL already exists in Firestore settings, skipping overwrite.");
+      }
     }
   } catch (err: any) {
     console.error("[Seeder] Failed to write Google Sheets URL to Firestore:", err.message);
