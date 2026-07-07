@@ -73,6 +73,7 @@ export interface OrderPayload {
   paidAmount?: number;
   guestId?: string;
   authId?: string;
+  googleSheetsSynced?: boolean;
 }
 
 export interface Coupon {
