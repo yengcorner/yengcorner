@@ -83,28 +83,43 @@ export default async function handler(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "Missing accessToken or email" });
     }
 
-    const tokenData = {
+    const tokenData: any = {
       accessToken,
       email,
-      refreshToken: refreshToken || null,
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. Try to write to local file cache (non-blocking)
+    // ONLY overwrite refreshToken if it is explicitly provided in the request body,
+    // otherwise omit it so { merge: true } preserves the existing refreshToken in Firestore.
+    if (refreshToken !== undefined && refreshToken !== null) {
+      tokenData.refreshToken = refreshToken;
+    }
+
+    // 1. Try to write to local file cache (non-blocking) with merging to preserve existing config/urls
     try {
-      fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
+      let existingCache: any = {};
+      if (fs.existsSync(TOKEN_PATH)) {
+        try {
+          existingCache = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8")) || {};
+        } catch (e) {}
+      }
+      const newCache = {
+        ...existingCache,
+        ...tokenData
+      };
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(newCache, null, 2));
       console.log(`[Gmail Auth] Token cached locally at ${TOKEN_PATH}`);
     } catch (cacheErr: any) {
       console.warn(`[Gmail Auth] Could not write to local cache (non-blocking):`, cacheErr.message);
     }
 
-    // 2. Write to Firestore for durable persistence using Admin SDK if available
+    // 2. Write to Firestore with { merge: true } to prevent wiping out other fields (e.g. googleSheetsUrl, refreshToken)
     if (dbAdmin) {
-      console.log(`[Gmail Auth] Storing token in Firestore via Admin SDK...`);
-      await dbAdmin.collection("gmail").doc("settings").set(tokenData);
+      console.log(`[Gmail Auth] Storing token in Firestore via Admin SDK with merge...`);
+      await dbAdmin.collection("gmail").doc("settings").set(tokenData, { merge: true });
     } else {
-      console.log(`[Gmail Auth] Falling back to Client SDK to store token...`);
-      await setDoc(gmailDocRef, tokenData);
+      console.log(`[Gmail Auth] Falling back to Client SDK to store token with merge...`);
+      await setDoc(gmailDocRef, tokenData, { merge: true });
     }
     console.log(`[Gmail Auth] Token stored successfully in Firestore for ${email}`);
 
