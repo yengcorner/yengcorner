@@ -50,7 +50,7 @@ const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
 // Auto-seed/update Google Sheets URL to Firestore on boot
 async function ensureGoogleSheetsUrlInFirestore() {
-  const newUrl = "https://script.google.com/macros/s/AKfycbyOuOg8gq8Pc9p2xy9f5qWC6OeQ7L8hQCGyb3qcbe4m0x2nDJpkVCdNJHLqSPIlLk5S/exec";
+  const newUrl = "https://script.google.com/macros/s/AKfycbyLF7z0uuucqD9-EULsAYC8ot27EWkFJoJms0YrRg6eL9qAXKOLcim3PD5V8HhB61Nh/exec";
   try {
     console.log("[Seeder] Ensuring Google Sheets URL is set in Firestore...");
     if (dbAdmin) {
