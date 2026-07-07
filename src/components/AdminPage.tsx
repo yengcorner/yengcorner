@@ -1899,7 +1899,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
               <button
                 onClick={async () => {
                   try {
-                    const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+                    const gmailDocRef = doc(db, "gmail", "settings");
                     const snap = await getDoc(gmailDocRef);
                     const existingData = snap.exists() ? snap.data() : {};
                     await setDoc(gmailDocRef, {
