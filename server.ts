@@ -232,15 +232,15 @@ app.use(express.json({ limit: '10mb' }));
         return res.json({ success: true, message: "Đơn hàng đã nhận, chưa cấu hình đồng bộ." });
       }
 
-      // Dynamically fetch googleSheetUrl directly from Firestore on every request using await getDoc() as required
-      let googleSheetUrl = "";
+      // Dynamically fetch googleSheetsUrl directly from Firestore on every request using await getDoc() as required
+      let googleSheetsUrl = "";
       try {
-        console.log("[Order Sync] Fetching googleSheetUrl directly from Firestore via getDoc()...");
+        console.log("[Order Sync] Fetching googleSheetsUrl directly from Firestore via getDoc()...");
         const docSnap = await getDoc(gmailDocRef);
         if (docSnap.exists()) {
-          const docData = docSnap.data();
-          googleSheetUrl = docData.googleSheetUrl || docData.googleSheetsUrl || "";
-          console.log("[Order Sync] getDoc successfully read googleSheetUrl:", googleSheetUrl);
+          const configData = docSnap.data();
+          googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+          console.log("[Order Sync] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
         }
       } catch (dbErr: any) {
         console.error("[Order Sync] getDoc failed, trying Admin SDK fallback:", dbErr.message);
@@ -248,8 +248,8 @@ app.use(express.json({ limit: '10mb' }));
           try {
             const docSnapAdmin = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
             if (docSnapAdmin.exists) {
-              const dataAdmin = docSnapAdmin.data();
-              googleSheetUrl = dataAdmin.googleSheetUrl || dataAdmin.googleSheetsUrl || "";
+              const configData = docSnapAdmin.data();
+              googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
             }
           } catch (adminErr: any) {
             console.error("[Order Sync] Admin SDK fallback failed:", adminErr.message);
@@ -258,8 +258,8 @@ app.use(express.json({ limit: '10mb' }));
       }
 
       // Use the dynamically retrieved URL to synchronize to Google Sheets
-      if (googleSheetUrl) {
-        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${googleSheetUrl}`);
+      if (googleSheetsUrl) {
+        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${googleSheetsUrl}`);
         try {
           const itemsFormatted = (order.items ?? []).map((item: any) => 
             `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
@@ -304,7 +304,7 @@ app.use(express.json({ limit: '10mb' }));
           };
 
           // Await the fetch call so Vercel does not freeze before completion!
-          const sheetsResponse = await fetch(googleSheetUrl, {
+          const sheetsResponse = await fetch(googleSheetsUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json"
@@ -321,6 +321,8 @@ app.use(express.json({ limit: '10mb' }));
         } catch (sheetSyncErr: any) {
           console.error(`[Order Sync] Error syncing to Google Sheets:`, sheetSyncErr.message);
         }
+      } else {
+        console.error("Không tìm thấy URL Google Sheets trong Firestore!");
       }
 
       // 4. Send Gmail notification if configured
