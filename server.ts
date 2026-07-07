@@ -3,9 +3,9 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import fs from "fs";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
-import * as admin from "firebase-admin";
+import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 import storeTokenHandler from "./api/gmail/store-token";
 import clearTokenHandler from "./api/gmail/clear-token";
@@ -29,29 +29,21 @@ const app = express();
 const PORT = 3000;
 
 // Initialize Firebase Client SDK for server-side persistence
-const firebaseApp = initializeApp(firebaseConfig);
+const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase Admin SDK for robust server-side Firestore operations with bypass access
 let dbAdmin: any = null;
 try {
-  const adminAny = admin as any;
-  if (adminAny.apps.length === 0) {
-    adminAny.initializeApp({
+  if (getAdminApps().length === 0) {
+    initializeAdminApp({
       projectId: firebaseConfig.projectId
     });
-  } else {
-    // Already initialized
   }
-  dbAdmin = getFirestoreAdmin(adminAny.apps[0] || adminAny.initializeApp({ projectId: firebaseConfig.projectId }), firebaseConfig.firestoreDatabaseId);
+  dbAdmin = getFirestoreAdmin(getAdminApp(), firebaseConfig.firestoreDatabaseId);
   console.log("[Firebase Admin] Initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
-  console.warn("[Firebase Admin] Initialization failed, trying fallback:", adminErr.message);
-  try {
-    dbAdmin = getFirestoreAdmin((admin as any).apps[0], firebaseConfig.firestoreDatabaseId);
-  } catch (err2: any) {
-    console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", err2.message);
-  }
+  console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", adminErr.message);
 }
 
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
