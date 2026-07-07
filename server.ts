@@ -48,6 +48,37 @@ try {
 
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
+// Auto-seed/update Google Sheets URL to Firestore on boot
+async function ensureGoogleSheetsUrlInFirestore() {
+  const newUrl = "https://script.google.com/macros/s/AKfycbyOuOg8gq8Pc9p2xy9f5qWC6OeQ7L8hQCGyb3qcbe4m0x2nDJpkVCdNJHLqSPIlLk5S/exec";
+  try {
+    console.log("[Seeder] Ensuring Google Sheets URL is set in Firestore...");
+    if (dbAdmin) {
+      const docRefAdmin = dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4");
+      const docSnap = await docRefAdmin.get();
+      const existingData = docSnap.exists ? docSnap.data() : {};
+      await docRefAdmin.set({
+        ...existingData,
+        googleSheetUrl: newUrl,
+        googleSheetsUrl: newUrl
+      }, { merge: true });
+      console.log("[Seeder] Successfully wrote URL to Firestore via Admin SDK!");
+    } else {
+      const docSnap = await getDoc(gmailDocRef);
+      const existingData = docSnap.exists() ? docSnap.data() : {};
+      await setDoc(gmailDocRef, {
+        ...existingData,
+        googleSheetUrl: newUrl,
+        googleSheetsUrl: newUrl
+      }, { merge: true });
+      console.log("[Seeder] Successfully wrote URL to Firestore via Client SDK!");
+    }
+  } catch (err: any) {
+    console.error("[Seeder] Failed to write Google Sheets URL to Firestore:", err.message);
+  }
+}
+ensureGoogleSheetsUrlInFirestore();
+
 // Middleware to parse JSON payloads
 app.use(express.json({ limit: '10mb' }));
 
@@ -184,6 +215,7 @@ app.use(express.json({ limit: '10mb' }));
 
   // Secure API endpoint to send emails using stored Gmail token
   app.post("/api/orders/notify-new", async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     const { order } = req.body;
     if (!order || !order.id) {
       return res.status(400).json({ error: "Thông tin đơn hàng không hợp lệ." });
@@ -200,9 +232,34 @@ app.use(express.json({ limit: '10mb' }));
         return res.json({ success: true, message: "Đơn hàng đã nhận, chưa cấu hình đồng bộ." });
       }
 
-      // 3. Sync to Google Sheets if configured
-      if (tokenData.googleSheetsUrl) {
-        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${tokenData.googleSheetsUrl}`);
+      // Dynamically fetch googleSheetUrl directly from Firestore on every request using await getDoc() as required
+      let googleSheetUrl = "";
+      try {
+        console.log("[Order Sync] Fetching googleSheetUrl directly from Firestore via getDoc()...");
+        const docSnap = await getDoc(gmailDocRef);
+        if (docSnap.exists()) {
+          const docData = docSnap.data();
+          googleSheetUrl = docData.googleSheetUrl || docData.googleSheetsUrl || "";
+          console.log("[Order Sync] getDoc successfully read googleSheetUrl:", googleSheetUrl);
+        }
+      } catch (dbErr: any) {
+        console.error("[Order Sync] getDoc failed, trying Admin SDK fallback:", dbErr.message);
+        if (dbAdmin) {
+          try {
+            const docSnapAdmin = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
+            if (docSnapAdmin.exists) {
+              const dataAdmin = docSnapAdmin.data();
+              googleSheetUrl = dataAdmin.googleSheetUrl || dataAdmin.googleSheetsUrl || "";
+            }
+          } catch (adminErr: any) {
+            console.error("[Order Sync] Admin SDK fallback failed:", adminErr.message);
+          }
+        }
+      }
+
+      // Use the dynamically retrieved URL to synchronize to Google Sheets
+      if (googleSheetUrl) {
+        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${googleSheetUrl}`);
         try {
           const itemsFormatted = (order.items ?? []).map((item: any) => 
             `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
@@ -247,7 +304,7 @@ app.use(express.json({ limit: '10mb' }));
           };
 
           // Await the fetch call so Vercel does not freeze before completion!
-          const sheetsResponse = await fetch(tokenData.googleSheetsUrl, {
+          const sheetsResponse = await fetch(googleSheetUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json"
