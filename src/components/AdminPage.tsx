@@ -987,6 +987,22 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         console.warn("Failed to trigger initial sync list:", err);
       }
 
+      // 🔄 4. Đọc Google Sheets URL trực tiếp từ Firestore "gmail/settings"
+      getDoc(doc(db, "gmail", "settings"))
+        .then((docSnap) => {
+          if (docSnap.exists()) {
+            const configData = docSnap.data();
+            const fetchedUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+            if (fetchedUrl) {
+              setGoogleSheetsUrl(fetchedUrl);
+              localStorage.setItem('yeng_google_sheets_url', fetchedUrl);
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("Lỗi đọc Google Sheets URL từ Firestore settings:", err);
+        });
+
       return () => {
         unsubscribeOrders();
         unsubscribeProducts();
