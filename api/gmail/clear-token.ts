@@ -1,10 +1,45 @@
 import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, deleteDoc } from "firebase/firestore";
 
-import firebaseConfig from "../../firebase-applet-config.json";
+function loadFirebaseConfig(): any {
+  try {
+    const p = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const filename = fileURLToPath(import.meta.url);
+    const dirname = path.dirname(filename);
+    const p = path.resolve(dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const p = path.resolve(__dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  try {
+    const p = path.resolve("firebase-applet-config.json");
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  } catch (e) {}
+
+  throw new Error("Could not find firebase-applet-config.json!");
+}
+
+const firebaseConfig = loadFirebaseConfig();
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
