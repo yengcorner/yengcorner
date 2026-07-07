@@ -2106,14 +2106,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   var mainSheet = ss.getSheetByName("DANH SÁCH ĐƠN HÀNG");
   if (!mainSheet) {
     var sheets = ss.getSheets();
-    // Thử tìm sheet đầu tiên không phải là "CHÚ THÍCH"
     for (var i = 0; i < sheets.length; i++) {
       if (sheets[i].getName() !== "CHÚ THÍCH") {
         mainSheet = sheets[i];
         break;
       }
     }
-    // Nếu tất cả các sheet đều tên là "CHÚ THÍCH" hoặc không có sheet nào khác, tạo mới sheet "DANH SÁCH ĐƠN HÀNG"
     if (!mainSheet) {
       mainSheet = ss.insertSheet("DANH SÁCH ĐƠN HÀNG");
     }
@@ -2121,7 +2119,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   var data = JSON.parse(e.postData.contents);
   
-  var timestamp = data.timestamp || new Date();
+  var timestamp = data.timestamp || new Date().toLocaleString("vi-VN");
+  var orderId = data.orderId || data.id || data.orderNumber || ""; 
   var email = data.email || "";
   var snsLink = data.snsLink || "";
   var customerName = data.customerName || "";
@@ -2138,7 +2137,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   
   if (data.items && data.items.length > 0) {
     data.items.forEach(function(item) {
-      productNames.push(item.name || item.productName || "Sản phẩm");
+      productNames.push(item.productName || item.name || "Sản phẩm ẩn");
       productVersions.push(item.version || "Mặc định");
       productQuantities.push(item.quantity || 1);
     });
@@ -2152,59 +2151,63 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   var prodVerStr = productVersions.join(", ");
   var prodQtyStr = productQuantities.join(", ");
 
-  var defaultHeaders = [
-    "Dấu thời gian", "Địa chỉ email", "Link facebook/ instagram/ thread", 
-    "Tên sản phẩm", "Số lượng/ Q", 
+  // Mảng định nghĩa tiêu đề chuẩn theo cấu trúc mới
+  var standardHeaders = [
+    "Dấu thời gian", "Mã đơn hàng", "Địa chỉ email", "Link facebook/ instagram/ thread", 
+    "Tên sản phẩm", "Phân loại", "Số lượng/ Q", 
     "Bill chuyển khoản/ Proof transfer money (Link ảnh)", "Tên người nhận", 
     "Số điện thoại người nhận", "Địa chỉ người nhận", "Hình thức nhận", 
     "Ghi chú/ Note", "ĐÃ CHUYỂN", "TỔNG ĐƠN HÀNG", "CÂN", "CÒN LẠI", "NOTE"
   ];
 
+  // Khởi tạo hàng tiêu đề nếu mainSheet trống
   if (mainSheet.getLastRow() === 0) {
-    mainSheet.appendRow(defaultHeaders);
+    mainSheet.appendRow(standardHeaders);
     SpreadsheetApp.flush();
   }
 
-  var lastCol = mainSheet.getLastColumn();
-  if (lastCol === 0) lastCol = defaultHeaders.length;
-  
-  var headers = mainSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  
-  // Nếu headers bị trống hoàn toàn do hàng 1 trống, hãy ghi đè mặc định
+  // Tự động đồng bộ và chèn các cột mới nếu sheet cũ chưa cập nhật cấu trúc
+  var headers = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
   if (!headers || headers.join("").trim() === "") {
-    mainSheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
+    mainSheet.getRange(1, 1, 1, standardHeaders.length).setValues([standardHeaders]);
     SpreadsheetApp.flush();
-    headers = defaultHeaders;
+    headers = standardHeaders;
   }
 
-  var verIndex = headers.indexOf("Phân loại");
-  if (verIndex === -1) {
-    var qtyIndex = headers.indexOf("Số lượng/ Q");
-    if (qtyIndex !== -1) {
-      mainSheet.insertColumns(qtyIndex + 1);
-      mainSheet.getRange(1, qtyIndex + 1).setValue("Phân loại");
-    } else {
-      var nameIndex = headers.indexOf("Tên sản phẩm");
-      if (nameIndex !== -1) {
-        mainSheet.insertColumnAfter(nameIndex + 1);
-        mainSheet.getRange(1, nameIndex + 2).setValue("Phân loại");
-      }
+  if (headers.indexOf("Mã đơn hàng") === -1) {
+    var tsIndex = headers.indexOf("Dấu thời gian");
+    if (tsIndex !== -1) {
+      mainSheet.insertColumnAfter(tsIndex + 1);
+      mainSheet.getRange(1, tsIndex + 2).setValue("Mã đơn hàng");
+    }
+    SpreadsheetApp.flush();
+  }
+
+  headers = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf("Phân loại") === -1) {
+    var prodIndex = headers.indexOf("Tên sản phẩm");
+    if (prodIndex !== -1) {
+      mainSheet.insertColumnAfter(prodIndex + 1);
+      mainSheet.getRange(1, prodIndex + 2).setValue("Phân loại");
     }
     SpreadsheetApp.flush();
   }
 
   var currentHeaders = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
   if (!currentHeaders || currentHeaders.join("").trim() === "") {
-    currentHeaders = defaultHeaders;
+    currentHeaders = standardHeaders;
   }
-  
+
   var lastRow = mainSheet.getLastRow() + 1;
-  
-  var tgIndex = currentHeaders.indexOf("TỔNG ĐƠN HÀNG") !== -1 ? currentHeaders.indexOf("TỔNG ĐƠN HÀNG") + 1 : 13;
-  var dcIndex = currentHeaders.indexOf("ĐÃ CHUYỂN") !== -1 ? currentHeaders.indexOf("ĐÃ CHUYỂN") + 1 : 12;
-  var clIndex = currentHeaders.indexOf("CÒN LẠI") !== -1 ? currentHeaders.indexOf("CÒN LẠI") + 1 : 15;
-  
-  var formulaRemaining = "=" + getColumnLetter(tgIndex) + lastRow + "-" + getColumnLetter(dcIndex) + lastRow;
+
+  var idxTotal = currentHeaders.indexOf("TỔNG ĐƠN HÀNG");
+  var idxPaid = currentHeaders.indexOf("ĐÃ CHUYỂN");
+  var idxRemaining = currentHeaders.indexOf("CÒN LẠI");
+
+  var formulaRemaining = "";
+  if (idxTotal !== -1 && idxPaid !== -1) {
+    formulaRemaining = "=" + getColumnLetter(idxTotal + 1) + lastRow + "-" + getColumnLetter(idxPaid + 1) + lastRow;
+  }
 
   var rowData = new Array(currentHeaders.length);
   for (var k = 0; k < currentHeaders.length; k++) {
@@ -2219,6 +2222,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   }
 
   safeSet("Dấu thời gian", timestamp);
+  safeSet("Mã đơn hàng", orderId);
   safeSet("Địa chỉ email", email);
   safeSet("Link facebook/ instagram/ thread", snsLink);
   safeSet("Tên sản phẩm", prodNameStr);
@@ -2245,6 +2249,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     range.setBackground("#dbebff");
   }
 
+  // --- Xử lý tách sheet phụ theo sản phẩm ---
   try {
     var targetTabName = prodNameStr.split(/[\[\-(]/)[0].trim(); 
     if (targetTabName.length > 30) {
@@ -2255,20 +2260,42 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     var targetSheet = ss.getSheetByName(targetTabName);
     if (!targetSheet) {
       targetSheet = ss.insertSheet(targetTabName);
-      targetSheet.appendRow(currentHeaders);
+      targetSheet.appendRow(standardHeaders);
       SpreadsheetApp.flush();
     }
     
-    targetSheet.appendRow(rowData);
+    // Đọc lại tiêu đề thực tế của sheet phụ để đổ data khớp cột
+    var subHeaders = targetSheet.getRange(1, 1, 1, targetSheet.getLastColumn()).getValues()[0];
+    if (!subHeaders || subHeaders.join("").trim() === "") {
+      targetSheet.getRange(1, 1, 1, standardHeaders.length).setValues([standardHeaders]);
+      SpreadsheetApp.flush();
+      subHeaders = standardHeaders;
+    }
+
+    var subRowData = new Array(subHeaders.length);
+    for (var i = 0; i < subHeaders.length; i++) {
+      var headerName = subHeaders[i];
+      var mainIdx = currentHeaders.indexOf(headerName);
+      if (mainIdx !== -1) {
+        subRowData[i] = rowData[mainIdx];
+      } else {
+        subRowData[i] = "";
+      }
+    }
+
+    targetSheet.appendRow(subRowData);
     var subLastRow = targetSheet.getLastRow();
-    var subFormula = "=" + getColumnLetter(tgIndex) + subLastRow + "-" + getColumnLetter(dcIndex) + subLastRow;
     
-    var colRemainingIdx = currentHeaders.indexOf("CÒN LẠI");
-    if (colRemainingIdx !== -1) {
-      targetSheet.getRange(subLastRow, colRemainingIdx + 1).setValue(subFormula);
+    var subIdxTotal = subHeaders.indexOf("TỔNG ĐƠN HÀNG");
+    var subIdxPaid = subHeaders.indexOf("ĐÃ CHUYỂN");
+    var subIdxRemaining = subHeaders.indexOf("CÒN LẠI");
+    
+    if (subIdxTotal !== -1 && subIdxPaid !== -1 && subIdxRemaining !== -1) {
+      var subFormula = "=" + getColumnLetter(subIdxTotal + 1) + subLastRow + "-" + getColumnLetter(subIdxPaid + 1) + subLastRow;
+      targetSheet.getRange(subLastRow, subIdxRemaining + 1).setValue(subFormula);
     }
     
-    var subRange = targetSheet.getRange(subLastRow, 1, 1, currentHeaders.length);
+    var subRange = targetSheet.getRange(subLastRow, 1, 1, subHeaders.length);
     if (paidAmount === totalAmount) {
       subRange.setBackground("#ffc9c9");
     } else {
@@ -2280,9 +2307,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 }
 
 function getColumnLetter(colIndex) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  return sheet.getRange(1, colIndex).getA1Notation().replace(/[0-9]/g, '');
-}`}
+  var temp, letter = '';
+  while (colIndex > 0) {
+    temp = (colIndex - 1) % 26;
+    letter = String.fromCharCode(65 + temp) + letter;
+    colIndex = (colIndex - temp - 1) / 26;
+  }
+  return letter;
+}}`}
                 </pre>
               </li>
               <li>Nhấp biểu tượng <strong>💾 Lưu (Save)</strong>, sau đó nhấn nút <strong>Deploy (Triển khai)</strong> ở góc phải phía trên &rarr; Chọn <strong>New deployment (Triển khai mới)</strong>.</li>
