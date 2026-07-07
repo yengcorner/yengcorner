@@ -236,20 +236,35 @@ app.use(express.json({ limit: '10mb' }));
       let googleSheetsUrl = "";
       try {
         console.log("[Order Sync] Fetching googleSheetsUrl directly from Firestore via getDoc()...");
+        const gmailDocRef = doc(db, "gmail", "settings");
         const docSnap = await getDoc(gmailDocRef);
-        if (docSnap.exists()) {
-          const configData = docSnap.data();
-          googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
-          console.log("[Order Sync] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
+        const configData = docSnap.exists() ? docSnap.data() : {};
+        googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl;
+
+        // If not found in settings, fallback to standard config document
+        if (!googleSheetsUrl) {
+          const altDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+          const altSnap = await getDoc(altDocRef);
+          if (altSnap.exists()) {
+            const altData = altSnap.data();
+            googleSheetsUrl = altData.googleSheetsUrl || altData.googleSheetUrl || "";
+          }
         }
+        console.log("[Order Sync] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
       } catch (dbErr: any) {
         console.error("[Order Sync] getDoc failed, trying Admin SDK fallback:", dbErr.message);
         if (dbAdmin) {
           try {
-            const docSnapAdmin = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
-            if (docSnapAdmin.exists) {
-              const configData = docSnapAdmin.data();
-              googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+            const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
+            const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
+            googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+
+            if (!googleSheetsUrl) {
+              const altSnapAdmin = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
+              if (altSnapAdmin.exists) {
+                const altData = altSnapAdmin.data();
+                googleSheetsUrl = altData.googleSheetsUrl || altData.googleSheetUrl || "";
+              }
             }
           } catch (adminErr: any) {
             console.error("[Order Sync] Admin SDK fallback failed:", adminErr.message);
@@ -258,9 +273,13 @@ app.use(express.json({ limit: '10mb' }));
       }
 
       // Use the dynamically retrieved URL to synchronize to Google Sheets
-      if (googleSheetsUrl) {
-        console.log(`[Order Sync] Syncing order #${order.id} to Google Sheets: ${googleSheetsUrl}`);
-        try {
+      const newOrderId = order.id;
+      const orderData = order;
+
+      try {
+        if (googleSheetsUrl) {
+          console.log("Đang đẩy đơn sang Google Sheets:", googleSheetsUrl);
+          
           const itemsFormatted = (order.items ?? []).map((item: any) => 
             `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
           ).join(", ");
@@ -270,59 +289,40 @@ app.use(express.json({ limit: '10mb' }));
           const isHalfDeposit = order.payment?.method === '50%' || order.payment?.method === 'Cọc 50%';
           const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
 
-          const sheetPayload = {
-            timestamp: new Date(order.timestamp || Date.now()).toLocaleString('vi-VN'),
-            email: order.contact?.email || "",
-            snsLink: order.contact?.snsLink || "",
-            quantity: totalQty,
-            invoiceImage: order.payment?.invoiceImage || "",
-            customerName: order.shipping?.receiverName || "",
-            phone: order.shipping?.phone || "",
-            address: order.shipping?.address || "",
-            shippingMethod: order.shipping?.method || "",
-            note: order.note && order.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${order.note}` : itemsFormatted,
-            paidAmount: calculatedPaid,
-            totalAmount: subtotalVal,
-            items: (order.items ?? []).map((item: any) => ({
-              productName: item.product?.name || 'Sản phẩm',
-              name: item.product?.name || 'Sản phẩm', // Google Apps Script compatibility fallback
-              version: item.version || 'Mặc định',
-              quantity: item.quantity || 1
-            })),
-            cartItems: (order.items ?? []).map((item: any) => ({
-              productName: item.product?.name || 'Sản phẩm',
-              version: item.version || 'Mặc định',
-              quantity: item.quantity || 1
-            })),
-            productName: order.items?.[0]?.product?.name || "",
-            version: order.items?.[0]?.version || "",
-
-            // Backward compatibility fields
-            orderId: order.id,
-            products: itemsFormatted,
-            paymentMethod: order.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
-          };
-
-          // Await the fetch call so Vercel does not freeze before completion!
-          const sheetsResponse = await fetch(googleSheetsUrl, {
+          const response = await fetch(googleSheetsUrl, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(sheetPayload)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              orderId: newOrderId, // Mã đơn mới YENGXXXX
+              timestamp: new Date().toISOString(),
+              email: orderData.contact?.email || orderData.email || "",
+              snsLink: orderData.contact?.snsLink || orderData.snsLink || "",
+              customerName: orderData.shipping?.receiverName || orderData.customerName || "",
+              phone: orderData.shipping?.phone || orderData.phone || "",
+              address: orderData.shipping?.address || orderData.address || "",
+              shippingMethod: orderData.shipping?.method || orderData.shippingMethod || "",
+              note: orderData.note && orderData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${orderData.note}` : itemsFormatted,
+              paidAmount: Number(calculatedPaid) || 0,
+              totalAmount: Number(subtotalVal) || 0,
+              invoiceImage: orderData.payment?.invoiceImage || "",
+              items: (orderData.items ?? []).map((item: any) => ({
+                productName: item.product?.name || 'Sản phẩm',
+                name: item.product?.name || 'Sản phẩm', // Google Apps Script compatibility fallback
+                version: item.version || 'Mặc định',
+                quantity: item.quantity || 1
+              })),
+              quantity: totalQty,
+              products: itemsFormatted,
+              paymentMethod: orderData.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
+            })
           });
-          
-          if (sheetsResponse.ok) {
-            console.log(`[Order Sync] Successfully synced order #${order.id} to Google Sheets via server.`);
-          } else {
-            const sheetErrText = await sheetsResponse.text();
-            console.error(`[Order Sync] Google Sheets sync response non-OK:`, sheetsResponse.status, sheetErrText);
-          }
-        } catch (sheetSyncErr: any) {
-          console.error(`[Order Sync] Error syncing to Google Sheets:`, sheetSyncErr.message);
+          const resText = await response.text();
+          console.log("Kết quả phản hồi từ Google Sheets:", resText);
+        } else {
+          console.error("LỖI: Không tìm thấy URL Google Sheets trong Firestore!");
         }
-      } else {
-        console.error("Không tìm thấy URL Google Sheets trong Firestore!");
+      } catch (fetchErr: any) {
+        console.error("Lỗi kết nối khi gọi Webhook Google Sheets:", fetchErr.message);
       }
 
       // 4. Send Gmail notification if configured
