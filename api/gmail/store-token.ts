@@ -44,7 +44,7 @@ function loadFirebaseConfig(): any {
 const firebaseConfig = loadFirebaseConfig();
 const firebaseApp = getClientApps().length === 0 ? initializeClientApp(firebaseConfig) : getClientApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+const gmailDocRef = doc(db, "gmail", "settings");
 
 // Initialize Firebase Admin SDK for 100% reliable server writes
 let dbAdmin: any = null;
@@ -101,7 +101,7 @@ export default async function handler(req: Request, res: Response) {
     // 2. Write to Firestore for durable persistence using Admin SDK if available
     if (dbAdmin) {
       console.log(`[Gmail Auth] Storing token in Firestore via Admin SDK...`);
-      await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").set(tokenData);
+      await dbAdmin.collection("gmail").doc("settings").set(tokenData);
     } else {
       console.log(`[Gmail Auth] Falling back to Client SDK to store token...`);
       await setDoc(gmailDocRef, tokenData);
