@@ -46,7 +46,7 @@ try {
   console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", adminErr.message);
 }
 
-const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+const gmailDocRef = doc(db, "gmail", "settings");
 
 // Auto-seed/update Google Sheets URL to Firestore on boot
 async function ensureGoogleSheetsUrlInFirestore() {
@@ -54,7 +54,7 @@ async function ensureGoogleSheetsUrlInFirestore() {
   try {
     console.log("[Seeder] Ensuring Google Sheets URL is set in Firestore...");
     if (dbAdmin) {
-      const docRefAdmin = dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4");
+      const docRefAdmin = dbAdmin.collection("gmail").doc("settings");
       const docSnap = await docRefAdmin.get();
       const existingData = docSnap.exists ? docSnap.data() : {};
       await docRefAdmin.set({
@@ -98,7 +98,7 @@ app.use(express.json({ limit: '10mb' }));
     if (dbAdmin) {
       try {
         console.log("[Firestore Config Helper] Fetching configuration via Firebase Admin SDK...");
-        const docSnap = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
+        const docSnap = await dbAdmin.collection("gmail").doc("settings").get();
         if (docSnap.exists) {
           const data = docSnap.data();
           if (data && (data.googleSheetsUrl || data.accessToken)) {
@@ -121,7 +121,7 @@ app.use(express.json({ limit: '10mb' }));
     // 2. Query Firestore via Google REST API (secondary reliable fallback)
     try {
       const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
-      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
+      const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/settings?key=${firebaseConfig.apiKey}`;
       console.log(`[Firestore Config Helper] Fetching fresh config via REST API from: ${url}`);
       
       const response = await fetch(url);
@@ -239,17 +239,7 @@ app.use(express.json({ limit: '10mb' }));
         const gmailDocRef = doc(db, "gmail", "settings");
         const docSnap = await getDoc(gmailDocRef);
         const configData = docSnap.exists() ? docSnap.data() : {};
-        googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl;
-
-        // If not found in settings, fallback to standard config document
-        if (!googleSheetsUrl) {
-          const altDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
-          const altSnap = await getDoc(altDocRef);
-          if (altSnap.exists()) {
-            const altData = altSnap.data();
-            googleSheetsUrl = altData.googleSheetsUrl || altData.googleSheetUrl || "";
-          }
-        }
+        googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || tokenData?.googleSheetsUrl || tokenData?.googleSheetUrl || "";
         console.log("[Order Sync] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
       } catch (dbErr: any) {
         console.error("[Order Sync] getDoc failed, trying Admin SDK fallback:", dbErr.message);
@@ -258,14 +248,6 @@ app.use(express.json({ limit: '10mb' }));
             const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
             const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
             googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
-
-            if (!googleSheetsUrl) {
-              const altSnapAdmin = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
-              if (altSnapAdmin.exists) {
-                const altData = altSnapAdmin.data();
-                googleSheetsUrl = altData.googleSheetsUrl || altData.googleSheetUrl || "";
-              }
-            }
           } catch (adminErr: any) {
             console.error("[Order Sync] Admin SDK fallback failed:", adminErr.message);
           }
