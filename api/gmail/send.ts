@@ -1,15 +1,13 @@
 import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
-import { initializeApp, getApps, getApp } from "firebase-admin/app";
+import { initializeApp as initializeClientApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
-import { getApps } from "firebase-admin/app";
 
-import { createRequire } from "module";
-const localRequire = typeof require !== "undefined" ? require : createRequire(import.meta.url);
-const firebaseConfig = localRequire("../firebase-applet-config.json");
-const firebaseApp = initializeApp(firebaseConfig);
+import firebaseConfig from "../../firebase-applet-config.json";
+const firebaseApp = initializeClientApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
@@ -17,13 +15,13 @@ const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 let dbAdmin: any = null;
 
 try {
-  if (!getApps().length) {
-    initializeApp({
+  if (!getAdminApps().length) {
+    initializeAdminApp({
       projectId: firebaseConfig.projectId,
     });
   }
 
-  dbAdmin = getFirestoreAdmin(getApp(), firebaseConfig.firestoreDatabaseId);
+  dbAdmin = getFirestoreAdmin(getAdminApp(), firebaseConfig.firestoreDatabaseId);
 } catch (adminErr: any) {
   console.warn(
     "[Gmail Send Admin] Admin SDK initialization skipped/failed:",
