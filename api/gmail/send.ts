@@ -68,6 +68,36 @@ const TOKEN_PATH = process.env.VERCEL
   ? "/tmp/gmail-token.json" 
   : path.join(process.cwd(), "gmail-token.json");
 
+// Auto-seed/update Google Sheets URL to Firestore on boot or request
+async function ensureGoogleSheetsUrlInFirestore() {
+  const newUrl = "https://script.google.com/macros/s/AKfycbyOuOg8gq8Pc9p2xy9f5qWC6OeQ7L8hQCGyb3qcbe4m0x2nDJpkVCdNJHLqSPIlLk5S/exec";
+  try {
+    console.log("[Seeder Send] Ensuring Google Sheets URL is set in Firestore...");
+    if (dbAdmin) {
+      const docRefAdmin = dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4");
+      const docSnap = await docRefAdmin.get();
+      const existingData = docSnap.exists ? docSnap.data() : {};
+      await docRefAdmin.set({
+        ...existingData,
+        googleSheetUrl: newUrl,
+        googleSheetsUrl: newUrl
+      }, { merge: true });
+      console.log("[Seeder Send] Successfully wrote URL to Firestore via Admin SDK!");
+    } else {
+      const docSnap = await getDoc(gmailDocRef);
+      const existingData = docSnap.exists() ? docSnap.data() : {};
+      await setDoc(gmailDocRef, {
+        ...existingData,
+        googleSheetUrl: newUrl,
+        googleSheetsUrl: newUrl
+      }, { merge: true });
+      console.log("[Seeder Send] Successfully wrote URL to Firestore via Client SDK!");
+    }
+  } catch (err: any) {
+    console.error("[Seeder Send] Failed to write Google Sheets URL to Firestore:", err.message);
+  }
+}
+
 // Helper function to fetch Gmail & Sheets configuration from Firestore using Firebase Admin SDK with ultra-reliable REST API fallbacks
 async function fetchGmailConfigFromFirestore(): Promise<any> {
   // 1. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
@@ -185,6 +215,9 @@ export default async function handler(req: Request, res: Response) {
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+
+  // Ensure Sheet URL is updated
+  await ensureGoogleSheetsUrlInFirestore();
 
   try {
     const { to, subject, bodyHtml } = req.body;
