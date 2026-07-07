@@ -8,27 +8,10 @@ import firebaseConfig from '../../firebase-applet-config.json';
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Initialize Firestore with robust local offline caching to handle network fluctuations and iframe container isolation smoothly
-let tempDb: Firestore;
+// Initialize Firestore with standard getFirestore using the custom DB ID.
+// This is more reliable inside iframes where third-party IndexedDB/persistent cache access may be restricted by sandbox policies.
 const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
-
-try {
-  tempDb = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    })
-  }, firestoreDbId);
-} catch (error) {
-  console.warn("Could not initialize Firestore with persistent cache, falling back to getFirestore:", error);
-  try {
-    tempDb = getFirestore(app, firestoreDbId);
-  } catch (err2) {
-    console.error("Failed to initialize Firestore with custom DB ID:", err2);
-    tempDb = getFirestore(app);
-  }
-}
-
-export const db = tempDb;
+export const db = getFirestore(app, firestoreDbId);
 
 // Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
 onAuthStateChanged(auth, async (user) => {
@@ -97,10 +80,11 @@ export const initAuth = (
     if (docSnap.exists()) {
       const data = docSnap.data();
       if (data) {
-        if (data.googleSheetsUrl) {
+        const urlToUse = data.googleSheetUrl || data.googleSheetsUrl;
+        if (urlToUse) {
           const localSheetsUrl = localStorage.getItem('yeng_google_sheets_url');
-          if (localSheetsUrl !== data.googleSheetsUrl) {
-            localStorage.setItem('yeng_google_sheets_url', data.googleSheetsUrl);
+          if (localSheetsUrl !== urlToUse) {
+            localStorage.setItem('yeng_google_sheets_url', urlToUse);
           }
         }
         if (data.accessToken) {
