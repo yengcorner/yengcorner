@@ -228,6 +228,7 @@ app.use(express.json({ limit: '10mb' }));
             totalAmount: subtotalVal,
             items: (order.items ?? []).map((item: any) => ({
               productName: item.product?.name || 'Sản phẩm',
+              name: item.product?.name || 'Sản phẩm', // Google Apps Script compatibility fallback
               version: item.version || 'Mặc định',
               quantity: item.quantity || 1
             })),
