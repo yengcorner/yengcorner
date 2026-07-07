@@ -1281,18 +1281,31 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       return;
     }
 
-    const confirmSync = window.confirm(`Bạn có muốn thực hiện đồng bộ thủ công TOÀN BỘ ${orders.length} đơn hàng lên Google Sheets không?\nHệ thống sẽ đẩy lần lượt tất cả đơn hàng từ tất cả các thiết bị về trang tính.`);
-    if (!confirmSync) return;
+    // Filter out orders that have already been synchronized (avoid duplicate submissions)
+    const unsyncedOrders = orders.filter(o => !o.googleSheetsSynced);
+    
+    let ordersToSync = [...unsyncedOrders];
+    let isForceSyncAll = false;
+
+    if (unsyncedOrders.length === 0) {
+      const confirmForce = window.confirm(`✨ Tuyệt vời! Toàn bộ đơn hàng (${orders.length}/${orders.length}) đều đã được đồng bộ lên Google Sheets trước đó rồi!\n\nBạn có muốn BẮT BUỘC ĐỒNG BỘ LẠI toàn bộ đơn hàng từ trước đến nay không? (Lưu ý: Có thể gây lặp lại dòng trên Google Sheets nếu bạn chưa dọn dẹp trang tính).`);
+      if (!confirmForce) return;
+      ordersToSync = [...orders];
+      isForceSyncAll = true;
+    } else {
+      const confirmSync = window.confirm(`⚡ Phát hiện ${unsyncedOrders.length} đơn hàng mới CHƯA ĐỒNG BỘ lên Google Sheets (trong tổng số ${orders.length} đơn hàng trong hệ thống).\n\nHệ thống sẽ tự động lọc và chỉ đồng bộ thêm ${unsyncedOrders.length} đơn hàng này để tránh trùng lặp.\n\nBạn có muốn bắt đầu đồng bộ không?`);
+      if (!confirmSync) return;
+    }
 
     setIsSyncingAll(true);
-    setSyncTotal(orders.length);
+    setSyncTotal(ordersToSync.length);
     setSyncProgress(0);
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < orders.length; i++) {
-      const ord = orders[i];
+    for (let i = 0; i < ordersToSync.length; i++) {
+      const ord = ordersToSync[i];
       try {
         const itemsFormatted = (ord.items ?? []).map(item => 
           `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
@@ -1346,6 +1359,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           body: JSON.stringify(payload)
         });
 
+        // Save synchronization state permanently in Firestore so we don't sync it again
+        await setDoc(doc(db, "orders", ord.id), { googleSheetsSynced: true }, { merge: true });
+
         successCount++;
       } catch (err) {
         console.error(`Lỗi đồng bộ đơn hàng #${ord.id}:`, err);
@@ -1353,12 +1369,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       }
       setSyncProgress(i + 1);
       // Wait slightly between iterations to avoid Google Sheets API rate limit
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     setIsSyncingAll(false);
     showToast(`Đã đồng bộ thành công ${successCount} đơn hàng lên Google Sheets!`, 'success');
-    alert(`🎉 Đồng bộ hoàn tất!\n- Thành công: ${successCount}/${orders.length} đơn hàng\n- Thất bại: ${failCount} đơn hàng`);
+    alert(`🎉 Đồng bộ hoàn tất!\n- Thành công: ${successCount}/${ordersToSync.length} đơn hàng\n- Thất bại: ${failCount} đơn hàng`);
   };
 
   // Export orders tracking list to offline CSV / Excel file
@@ -2041,7 +2057,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                       <h5 className="font-bold text-xs text-emerald-950 uppercase font-display flex items-center gap-1.5">
                         <span>⚡ ĐỒNG BỘ TOÀN BỘ ĐƠN HÀNG LÊN GOOGLE SHEETS</span>
                       </h5>
-                      <p className="text-[11px] text-neutral-600 mt-0.5">Đẩy thủ công tất cả {orders.length} đơn hàng từ tất cả các thiết bị sang file Google Sheets của bạn để không bỏ sót bất kỳ ai.</p>
+                      <p className="text-[11px] text-neutral-600 mt-0.5">
+                        <strong>Ghi chú:</strong> Hệ thống luôn tự động đồng bộ đơn hàng theo thời gian thực (real-time) khi khách đặt hàng thành công. Nút này dùng để đồng bộ thủ công các đơn mới hoặc đơn chưa đồng bộ từ các thiết bị khác sang file Google Sheets để không bỏ sót bất kỳ ai. Hệ thống sẽ tự động lọc các đơn đã đồng bộ trước đó để tránh trùng lặp.
+                      </p>
                     </div>
                     <button
                       onClick={handleSyncAllToGoogleSheets}
@@ -2083,7 +2101,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                 <pre className="p-3 bg-neutral-900 text-neutral-200 rounded-lg text-[10.5px] font-mono overflow-x-auto mt-2 select-all whitespace-pre leading-normal shadow-inner max-h-48 overflow-y-auto">
 {`function doPost(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var mainSheet = ss.getSheets()[0];
+  
+  // 1. Tìm hoặc tạo sheet chính để ghi đơn hàng (Tránh ghi nhầm vào tab "CHÚ THÍCH" trống)
+  var mainSheet = ss.getSheetByName("DANH SÁCH ĐƠN HÀNG");
+  if (!mainSheet) {
+    var sheets = ss.getSheets();
+    // Thử tìm sheet đầu tiên không phải là "CHÚ THÍCH"
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getName() !== "CHÚ THÍCH") {
+        mainSheet = sheets[i];
+        break;
+      }
+    }
+    // Nếu tất cả các sheet đều tên là "CHÚ THÍCH" hoặc không có sheet nào khác, tạo mới sheet "DANH SÁCH ĐƠN HÀNG"
+    if (!mainSheet) {
+      mainSheet = ss.insertSheet("DANH SÁCH ĐƠN HÀNG");
+    }
+  }
+
   var data = JSON.parse(e.postData.contents);
   
   var timestamp = data.timestamp || new Date();
@@ -2103,7 +2138,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   
   if (data.items && data.items.length > 0) {
     data.items.forEach(function(item) {
-      productNames.push(item.name);
+      productNames.push(item.name || item.productName || "Sản phẩm");
       productVersions.push(item.version || "Mặc định");
       productQuantities.push(item.quantity || 1);
     });
@@ -2117,19 +2152,32 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   var prodVerStr = productVersions.join(", ");
   var prodQtyStr = productQuantities.join(", ");
 
+  var defaultHeaders = [
+    "Dấu thời gian", "Địa chỉ email", "Link facebook/ instagram/ thread", 
+    "Tên sản phẩm", "Số lượng/ Q", 
+    "Bill chuyển khoản/ Proof transfer money (Link ảnh)", "Tên người nhận", 
+    "Số điện thoại người nhận", "Địa chỉ người nhận", "Hình thức nhận", 
+    "Ghi chú/ Note", "ĐÃ CHUYỂN", "TỔNG ĐƠN HÀNG", "CÂN", "CÒN LẠI", "NOTE"
+  ];
+
   if (mainSheet.getLastRow() === 0) {
-    mainSheet.appendRow([
-      "Dấu thời gian", "Địa chỉ email", "Link facebook/ instagram/ thread", 
-      "Tên sản phẩm", "Số lượng/ Q", 
-      "Bill chuyển khoản/ Proof transfer money (Link ảnh)", "Tên người nhận", 
-      "Số điện thoại người nhận", "Địa chỉ người nhận", "Hình thức nhận", 
-      "Ghi chú/ Note", "ĐÃ CHUYỂN", "TỔNG ĐƠN HÀNG", "CÂN", "CÒN LẠI", "NOTE"
-    ]);
+    mainSheet.appendRow(defaultHeaders);
+    SpreadsheetApp.flush();
   }
 
-  var headers = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
-  var verIndex = headers.indexOf("Phân loại");
+  var lastCol = mainSheet.getLastColumn();
+  if (lastCol === 0) lastCol = defaultHeaders.length;
   
+  var headers = mainSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  
+  // Nếu headers bị trống hoàn toàn do hàng 1 trống, hãy ghi đè mặc định
+  if (!headers || headers.join("").trim() === "") {
+    mainSheet.getRange(1, 1, 1, defaultHeaders.length).setValues([defaultHeaders]);
+    SpreadsheetApp.flush();
+    headers = defaultHeaders;
+  }
+
+  var verIndex = headers.indexOf("Phân loại");
   if (verIndex === -1) {
     var qtyIndex = headers.indexOf("Số lượng/ Q");
     if (qtyIndex !== -1) {
@@ -2137,36 +2185,56 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       mainSheet.getRange(1, qtyIndex + 1).setValue("Phân loại");
     } else {
       var nameIndex = headers.indexOf("Tên sản phẩm");
-      mainSheet.insertColumnAfter(nameIndex + 1);
-      mainSheet.getRange(1, nameIndex + 2).setValue("Phân loại");
+      if (nameIndex !== -1) {
+        mainSheet.insertColumnAfter(nameIndex + 1);
+        mainSheet.getRange(1, nameIndex + 2).setValue("Phân loại");
+      }
     }
+    SpreadsheetApp.flush();
   }
 
   var currentHeaders = mainSheet.getRange(1, 1, 1, mainSheet.getLastColumn()).getValues()[0];
+  if (!currentHeaders || currentHeaders.join("").trim() === "") {
+    currentHeaders = defaultHeaders;
+  }
+  
   var lastRow = mainSheet.getLastRow() + 1;
-  var formulaRemaining = "=" + getColumnLetter(currentHeaders.indexOf("TỔNG ĐƠN HÀNG") + 1) + lastRow + "-" + getColumnLetter(currentHeaders.indexOf("ĐÃ CHUYỂN") + 1) + lastRow;
+  
+  var tgIndex = currentHeaders.indexOf("TỔNG ĐƠN HÀNG") !== -1 ? currentHeaders.indexOf("TỔNG ĐƠN HÀNG") + 1 : 13;
+  var dcIndex = currentHeaders.indexOf("ĐÃ CHUYỂN") !== -1 ? currentHeaders.indexOf("ĐÃ CHUYỂN") + 1 : 12;
+  var clIndex = currentHeaders.indexOf("CÒN LẠI") !== -1 ? currentHeaders.indexOf("CÒN LẠI") + 1 : 15;
+  
+  var formulaRemaining = "=" + getColumnLetter(tgIndex) + lastRow + "-" + getColumnLetter(dcIndex) + lastRow;
 
   var rowData = new Array(currentHeaders.length);
-  rowData[currentHeaders.indexOf("Dấu thời gian")] = timestamp;
-  rowData[currentHeaders.indexOf("Địa chỉ email")] = email;
-  rowData[currentHeaders.indexOf("Link facebook/ instagram/ thread")] = snsLink;
-  rowData[currentHeaders.indexOf("Tên sản phẩm")] = prodNameStr;
-  rowData[currentHeaders.indexOf("Số lượng/ Q")] = prodQtyStr;
-  rowData[currentHeaders.indexOf("Bill chuyển khoản/ Proof transfer money (Link ảnh)")] = data.invoiceImage || "";
-  rowData[currentHeaders.indexOf("Tên người nhận")] = customerName;
-  rowData[currentHeaders.indexOf("Số điện thoại người nhận")] = phone;
-  rowData[currentHeaders.indexOf("Địa chỉ người nhận")] = address;
-  rowData[currentHeaders.indexOf("Hình thức nhận")] = shippingMethod;
-  rowData[currentHeaders.indexOf("Ghi chú/ Note")] = note;
-  rowData[currentHeaders.indexOf("ĐÃ CHUYỂN")] = paidAmount;
-  rowData[currentHeaders.indexOf("TỔNG ĐƠN HÀNG")] = totalAmount;
-  rowData[currentHeaders.indexOf("CÂN")] = "";
-  rowData[currentHeaders.indexOf("CÒN LẠI")] = formulaRemaining;
-  rowData[currentHeaders.indexOf("NOTE")] = "";
-  
-  if (currentHeaders.indexOf("Phân loại") !== -1) {
-    rowData[currentHeaders.indexOf("Phân loại")] = prodVerStr;
+  for (var k = 0; k < currentHeaders.length; k++) {
+    rowData[k] = "";
   }
+
+  function safeSet(colName, value) {
+    var idx = currentHeaders.indexOf(colName);
+    if (idx !== -1) {
+      rowData[idx] = value;
+    }
+  }
+
+  safeSet("Dấu thời gian", timestamp);
+  safeSet("Địa chỉ email", email);
+  safeSet("Link facebook/ instagram/ thread", snsLink);
+  safeSet("Tên sản phẩm", prodNameStr);
+  safeSet("Số lượng/ Q", prodQtyStr);
+  safeSet("Bill chuyển khoản/ Proof transfer money (Link ảnh)", data.invoiceImage || "");
+  safeSet("Tên người nhận", customerName);
+  safeSet("Số điện thoại người nhận", phone);
+  safeSet("Địa chỉ người nhận", address);
+  safeSet("Hình thức nhận", shippingMethod);
+  safeSet("Ghi chú/ Note", note);
+  safeSet("ĐÃ CHUYỂN", paidAmount);
+  safeSet("TỔNG ĐƠN HÀNG", totalAmount);
+  safeSet("CÂN", "");
+  safeSet("CÒN LẠI", formulaRemaining);
+  safeSet("NOTE", "");
+  safeSet("Phân loại", prodVerStr);
 
   mainSheet.appendRow(rowData);
   
@@ -2178,7 +2246,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   }
 
   try {
-    var targetTabName = prodNameStr.split(/[\\[\\-(]/)[0].trim(); 
+    var targetTabName = prodNameStr.split(/[\[\-(]/)[0].trim(); 
     if (targetTabName.length > 30) {
       targetTabName = targetTabName.substring(0, 27) + "...";
     }
@@ -2188,12 +2256,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     if (!targetSheet) {
       targetSheet = ss.insertSheet(targetTabName);
       targetSheet.appendRow(currentHeaders);
+      SpreadsheetApp.flush();
     }
     
     targetSheet.appendRow(rowData);
     var subLastRow = targetSheet.getLastRow();
-    var subFormula = "=" + getColumnLetter(currentHeaders.indexOf("TỔNG ĐƠN HÀNG") + 1) + subLastRow + "-" + getColumnLetter(currentHeaders.indexOf("ĐÃ CHUYỂN") + 1) + subLastRow;
-    targetSheet.getRange(subLastRow, currentHeaders.indexOf("CÒN LẠI") + 1).setValue(subFormula);
+    var subFormula = "=" + getColumnLetter(tgIndex) + subLastRow + "-" + getColumnLetter(dcIndex) + subLastRow;
+    
+    var colRemainingIdx = currentHeaders.indexOf("CÒN LẠI");
+    if (colRemainingIdx !== -1) {
+      targetSheet.getRange(subLastRow, colRemainingIdx + 1).setValue(subFormula);
+    }
     
     var subRange = targetSheet.getRange(subLastRow, 1, 1, currentHeaders.length);
     if (paidAmount === totalAmount) {
