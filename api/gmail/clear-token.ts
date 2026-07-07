@@ -42,7 +42,7 @@ function loadFirebaseConfig(): any {
 const firebaseConfig = loadFirebaseConfig();
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+const gmailDocRef = doc(db, "gmail", "settings");
 
 const TOKEN_PATH = process.env.VERCEL 
   ? "/tmp/gmail-token.json" 
