@@ -321,7 +321,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     setSubmitting(true);
 
-    const orderId = "YENG26-" + Math.floor(1000 + Math.random() * 9000);
+    const orderId = "YENG" + Math.floor(1000 + Math.random() * 9000);
 
     // Compress image locally using HTML5 Canvas to keep base64 extremely lightweight yet clear
     let invoiceUrl = "";
