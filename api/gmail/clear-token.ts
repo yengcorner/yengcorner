@@ -1,13 +1,11 @@
 import type { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, deleteDoc } from "firebase/firestore";
 
-// Initialize Firebase using the configuration file
-const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
-const firebaseApp = initializeApp(firebaseConfig);
+import firebaseConfig from "../../firebase-applet-config.json";
+const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
 
