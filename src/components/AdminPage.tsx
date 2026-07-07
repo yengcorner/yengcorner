@@ -1904,7 +1904,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
                     const existingData = snap.exists() ? snap.data() : {};
                     await setDoc(gmailDocRef, {
                       ...existingData,
-                      googleSheetsUrl: googleSheetsUrl
+                      googleSheetsUrl: googleSheetsUrl,
+                      googleSheetUrl: googleSheetsUrl
                     });
                     alert("🎉 Lưu cổng kết nối Google Sheets thành công và đồng bộ lên hệ thống cloud!");
                   } catch (err: any) {
