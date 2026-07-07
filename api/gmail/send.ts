@@ -9,7 +9,7 @@ import { getApps } from "firebase-admin/app";
 
 import { createRequire } from "module";
 const localRequire = typeof require !== "undefined" ? require : createRequire(import.meta.url);
-const firebaseConfig = localRequire("../../firebase-applet-config.json");
+const firebaseConfig = localRequire("../firebase-applet-config.json");
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
