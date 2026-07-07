@@ -12,7 +12,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
 
   return [
     {
-      id: "YENG26-8431",
+      id: "YENG8431",
       status: "Đang gom hàng",
       items: [
         {
@@ -40,7 +40,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
       timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // 1 day ago
     },
     {
-      id: "YENG26-1940",
+      id: "YENG1940",
       status: "Đã bay kho Hàn",
       items: [
         {
@@ -68,7 +68,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
       timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days ago
     },
     {
-      id: "YENG26-4712",
+      id: "YENG4712",
       status: "Đã về Sài Gòn",
       items: [
         {
