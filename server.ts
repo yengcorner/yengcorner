@@ -63,20 +63,7 @@ app.use(express.json({ limit: '10mb' }));
 
   // Helper function to fetch Gmail & Sheets configuration from Firestore using Firebase Admin SDK with ultra-reliable REST API fallbacks
   async function fetchGmailConfigFromFirestore(): Promise<any> {
-    // 1. Try reading from local file cache first (extremely fast)
-    if (fs.existsSync(TOKEN_PATH)) {
-      try {
-        const cached = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-        if (cached && (cached.googleSheetsUrl || cached.accessToken)) {
-          console.log("[Firestore Config Helper] Found valid config in local disk cache.");
-          return cached;
-        }
-      } catch (err: any) {
-        console.warn("[Firestore Config Helper] Failed to parse local disk cache (non-blocking):", err.message);
-      }
-    }
-
-    // 2. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
+    // 1. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
     if (dbAdmin) {
       try {
         console.log("[Firestore Config Helper] Fetching configuration via Firebase Admin SDK...");
@@ -100,7 +87,7 @@ app.use(express.json({ limit: '10mb' }));
       }
     }
 
-    // 3. Query Firestore via Google REST API (secondary reliable fallback)
+    // 2. Query Firestore via Google REST API (secondary reliable fallback)
     try {
       const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
       const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
@@ -145,7 +132,7 @@ app.use(express.json({ limit: '10mb' }));
       console.error("[Firestore Config Helper] Error during Firestore REST request:", err.message);
     }
 
-    // 4. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
+    // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
     try {
       console.log("[Firestore Config Helper] Falling back to Firebase Client SDK...");
       const docSnap = await getDoc(gmailDocRef);
@@ -160,6 +147,19 @@ app.use(express.json({ limit: '10mb' }));
       }
     } catch (err: any) {
       console.error("[Firestore Config Helper] Client SDK fetch failed:", err.message);
+    }
+
+    // 4. Try reading from local file cache as absolute fallback if online databases are completely inaccessible
+    if (fs.existsSync(TOKEN_PATH)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
+        if (cached && (cached.googleSheetsUrl || cached.accessToken)) {
+          console.log("[Firestore Config Helper] Found valid config in local disk cache (fallback).");
+          return cached;
+        }
+      } catch (err: any) {
+        console.warn("[Firestore Config Helper] Failed to parse local disk cache:", err.message);
+      }
     }
 
     return null;
