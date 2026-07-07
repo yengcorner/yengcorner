@@ -305,6 +305,19 @@ app.use(express.json({ limit: '10mb' }));
           });
           const resText = await response.text();
           console.log("Kết quả phản hồi từ Google Sheets:", resText);
+
+          // Mark order as synchronized in Firestore
+          try {
+            if (dbAdmin) {
+              await dbAdmin.collection("orders").doc(newOrderId).set({ googleSheetsSynced: true }, { merge: true });
+              console.log(`[Order Sync] Set googleSheetsSynced to true for order #${newOrderId} via Admin SDK`);
+            } else {
+              await setDoc(doc(db, "orders", newOrderId), { googleSheetsSynced: true }, { merge: true });
+              console.log(`[Order Sync] Set googleSheetsSynced to true for order #${newOrderId} via Client SDK`);
+            }
+          } catch (dbUpdateErr: any) {
+            console.warn(`[Order Sync] Failed to update synced status in Firestore for order #${newOrderId}:`, dbUpdateErr.message);
+          }
         } else {
           console.error("LỖI: Không tìm thấy URL Google Sheets trong Firestore!");
         }
