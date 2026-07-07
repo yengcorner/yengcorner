@@ -923,6 +923,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     return localStorage.getItem('yeng_google_sheets_url') || '';
   });
   const [showSheetsConfig, setShowSheetsConfig] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncTotal, setSyncTotal] = useState(0);
   const [exportTarget, setExportTarget] = useState<string>('all');
   const [hasUnsavedCatalogChanges, setHasUnsavedCatalogChanges] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | null } | null>(null);
@@ -1263,6 +1266,99 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     })
     .then(() => console.log(`Google Sheets sync triggered for order ${ord.id}`))
     .catch(err => console.error("Error syncing to Google Sheets:", err));
+  };
+
+  // Synchronize ALL orders in system manually to Google Sheets
+  const handleSyncAllToGoogleSheets = async () => {
+    const sheetsUrl = googleSheetsUrl || localStorage.getItem('yeng_google_sheets_url');
+    if (!sheetsUrl) {
+      alert("⚠️ Vui lòng cấu hình và lưu URL kết nối Google Sheets trước!");
+      return;
+    }
+
+    if (orders.length === 0) {
+      alert("Không có đơn hàng nào trong hệ thống để đồng bộ.");
+      return;
+    }
+
+    const confirmSync = window.confirm(`Bạn có muốn thực hiện đồng bộ thủ công TOÀN BỘ ${orders.length} đơn hàng lên Google Sheets không?\nHệ thống sẽ đẩy lần lượt tất cả đơn hàng từ tất cả các thiết bị về trang tính.`);
+    if (!confirmSync) return;
+
+    setIsSyncingAll(true);
+    setSyncTotal(orders.length);
+    setSyncProgress(0);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < orders.length; i++) {
+      const ord = orders[i];
+      try {
+        const itemsFormatted = (ord.items ?? []).map(item => 
+          `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
+        ).join(", ");
+
+        const totalQty = (ord.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+        const paymentMethod = ord.payment?.method || '';
+        const isHalfDeposit = paymentMethod.toLowerCase().includes('50%') || 
+                              paymentMethod.toLowerCase().includes('cọc') || 
+                              paymentMethod.toLowerCase().includes('đặt cọc');
+        const subtotalVal = ord.subtotal ?? 0;
+        const calculatedPaid = ord.paidAmount !== undefined ? ord.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+
+        const payload = {
+          timestamp: ord.timestamp ? new Date(ord.timestamp).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN'),
+          email: ord.contact?.email ?? "",
+          snsLink: ord.contact?.snsLink ?? "",
+          quantity: totalQty,
+          invoiceImage: ord.payment?.invoiceImage || "",
+          customerName: ord.shipping?.receiverName || '',
+          phone: ord.shipping?.phone || "",
+          address: ord.shipping?.address || "",
+          shippingMethod: ord.shipping?.method ?? "",
+          note: ord.note && ord.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${ord.note}` : itemsFormatted,
+          paidAmount: calculatedPaid,
+          totalAmount: subtotalVal,
+          items: (ord.items ?? []).map(item => ({
+            name: item.product?.name || 'Sản phẩm',
+            version: item.version || 'Mặc định',
+            quantity: item.quantity || 1
+          })),
+          cartItems: (ord.items ?? []).map(item => ({
+            productName: item.product?.name || 'Sản phẩm',
+            version: item.version || 'Mặc định',
+            quantity: item.quantity || 1
+          })),
+          productName: ord.items?.[0]?.product?.name || "",
+          version: ord.items?.[0]?.version || "",
+          orderId: ord.id,
+          products: itemsFormatted,
+          paymentMethod: ord.payment?.method || "Chưa xác định"
+        };
+
+        // Standard fetch POST mimicking live client trigger
+        await fetch(sheetsUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        successCount++;
+      } catch (err) {
+        console.error(`Lỗi đồng bộ đơn hàng #${ord.id}:`, err);
+        failCount++;
+      }
+      setSyncProgress(i + 1);
+      // Wait slightly between iterations to avoid Google Sheets API rate limit
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    setIsSyncingAll(false);
+    showToast(`Đã đồng bộ thành công ${successCount} đơn hàng lên Google Sheets!`, 'success');
+    alert(`🎉 Đồng bộ hoàn tất!\n- Thành công: ${successCount}/${orders.length} đơn hàng\n- Thất bại: ${failCount} đơn hàng`);
   };
 
   // Export orders tracking list to offline CSV / Excel file
@@ -1935,7 +2031,42 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
               </button>
             </div>
             {googleSheetsUrl ? (
-              <span className="text-[10px] text-emerald-600 font-bold font-mono block">● CỔNG KẾT NỐI SHEETS ĐANG HOẠT ĐỘNG THỜI GIAN THỰC</span>
+              <div className="space-y-3">
+                <span className="text-[10px] text-emerald-600 font-bold font-mono block">● CỔNG KẾT NỐI SHEETS ĐANG HOẠT ĐỘNG THỜI GIAN THỰC</span>
+                
+                {/* Manual Bulk Sync Section */}
+                <div className="mt-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h5 className="font-bold text-xs text-emerald-950 uppercase font-display flex items-center gap-1.5">
+                        <span>⚡ ĐỒNG BỘ TOÀN BỘ ĐƠN HÀNG LÊN GOOGLE SHEETS</span>
+                      </h5>
+                      <p className="text-[11px] text-neutral-600 mt-0.5">Đẩy thủ công tất cả {orders.length} đơn hàng từ tất cả các thiết bị sang file Google Sheets của bạn để không bỏ sót bất kỳ ai.</p>
+                    </div>
+                    <button
+                      onClick={handleSyncAllToGoogleSheets}
+                      disabled={isSyncingAll}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-display font-bold text-xs rounded-lg uppercase tracking-wider transition-all shadow-sm flex items-center justify-center space-x-1.5 whitespace-nowrap self-start sm:self-center"
+                    >
+                      <span>{isSyncingAll ? "Đang đồng bộ..." : "Bắt đầu đồng bộ"}</span>
+                    </button>
+                  </div>
+                  {isSyncingAll && (
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex justify-between text-[11px] font-bold font-mono text-emerald-900">
+                        <span>Đang xử lý đơn hàng...</span>
+                        <span>{syncProgress} / {syncTotal} ({Math.round((syncProgress / syncTotal) * 100)}%)</span>
+                      </div>
+                      <div className="w-full bg-emerald-100 h-2.5 rounded-full overflow-hidden border border-emerald-300">
+                        <div 
+                          className="bg-emerald-500 h-full transition-all duration-300" 
+                          style={{ width: `${(syncProgress / syncTotal) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
               <span className="text-[10px] text-amber-600 font-bold font-mono block">○ CHƯA CẤU HÌNH - KHÁCH ĐẶT HÀNG CHỈ LƯU TRỮ TRÊN LOCAL STORAGE MÁY NÀY</span>
             )}
