@@ -59,7 +59,7 @@ export const initAuth = (
   onAuthSuccess?: (user: any, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+  const gmailDocRef = doc(db, "gmail", "settings");
 
   // 1. Proactively check and notify if credentials already exist in localStorage (Instant load)
   const token = localStorage.getItem('yeng_gmail_access_token');
@@ -208,7 +208,7 @@ export const googleSignIn = async (): Promise<void> => {
           localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
           localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
 
-          const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+          const gmailDocRef = doc(db, "gmail", "settings");
           try {
             const snap = await getDoc(gmailDocRef);
             const existingData = snap.exists() ? snap.data() : {};
