@@ -44,7 +44,7 @@ function loadFirebaseConfig(): any {
 const firebaseConfig = loadFirebaseConfig();
 const firebaseApp = getClientApps().length === 0 ? initializeClientApp(firebaseConfig) : getClientApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-const gmailDocRef = doc(db, "gmail", "config_YengCornerSecret_3bf8d79a29e4");
+const gmailDocRef = doc(db, "gmail", "settings");
 
 // Initialize Firebase Admin SDK for 100% reliable server reads
 let dbAdmin: any = null;
@@ -74,7 +74,7 @@ async function ensureGoogleSheetsUrlInFirestore() {
   try {
     console.log("[Seeder Send] Ensuring Google Sheets URL is set in Firestore...");
     if (dbAdmin) {
-      const docRefAdmin = dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4");
+      const docRefAdmin = dbAdmin.collection("gmail").doc("settings");
       const docSnap = await docRefAdmin.get();
       const existingData = docSnap.exists ? docSnap.data() : {};
       await docRefAdmin.set({
@@ -104,7 +104,7 @@ async function fetchGmailConfigFromFirestore(): Promise<any> {
   if (dbAdmin) {
     try {
       console.log("[Firestore Config Helper Send] Fetching configuration via Firebase Admin SDK...");
-      const docSnap = await dbAdmin.collection("gmail").doc("config_YengCornerSecret_3bf8d79a29e4").get();
+      const docSnap = await dbAdmin.collection("gmail").doc("settings").get();
       if (docSnap.exists) {
         const data = docSnap.data();
         if (data && (data.googleSheetsUrl || data.accessToken)) {
@@ -127,7 +127,7 @@ async function fetchGmailConfigFromFirestore(): Promise<any> {
   // 2. Query Firestore via Google REST API (secondary reliable fallback)
   try {
     const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/config_YengCornerSecret_3bf8d79a29e4?key=${firebaseConfig.apiKey}`;
+    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/settings?key=${firebaseConfig.apiKey}`;
     console.log(`[Firestore Config Helper Send] Fetching fresh config via REST API from: ${url}`);
     
     const response = await fetch(url);
