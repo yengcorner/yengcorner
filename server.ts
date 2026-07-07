@@ -225,12 +225,7 @@ app.use(express.json({ limit: '10mb' }));
       console.log(`[Order Sync] Starting synchronous notify & sync for order #${order.id}`);
       
       // Load configuration using the ultra-reliable REST & local disk fallback helper
-      const tokenData = await fetchGmailConfigFromFirestore();
-
-      if (!tokenData) {
-        console.warn(`[Order Sync] No Gmail or Sheets configuration found in database/cache.`);
-        return res.json({ success: true, message: "Đơn hàng đã nhận, chưa cấu hình đồng bộ." });
-      }
+      const tokenData = await fetchGmailConfigFromFirestore() || {};
 
       // Dynamically fetch googleSheetsUrl directly from Firestore on every request using await getDoc() as required
       let googleSheetsUrl = "";
