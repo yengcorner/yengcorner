@@ -456,36 +456,81 @@ app.use(express.json({ limit: '10mb' }));
     }
   }
 
-  // Real-time listener for "orders" collection on Firestore to sync immediately upon creation from any device
-  let isInitialSnapshot = true;
-  console.log("[Firestore Listener] Registering automatic realtime listener on 'orders' collection...");
-  try {
-    onSnapshot(collection(db, "orders"), (snapshot) => {
-      if (isInitialSnapshot) {
-        isInitialSnapshot = false;
-        console.log(`[Firestore Listener] Loaded initial snapshot with ${snapshot.size} existing orders.`);
-        return;
-      }
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type === "added") {
-          const orderData = change.doc.data();
-          const orderId = change.doc.id;
-          if (orderData && !orderData.googleSheetsSynced) {
-            console.log(`[Firestore Listener] Detected NEW order #${orderId} created on Firestore. Starting auto-sync & notifications...`);
-            try {
-              const fullOrder = { ...orderData, id: orderData.id || orderId };
-              await syncOrderAndNotifyHelper(fullOrder);
-            } catch (err: any) {
-              console.error(`[Firestore Listener] Error executing auto-sync for order #${orderId}:`, err.message);
+  // Real-time listener for "orders" collection on Firestore using Firebase Admin SDK for robust server-side execution
+  if (dbAdmin) {
+    let isInitialSnapshot = true;
+    console.log("[Firestore Listener] Registering automatic realtime listener on 'orders' collection using Firebase Admin SDK...");
+    try {
+      dbAdmin.collection("orders").onSnapshot((snapshot: any) => {
+        const changes = snapshot.docChanges();
+        console.log(`[Firestore Listener] Received snapshot update with ${changes.length} changes. Initial snapshot status: ${isInitialSnapshot}`);
+        
+        changes.forEach(async (change: any) => {
+          if (change.type === "added") {
+            const orderData = change.doc.data();
+            const orderId = change.doc.id;
+            
+            if (orderData) {
+              const orderTime = orderData.timestamp ? Date.parse(orderData.timestamp) : 0;
+              const isRecent = !isNaN(orderTime) && (Date.now() - orderTime) < 15 * 60 * 1000; // 15 mins
+              
+              if (!orderData.googleSheetsSynced && (!isInitialSnapshot || isRecent)) {
+                console.log(`[Firestore Listener] Detected NEW/UNSYNCED order #${orderId} (isRecent: ${isRecent}, isInitial: ${isInitialSnapshot}). Starting auto-sync & notifications...`);
+                try {
+                  const fullOrder = { ...orderData, id: orderData.id || orderId };
+                  await syncOrderAndNotifyHelper(fullOrder);
+                } catch (err: any) {
+                  console.error(`[Firestore Listener] Error executing auto-sync for order #${orderId}:`, err.message);
+                }
+              }
             }
           }
+        });
+        
+        if (isInitialSnapshot) {
+          isInitialSnapshot = false;
+          console.log(`[Firestore Listener] Initial snapshot of ${snapshot.size} orders processed. Future orders will sync in real-time.`);
         }
+      }, (err: any) => {
+        console.error("[Firestore Listener] Real-time orders listener failed:", err.message);
       });
-    }, (err) => {
-      console.error("[Firestore Listener] real-time orders listener failed:", err.message);
-    });
-  } catch (listenerSetupErr: any) {
-    console.error("[Firestore Listener] Failed to subscribe to 'orders' collection:", listenerSetupErr.message);
+    } catch (listenerSetupErr: any) {
+      console.error("[Firestore Listener] Failed to subscribe to 'orders' collection via Admin SDK:", listenerSetupErr.message);
+    }
+  } else {
+    console.warn("[Firestore Listener] dbAdmin is not initialized. Falling back to Client SDK listener...");
+    let isInitialSnapshot = true;
+    try {
+      onSnapshot(collection(db, "orders"), (snapshot) => {
+        snapshot.docChanges().forEach(async (change) => {
+          if (change.type === "added") {
+            const orderData = change.doc.data();
+            const orderId = change.doc.id;
+            if (orderData) {
+              const orderTime = orderData.timestamp ? Date.parse(orderData.timestamp) : 0;
+              const isRecent = !isNaN(orderTime) && (Date.now() - orderTime) < 15 * 60 * 1000;
+              
+              if (!orderData.googleSheetsSynced && (!isInitialSnapshot || isRecent)) {
+                console.log(`[Firestore Listener Fallback] Detected order #${orderId} (isRecent: ${isRecent}, isInitial: ${isInitialSnapshot}). Starting sync...`);
+                try {
+                  const fullOrder = { ...orderData, id: orderData.id || orderId };
+                  await syncOrderAndNotifyHelper(fullOrder);
+                } catch (err: any) {
+                  console.error(`[Firestore Listener Fallback] Error for order #${orderId}:`, err.message);
+                }
+              }
+            }
+          }
+        });
+        if (isInitialSnapshot) {
+          isInitialSnapshot = false;
+        }
+      }, (err) => {
+        console.error("[Firestore Listener Fallback] real-time orders listener failed:", err.message);
+      });
+    } catch (listenerSetupErr: any) {
+      console.error("[Firestore Listener Fallback] Failed to subscribe:", listenerSetupErr.message);
+    }
   }
 
   // Secure API endpoint to send emails using stored Gmail token
