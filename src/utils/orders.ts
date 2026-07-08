@@ -271,6 +271,18 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     const docRef = doc(db, 'orders', finalCleanedOrder.id);
     await setDoc(docRef, finalCleanedOrder);
 
+    // Kích hoạt đồng bộ hóa hóa đơn sang Google Sheets & gửi Gmail qua server (Đảm bảo hoạt động trên Serverless như Vercel)
+    try {
+      console.log("[Order Sync] Đang yêu cầu máy chủ đồng bộ hóa đơn hàng...");
+      fetch('/api/orders/notify-new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: finalCleanedOrder })
+      }).catch(err => console.error("[Order Sync Background] Lỗi kích hoạt đồng bộ ngầm:", err));
+    } catch (err: any) {
+      console.error("[Order Sync] Không thể gọi API đồng bộ hóa trên máy chủ:", err.message);
+    }
+
     // Lưu vào localStorage cache
     try {
       const currentOrders = await getOrdersLocalFallback();
