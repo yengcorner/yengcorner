@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import fs from "fs";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc } from "firebase/firestore";
+import { getFirestore, collection, doc, getDoc, setDoc, getDocs, deleteDoc, onSnapshot } from "firebase/firestore";
 import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
 import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
 import storeTokenHandler from "./api/gmail/store-token";
@@ -221,132 +221,138 @@ app.use(express.json({ limit: '10mb' }));
     } catch (err) {
       res.json({ connected: false, email: null, updatedAt: null });
     }
-  });
-
-  // Secure API endpoint to send emails using stored Gmail token
-  app.post("/api/orders/notify-new", async (req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    const { order } = req.body;
+  });  // Helper function to sync order to Google Sheets and notify admin via Gmail
+  async function syncOrderAndNotifyHelper(order: any, host: string = "yengcorner.vercel.app") {
     if (!order || !order.id) {
-      return res.status(400).json({ error: "Thông tin đơn hàng không hợp lệ." });
+      console.error("[Order Sync Helper] Invalid order details passed.");
+      return;
+    }
+    
+    const newOrderId = order.id;
+    console.log(`[Order Sync Helper] Starting notify & sync for order #${newOrderId}`);
+    
+    // Load configuration using the ultra-reliable REST & local disk fallback helper
+    const tokenData = await fetchGmailConfigFromFirestore() || {};
+
+    // Dynamically fetch googleSheetsUrl directly from Firestore on every request using await getDoc() as required
+    let googleSheetsUrl = "";
+    try {
+      console.log("[Order Sync Helper] Fetching googleSheetsUrl directly from Firestore via getDoc()...");
+      const gmailDocRef = doc(db, "gmail", "settings");
+      const docSnap = await getDoc(gmailDocRef);
+      const configData = docSnap.exists() ? docSnap.data() : {};
+      googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || tokenData?.googleSheetsUrl || tokenData?.googleSheetUrl || "";
+      console.log("[Order Sync Helper] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
+    } catch (dbErr: any) {
+      console.error("[Order Sync Helper] getDoc failed, trying Admin SDK fallback:", dbErr.message);
+      if (dbAdmin) {
+        try {
+          const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
+          const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
+          googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+        } catch (adminErr: any) {
+          console.error("[Order Sync Helper] Admin SDK fallback failed:", adminErr.message);
+        }
+      }
     }
 
+    // Use the dynamically retrieved URL to synchronize to Google Sheets
+    const orderData = order;
+
     try {
-      console.log(`[Order Sync] Starting synchronous notify & sync for order #${order.id}`);
-      
-      // Load configuration using the ultra-reliable REST & local disk fallback helper
-      const tokenData = await fetchGmailConfigFromFirestore() || {};
+      if (googleSheetsUrl) {
+        console.log(`[Order Sync Helper] Đang đẩy đơn #${newOrderId} sang Google Sheets:`, googleSheetsUrl);
+        
+        const itemsFormatted = (order.items ?? []).map((item: any) => 
+          `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
+        ).join(", ");
 
-      // Dynamically fetch googleSheetsUrl directly from Firestore on every request using await getDoc() as required
-      let googleSheetsUrl = "";
-      try {
-        console.log("[Order Sync] Fetching googleSheetsUrl directly from Firestore via getDoc()...");
-        const gmailDocRef = doc(db, "gmail", "settings");
-        const docSnap = await getDoc(gmailDocRef);
-        const configData = docSnap.exists() ? docSnap.data() : {};
-        googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || tokenData?.googleSheetsUrl || tokenData?.googleSheetUrl || "";
-        console.log("[Order Sync] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
-      } catch (dbErr: any) {
-        console.error("[Order Sync] getDoc failed, trying Admin SDK fallback:", dbErr.message);
-        if (dbAdmin) {
-          try {
-            const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
-            const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
-            googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
-          } catch (adminErr: any) {
-            console.error("[Order Sync] Admin SDK fallback failed:", adminErr.message);
-          }
-        }
-      }
+        const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
+        const subtotalVal = order.subtotal ?? 0;
+        const paymentMethod = order.payment?.method || '';
+        const isHalfDeposit = paymentMethod.toLowerCase().includes('50%') || 
+                              paymentMethod.toLowerCase().includes('cọc') || 
+                              paymentMethod.toLowerCase().includes('đặt cọc');
+        const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
 
-      // Use the dynamically retrieved URL to synchronize to Google Sheets
-      const newOrderId = order.id;
-      const orderData = order;
+        const payload = {
+          orderId: newOrderId, // Mã đơn mới YENGXXXX
+          timestamp: orderData.timestamp ? new Date(orderData.timestamp).toLocaleString('vi-VN') : new Date().toLocaleString('vi-VN'),
+          email: orderData.contact?.email || orderData.email || "",
+          snsLink: orderData.contact?.snsLink || orderData.snsLink || "",
+          customerName: orderData.shipping?.receiverName || orderData.customerName || "",
+          phone: orderData.shipping?.phone || orderData.phone || "",
+          address: orderData.shipping?.address || orderData.address || "",
+          shippingMethod: orderData.shipping?.method || orderData.shippingMethod || "",
+          note: orderData.note && orderData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${orderData.note}` : itemsFormatted,
+          paidAmount: Number(calculatedPaid) || 0,
+          totalAmount: Number(subtotalVal) || 0,
+          invoiceImage: orderData.payment?.invoiceImage || "",
+          items: (orderData.items ?? []).map((item: any) => ({
+            productName: item.product?.name || 'Sản phẩm',
+            name: item.product?.name || 'Sản phẩm', // Google Apps Script compatibility fallback
+            version: item.version || 'Mặc định',
+            quantity: item.quantity || 1
+          })),
+          cartItems: (orderData.items ?? []).map((item: any) => ({
+            productName: item.product?.name || 'Sản phẩm',
+            version: item.version || 'Mặc định',
+            quantity: item.quantity || 1
+          })),
+          quantity: totalQty,
+          products: itemsFormatted,
+          paymentMethod: paymentMethod || "Chưa xác định"
+        };
 
-      try {
-        if (googleSheetsUrl) {
-          console.log("Đang đẩy đơn sang Google Sheets:", googleSheetsUrl);
-          
-          const itemsFormatted = (order.items ?? []).map((item: any) => 
-            `${item.product?.name || 'Sản phẩm'} (Phân loại: ${item.version || '—'}) x${item.quantity}`
-          ).join(", ");
+        const response = await fetch(googleSheetsUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const resText = await response.text();
+        console.log(`[Order Sync Helper] Kết quả phản hồi từ Google Sheets cho #${newOrderId}:`, resText);
 
-          const totalQty = (order.items ?? []).reduce((sum: number, item: any) => sum + item.quantity, 0);
-          const subtotalVal = order.subtotal ?? 0;
-          const isHalfDeposit = order.payment?.method === '50%' || order.payment?.method === 'Cọc 50%';
-          const calculatedPaid = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
-
-          const response = await fetch(googleSheetsUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              orderId: newOrderId, // Mã đơn mới YENGXXXX
-              timestamp: new Date().toISOString(),
-              email: orderData.contact?.email || orderData.email || "",
-              snsLink: orderData.contact?.snsLink || orderData.snsLink || "",
-              customerName: orderData.shipping?.receiverName || orderData.customerName || "",
-              phone: orderData.shipping?.phone || orderData.phone || "",
-              address: orderData.shipping?.address || orderData.address || "",
-              shippingMethod: orderData.shipping?.method || orderData.shippingMethod || "",
-              note: orderData.note && orderData.note !== "Không có" ? `[Sản phẩm: ${itemsFormatted}] | ${orderData.note}` : itemsFormatted,
-              paidAmount: Number(calculatedPaid) || 0,
-              totalAmount: Number(subtotalVal) || 0,
-              invoiceImage: orderData.payment?.invoiceImage || "",
-              items: (orderData.items ?? []).map((item: any) => ({
-                productName: item.product?.name || 'Sản phẩm',
-                name: item.product?.name || 'Sản phẩm', // Google Apps Script compatibility fallback
-                version: item.version || 'Mặc định',
-                quantity: item.quantity || 1
-              })),
-              quantity: totalQty,
-              products: itemsFormatted,
-              paymentMethod: orderData.payment?.method === '50%' ? "Cọc 50%" : "Thanh toán 100%"
-            })
-          });
-          const resText = await response.text();
-          console.log("Kết quả phản hồi từ Google Sheets:", resText);
-
-          // Mark order as synchronized in Firestore
-          try {
-            if (dbAdmin) {
-              await dbAdmin.collection("orders").doc(newOrderId).set({ googleSheetsSynced: true }, { merge: true });
-              console.log(`[Order Sync] Set googleSheetsSynced to true for order #${newOrderId} via Admin SDK`);
-            } else {
-              await setDoc(doc(db, "orders", newOrderId), { googleSheetsSynced: true }, { merge: true });
-              console.log(`[Order Sync] Set googleSheetsSynced to true for order #${newOrderId} via Client SDK`);
-            }
-          } catch (dbUpdateErr: any) {
-            console.warn(`[Order Sync] Failed to update synced status in Firestore for order #${newOrderId}:`, dbUpdateErr.message);
-          }
-        } else {
-          console.error("LỖI: Không tìm thấy URL Google Sheets trong Firestore!");
-        }
-      } catch (fetchErr: any) {
-        console.error("Lỗi kết nối khi gọi Webhook Google Sheets:", fetchErr.message);
-      }
-
-      // 4. Send Gmail notification if configured
-      if (tokenData.accessToken) {
+        // Mark order as synchronized in Firestore
         try {
-          const { accessToken, email: senderEmail } = tokenData;
+          if (dbAdmin) {
+            await dbAdmin.collection("orders").doc(newOrderId).set({ googleSheetsSynced: true }, { merge: true });
+            console.log(`[Order Sync Helper] Set googleSheetsSynced to true for order #${newOrderId} via Admin SDK`);
+          } else {
+            await setDoc(doc(db, "orders", newOrderId), { googleSheetsSynced: true }, { merge: true });
+            console.log(`[Order Sync Helper] Set googleSheetsSynced to true for order #${newOrderId} via Client SDK`);
+          }
+        } catch (dbUpdateErr: any) {
+          console.warn(`[Order Sync Helper] Failed to update synced status in Firestore for order #${newOrderId}:`, dbUpdateErr.message);
+        }
+      } else {
+        console.error("[Order Sync Helper] LỖI: Không tìm thấy URL Google Sheets trong settings!");
+      }
+    } catch (fetchErr: any) {
+      console.error(`[Order Sync Helper] Lỗi kết nối khi gọi Webhook Google Sheets cho #${newOrderId}:`, fetchErr.message);
+    }
 
-          // Detail the ordered items for the notification mail
-          const itemsDetail = (order.items ?? []).map((item: any) => 
-            `- <strong>${item.product?.name || 'Sản phẩm'}</strong> (Phân loại: <em>${item.version || '—'}</em>) x${item.quantity}`
-          ).join("<br/>");
+    // Send Gmail notification if configured
+    if (tokenData.accessToken) {
+      try {
+        const { accessToken, email: senderEmail } = tokenData;
 
-          const subtotalFormatted = Number(order.subtotal || 0).toLocaleString("vi-VN") + " đ";
-          const customerName = order.shipping?.receiverName || "Khách hàng";
-          const phone = order.shipping?.phone || "Chưa có SĐT";
-          const address = order.shipping?.address || "Chưa có địa chỉ";
-          const email = order.contact?.email || "Chưa có email";
-          const snsLink = order.contact?.snsLink || "Không có";
-          const note = order.note || "Không có";
+        // Detail the ordered items for the notification mail
+        const itemsDetail = (order.items ?? []).map((item: any) => 
+          `- <strong>${item.product?.name || 'Sản phẩm'}</strong> (Phân loại: <em>${item.version || '—'}</em>) x${item.quantity}`
+        ).join("<br/>");
 
-          const subject = `[Yeng Corner] 🚨 CÓ ĐƠN HÀNG MỚI CHỜ DUYỆT #${order.id}`;
-          const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+        const subtotalFormatted = Number(order.subtotal || 0).toLocaleString("vi-VN") + " đ";
+        const customerName = order.shipping?.receiverName || "Khách hàng";
+        const phone = order.shipping?.phone || "Chưa có SĐT";
+        const address = order.shipping?.address || "Chưa có địa chỉ";
+        const email = order.contact?.email || "Chưa có email";
+        const snsLink = order.contact?.snsLink || "Không có";
+        const note = order.note || "Không có";
 
-          const notificationHtml = `
+        const subject = `[Yeng Corner] 🚨 CÓ ĐƠN HÀNG MỚI CHỜ DUYỆT #${order.id}`;
+        const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+
+        const notificationHtml = `
 <div style="background-color: #f8fafc; padding: 30px 15px; font-family: 'Segoe UI', Arial, sans-serif; color: #334155;">
   <div style="max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); background-color: #ffffff;">
     <div style="background-color: #1e3a8a; padding: 25px 20px; text-align: center; color: #ffffff;">
@@ -395,12 +401,12 @@ app.use(express.json({ limit: '10mb' }));
         </tr>
         <tr>
           <td style="color: #64748b; font-weight: 500; padding-top: 5px;">HÌNH THỨC THANH TOÁN:</td>
-          <td style="text-align: right; font-weight: 700; color: #0f766e; padding-top: 5px;">${order.payment?.method === '50%' ? "Đặt cọc 50%" : "Thanh toán 100%"}</td>
+          <td style="text-align: right; font-weight: 700; color: #0f766e; padding-top: 5px;">${order.payment?.method || "Chưa xác định"}</td>
         </tr>
       </table>
 
       <div style="text-align: center; margin-top: 30px;">
-        <a href="https://${req.get("host") || "yengcorner.vercel.app"}/admin" style="background-color: #1e3a8a; color: #ffffff; padding: 12px 30px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(30,58,138,0.15);">
+        <a href="https://${host}/admin" style="background-color: #1e3a8a; color: #ffffff; padding: 12px 30px; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(30,58,138,0.15);">
           Truy cập trang Admin để Duyệt Đơn ⚡
         </a>
       </div>
@@ -413,46 +419,90 @@ app.use(express.json({ limit: '10mb' }));
 </div>
         `;
 
-          const rawParts = [
-            `From: "Yeng Corner Bot" <${senderEmail}>`,
-            `To: ${senderEmail}`, // Send to the admin's email itself
-            `Subject: ${subjectEncoded}`,
-            "MIME-Version: 1.0",
-            "Content-Type: text/html; charset=utf-8",
-            "",
-            notificationHtml
-          ];
-          const raw = rawParts.join("\r\n");
-          const base64Safe = Buffer.from(raw)
-            .toString("base64")
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, "");
+        const rawParts = [
+          `From: "Yeng Corner Bot" <${senderEmail}>`,
+          `To: ${senderEmail}`, // Send to the admin's email itself
+          `Subject: ${subjectEncoded}`,
+          "MIME-Version: 1.0",
+          "Content-Type: text/html; charset=utf-8",
+          "",
+          notificationHtml
+        ];
+        const raw = rawParts.join("\r\n");
+        const base64Safe = Buffer.from(raw)
+          .toString("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .replace(/=+$/, "");
 
-          const googleRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ raw: base64Safe }),
-          });
+        const googleRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ raw: base64Safe }),
+        });
 
-          if (googleRes.ok) {
-            console.log(`[Order Sync] Email successfully sent to admin ${senderEmail}`);
-          } else {
-            const errText = await googleRes.text();
-            console.error(`[Order Sync] Google API response error:`, errText);
-          }
-        } catch (mailErr: any) {
-          console.error(`[Order Sync] Error sending Gmail:`, mailErr.message);
+        if (googleRes.ok) {
+          console.log(`[Order Sync Helper] Email successfully sent to admin ${senderEmail}`);
+        } else {
+          const errText = await googleRes.text();
+          console.error(`[Order Sync Helper] Google API response error:`, errText);
         }
+      } catch (mailErr: any) {
+        console.error(`[Order Sync Helper] Error sending Gmail:`, mailErr.message);
       }
+    }
+  }
 
-      // Trao phản hồi thành công sau khi đã hoàn thành các tác vụ đồng bộ
+  // Real-time listener for "orders" collection on Firestore to sync immediately upon creation from any device
+  let isInitialSnapshot = true;
+  console.log("[Firestore Listener] Registering automatic realtime listener on 'orders' collection...");
+  try {
+    onSnapshot(collection(db, "orders"), (snapshot) => {
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        console.log(`[Firestore Listener] Loaded initial snapshot with ${snapshot.size} existing orders.`);
+        return;
+      }
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type === "added") {
+          const orderData = change.doc.data();
+          const orderId = change.doc.id;
+          if (orderData && !orderData.googleSheetsSynced) {
+            console.log(`[Firestore Listener] Detected NEW order #${orderId} created on Firestore. Starting auto-sync & notifications...`);
+            try {
+              const fullOrder = { ...orderData, id: orderData.id || orderId };
+              await syncOrderAndNotifyHelper(fullOrder);
+            } catch (err: any) {
+              console.error(`[Firestore Listener] Error executing auto-sync for order #${orderId}:`, err.message);
+            }
+          }
+        }
+      });
+    }, (err) => {
+      console.error("[Firestore Listener] real-time orders listener failed:", err.message);
+    });
+  } catch (listenerSetupErr: any) {
+    console.error("[Firestore Listener] Failed to subscribe to 'orders' collection:", listenerSetupErr.message);
+  }
+
+  // Secure API endpoint to send emails using stored Gmail token
+  app.post("/api/orders/notify-new", async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    const { order } = req.body;
+    if (!order || !order.id) {
+      return res.status(400).json({ error: "Thông tin đơn hàng không hợp lệ." });
+    }
+
+    try {
+      console.log(`[Order Sync API] Triggered via POST request for order #${order.id}`);
+      const host = req.get("host") || "yengcorner.vercel.app";
+      await syncOrderAndNotifyHelper(order, host);
       return res.json({ success: true, message: "Đồng bộ hóa và gửi thông báo thành công!" });
     } catch (err: any) {
-      console.error(`[Order Sync Error]`, err.message);
+      console.error(`[Order Sync API Error]`, err.message);
       return res.json({ success: true, warning: "Đã lưu đơn thành công nhưng đồng bộ ngầm gặp sự cố." });
     }
   });
