@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts } from '../utils/products';
+import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut } from '../utils/products';
 
 interface ProductDetailPageProps {
   id: number | null;
@@ -143,7 +143,25 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
     }
   }, [selectedOpt1]);
 
-  const plusQuantity = () => setQuantity(prev => prev + 1);
+  const currentStock = hasMultiTier
+    ? getMatrixStock(selectedOpt1, selectedOpt2)
+    : getVariationStock(selectedVersion);
+
+  useEffect(() => {
+    if (quantity > currentStock && currentStock > 0) {
+      setQuantity(currentStock);
+    } else if (currentStock === 0) {
+      setQuantity(1);
+    }
+  }, [selectedOpt1, selectedOpt2, selectedVersion, currentStock]);
+
+  const plusQuantity = () => {
+    if (quantity >= currentStock) {
+      alert(`Sản phẩm này chỉ còn tối đa ${currentStock} sản phẩm trong kho!`);
+      return;
+    }
+    setQuantity(prev => prev + 1);
+  };
   const minusQuantity = () => setQuantity(prev => Math.max(1, prev - 1));
 
   // Determine actual selected combination and price
@@ -264,9 +282,9 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
           {/* Quick highlighting block info - Replace with Hạn order, Ngày phát hành, Quà tặng Pre-order */}
           <div className="bg-[#f8ffff] border border-blue-200/60 rounded-xl p-5 space-y-4 shadow-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
                   <Calendar className="w-4 h-4" />
                 </div>
                 <div>
@@ -278,13 +296,25 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
               </div>
 
               <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
                   <CalendarDays className="w-4 h-4" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-mono tracking-wider text-neutral-400 uppercase block font-semibold">NGÀY PHÁT HÀNH</span>
+                  <span className="text-[10px] font-mono tracking-wider text-neutral-400 uppercase block font-semibold">PHÁT HÀNH</span>
                   <span className="text-xs font-semibold text-neutral-800 font-sans">
                     {product.releaseDate || "(Chưa cập nhật)"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2.5">
+                <div className={`p-2 rounded-lg shrink-0 ${currentStock === 0 ? 'bg-rose-50 text-rose-600' : 'bg-[#E8F0FE] text-[#1A73E8]'}`}>
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono tracking-wider text-neutral-400 uppercase block font-semibold">TỒN KHO</span>
+                  <span className={`text-xs font-semibold font-sans ${currentStock === 0 ? 'text-rose-600' : 'text-neutral-800'}`}>
+                    {currentStock === 0 ? 'Hết hàng' : `${currentStock} sản phẩm`}
                   </span>
                 </div>
               </div>
@@ -469,7 +499,15 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
                   type="number"
                   min="1"
                   value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 1;
+                    if (val > currentStock) {
+                      alert(`Sản phẩm này chỉ còn tối đa ${currentStock} sản phẩm trong kho!`);
+                      setQuantity(currentStock);
+                    } else {
+                      setQuantity(Math.max(1, val));
+                    }
+                  }}
                   className="w-14 text-center font-mono font-medium text-sm border-0 focus:outline-none focus:ring-0 bg-transparent text-neutral-800"
                 />
                 <button
