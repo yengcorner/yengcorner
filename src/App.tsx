@@ -13,7 +13,7 @@ import WishlistPage from './components/WishlistPage';
 import TrackOrderPage from './components/TrackOrderPage';
 import { CartItem, Product, Coupon } from './types';
 import { CheckCircle2 } from 'lucide-react';
-import { getProducts, convertToSlug } from './utils/products';
+import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut } from './utils/products';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
@@ -209,21 +209,69 @@ export default function App() {
   }, [currentPage, selectedProductId]);
 
   const addToCart = (product: Product, quantity = 1, version = "") => {
+    const freshProducts = getProducts();
+    const freshProduct = freshProducts.find(p => p.id === product.id) || product;
+    
+    if (isProductSoldOut(freshProduct)) {
+      alert("Sản phẩm này đã HẾT HÀNG, không thể thêm vào giỏ hàng!");
+      return;
+    }
+
+    const availableStock = getProductStockForVersion(freshProduct, version);
+    if (availableStock <= 0) {
+      alert(`Phân loại "${version || 'Mặc định'}" của sản phẩm này đã hết hàng!`);
+      return;
+    }
+
+    let isOverStock = false;
+    let actualAdded = quantity;
+
     setCart((prevCart) => {
       const existingIdx = prevCart.findIndex(
         (item) => item.product.id === product.id && item.version === version
       );
+      
+      let existingQty = 0;
+      if (existingIdx > -1) {
+        existingQty = prevCart[existingIdx].quantity;
+      }
+
+      if (existingQty + quantity > availableStock) {
+        isOverStock = true;
+        actualAdded = Math.max(0, availableStock - existingQty);
+        
+        if (actualAdded <= 0) {
+          return prevCart; // No changes possible
+        }
+        
+        const nextCart = [...prevCart];
+        if (existingIdx > -1) {
+          nextCart[existingIdx] = {
+            ...nextCart[existingIdx],
+            quantity: availableStock,
+          };
+        } else {
+          nextCart.push({ product: freshProduct, quantity: availableStock, version });
+        }
+        return nextCart;
+      }
+
       if (existingIdx > -1) {
         const nextCart = [...prevCart];
         nextCart[existingIdx] = {
           ...nextCart[existingIdx],
-          quantity: nextCart[existingIdx].quantity + quantity,
+          quantity: existingQty + quantity,
         };
         return nextCart;
       }
-      return [...prevCart, { product, quantity, version }];
+      return [...prevCart, { product: freshProduct, quantity, version }];
     });
-    triggerToast("Đã thêm sản phẩm vào giỏ hàng thành công!");
+
+    if (isOverStock) {
+      alert(`Sản phẩm này chỉ còn tối đa ${availableStock} sản phẩm trong kho cho phân loại "${version || 'Mặc định'}"! Hệ thống đã tự động giới hạn số lượng trong giỏ hàng.`);
+    } else {
+      triggerToast("Đã thêm sản phẩm vào giỏ hàng thành công!");
+    }
   };
 
   const removeFromCart = (id: number, version: string) => {
@@ -234,6 +282,17 @@ export default function App() {
 
   const updateCartQuantity = (id: number, version: string, newQty: number) => {
     if (newQty < 1) return;
+
+    const freshProducts = getProducts();
+    const freshProduct = freshProducts.find(p => p.id === id);
+    if (freshProduct) {
+      const availableStock = getProductStockForVersion(freshProduct, version);
+      if (newQty > availableStock) {
+        alert(`Sản phẩm này chỉ còn tối đa ${availableStock} sản phẩm trong kho cho phân loại "${version || 'Mặc định'}"!`);
+        newQty = availableStock;
+      }
+    }
+
     setCart((prevCart) =>
       prevCart.map((item) =>
         item.product.id === id && item.version === version
