@@ -293,6 +293,64 @@ export function resolveDefaultVersionForProduct(product: Product): string {
   return "";
 }
 
+/**
+ * Lấy số lượng tồn kho khả dụng cho sản phẩm và phân loại cụ thể
+ */
+export function getProductStockForVersion(product: Product, version: string): number {
+  if (!product) return 0;
+  
+  // Trạng thái chung là Hết hàng thì coi như bằng 0
+  if (product.status === "Hết hàng") return 0;
+
+  // Case 1: Multi-tier variant (has variantMatrix)
+  if (product.attribute1Name && product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
+    const matched = product.variantMatrix.find(v => {
+      const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
+      return combinedName === version;
+    });
+    return matched ? (matched.stock !== undefined ? matched.stock : 99) : 0;
+  }
+  // Case 2: Simple variations list (variations)
+  if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+    const matched = product.variations.find(v => v.name === version);
+    return matched ? (matched.stock !== undefined ? matched.stock : 99) : 0;
+  }
+  // Case 3: Base product
+  return product.stock !== undefined ? product.stock : 99;
+}
+
+/**
+ * Kiểm tra xem toàn bộ sản phẩm đã bị hết hàng hay chưa
+ */
+export function isProductSoldOut(product: Product): boolean {
+  if (!product) return true;
+  if (product.status === "Hết hàng") return true;
+  if (product.tag?.toLowerCase().trim() === 'sold_out' || 
+      product.tag?.toLowerCase().trim() === 'sold out' || 
+      product.tag?.toLowerCase().trim() === 'hết hàng') {
+    return true;
+  }
+
+  // 1. Multi-tier variantMatrix
+  if (product.attribute1Name && product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
+    const totalStock = product.variantMatrix.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 99), 0);
+    return totalStock === 0;
+  }
+
+  // 2. Variations
+  if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+    const totalStock = product.variations.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 99), 0);
+    return totalStock === 0;
+  }
+
+  // 3. Base stock
+  if (product.stock !== undefined) {
+    return product.stock <= 0;
+  }
+
+  return false;
+}
+
 export async function deductProductStock(productId: number, version: string, quantityToDeduct: number): Promise<void> {
   try {
     const docId = productIdToDocIdMap.get(productId) || productId.toString();
