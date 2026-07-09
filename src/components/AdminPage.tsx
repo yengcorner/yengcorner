@@ -253,7 +253,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     <p>Đơn hàng của bạn đã được bàn giao cho đơn vị vận chuyển <strong>${order.shipping?.method ?? ""}</strong>.</p>
     
     <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0; color: #1e40af; font-size: 13.5px; font-weight: 600;">
-      📍 Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 16px;">${order.trackingCode || ''}</strong>
+      Mã vận đơn của bạn là: <strong style="font-family: monospace; color: #1e3a8a; font-size: 16px;">${order.trackingCode || ''}</strong>
     </div>
 
     <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #e2e8f0;">
@@ -279,8 +279,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     </div>
 
     <p style="font-size: 14px; color: #374151;">
-      Bạn có thể theo dõi hành trình đơn hàng với mã vận đơn trên qua trang web của đơn vị vận chuyển bạn chọn!<br/>
-      Sau khi nhận hàng thành công, hãy cho shop xin feedback qua facebook/ instagram hoặc thread của shop nhé.<br/>
+      Tất cả đơn có thu COD, shop đi tất cả qua SPX nên mã vận đơn có thể khác với ĐVVC bạn đã chọn nếu bạn thu COD.<br/>
+      Bạn có thể theo dõi hành trình đơn hàng với mã vận đơn trên qua trang web của các đơn vị vận chuyển!<br/>
+      Sau khi nhận hàng thành công, cho shop xin feedback qua facebook/ instagram hoặc thread của shop nhé.<br/>
       Cảm ơn bạn đã ủng hộ Yeng corner!
     </p>
   </div>
@@ -300,12 +301,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
       body = `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b; line-height: 1.6;">
-  <!-- Header -->
-  <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px;">
-    <h2 style="color: #1e3a8a; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">YENG CORNER</h2>
-    <p style="color: #64748b; margin: 5px 0 0 0; font-size: 12px; uppercase: font-weight: 600; text-transform: uppercase;">Thông báo hàng về & Thanh toán</p>
-  </div>
-
   <div style="margin-bottom: 20px;">
     <p>Xin chào <strong>${order.shipping?.receiverName || 'Khách hàng'}</strong>,</p>
     <p>YENG CORNER xin thông báo: Các sản phẩm trong đơn hàng <strong>#${order.id}</strong> của bạn đã về tới kho Việt Nam an toàn. Dưới đây là chi tiết thanh toán cho phần còn lại của đơn hàng:</p>
@@ -375,7 +370,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     
     <div style="display: inline-block; background-color: #ffffff; padding: 8px; border-radius: 8px; border: 1px solid #bfdbfe; margin-bottom: 10px;">
       <img 
-        src="https://img.vietqr.io/image/vietcombank-1017217975-compact2.png?amount=${totalToPay}&addInfo=YENG%20CORNER%20${order.id}" 
+        src="https://img.vietqr.io/image/vietcombank-1017217975-compact2.png?amount=${totalToPay}" 
         alt="Vietcombank QR Code" 
         style="width: 180px; height: 180px; object-fit: contain;"
       />
@@ -387,6 +382,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       Chủ tài khoản: <strong>LÊ THỊ HỒNG NGỌC</strong><br/>
       Nội dung CK: <strong style="font-family: monospace; font-size: 13px; color: #dc2626; background-color: #ffffff; padding: 2px 6px; border-radius: 4px; border: 1px solid #bfdbfe;">YENG CORNER ${order.id}</strong>
     </div>
+  </div>
+
+  <!-- Nhắc nhở gửi bill -->
+  <div style="border: 1px solid #fed7aa; background-color: #ffedd5; border-radius: 12px; padding: 15px; font-size: 12px; color: #ea580c; line-height: 1.6; margin-bottom: 20px; text-align: left; font-weight: bold; border-left: 5px solid #ea580c;">
+    Các bạn chuyển khoản nốt vui lòng liên hệ shop qua FB/IG/THR gửi bill chuyển khoản kèm mã đơn hàng "YENG${order.id}" để shop cập nhật đơn hàng.
   </div>
 
   <!-- Quy định nhận chuyển khoản -->
@@ -926,6 +926,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const [isArrivalModalOpen, setIsArrivalModalOpen] = useState(false);
   const [arrivalOrder, setArrivalOrder] = useState<OrderPayload | null>(null);
   const [weightFee, setWeightFee] = useState<number>(0);
+  const [orderWeightFees, setOrderWeightFees] = useState<Record<string, number>>({});
   const [isSendingArrivalMail, setIsSendingArrivalMail] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({
     customerName: '',
@@ -2754,44 +2755,66 @@ function getColumnLetter(colIndex) {
                             </div>
                           </div>
 
-                          <div className="border-t border-dashed border-neutral-100 pt-2 mt-2 space-y-1">
-                            <span className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider block">🚛 MÃ VẬN ĐƠN (TRACKING CODE):</span>
-                            <input
-                              type="text"
-                              placeholder="Nhập mã vận đơn nhanh..."
-                              value={ord.trackingCode || ''}
-                              onChange={async (e) => {
-                                const newVal = e.target.value;
-                                // 1. Cập nhật UI cục bộ ngay lập tức để gõ phím mượt mà không bị giật
-                                setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, trackingCode: newVal } : o));
-                                // 2. Lưu bất đồng bộ lên Firestore ngầm mà không gán Promise vào state
-                                await updateOrderTrackingCode(ord.id, newVal);
-                              }}
-                              className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg text-xs bg-neutral-50 placeholder-neutral-400 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 text-neutral-800"
-                            />
-                            {((ord.status === "Đã vận chuyển") || (ord.trackingCode && ord.trackingCode.trim().length > 0)) && (
-                              <button
-                                onClick={() => handleSendShippingEmail(ord.id)}
-                                className="w-full mt-2 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold font-display uppercase tracking-wider text-[10px] rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all"
-                                title="Gửi mail thông báo vận chuyển kèm mã vận đơn tới khách hàng"
-                              >
-                                <Mail className="w-3.5 h-3.5 text-white" />
-                                <span>GỬI MAIL VẬN CHUYỂN</span>
-                              </button>
-                            )}
-                            
+                          <div className="border-t border-dashed border-neutral-100 pt-2 mt-2 space-y-2.5">
+                            {/* 1. Trên cùng: Ô nhập phí vận chuyển Hàn - Việt */}
+                            <div className="space-y-1">
+                              <span className="text-[9px] font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-wider inline-block font-semibold">⚖️ PHÍ VẬN CHUYỂN HÀN - VIỆT (CÂN NẶNG):</span>
+                              <input
+                                type="number"
+                                min="0"
+                                placeholder="Nhập phí cân nặng (đ)..."
+                                value={orderWeightFees[ord.id] !== undefined ? orderWeightFees[ord.id] : ''}
+                                onChange={(e) => {
+                                  const val = Math.max(0, Number(e.target.value) || 0);
+                                  setOrderWeightFees(prev => ({ ...prev, [ord.id]: val }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-indigo-200 rounded-lg text-xs bg-indigo-50/30 placeholder-neutral-400 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500 text-neutral-800 font-bold"
+                              />
+                            </div>
+
+                            {/* 2. Ở giữa: Nút "GỬI MAIL THÔNG BÁO HÀNG VỀ" */}
                             <button
                               onClick={() => {
                                 setArrivalOrder(ord);
-                                setWeightFee(0);
+                                setWeightFee(orderWeightFees[ord.id] || 0);
                                 setIsArrivalModalOpen(true);
                               }}
-                              className="w-full mt-2 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold font-display uppercase tracking-wider text-[10px] rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all"
+                              className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold font-display uppercase tracking-wider text-[10px] rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all"
                               title="Gửi mail thông báo hàng về & yêu cầu thanh toán số tiền còn lại + phí cân nặng"
                             >
                               <Mail className="w-3.5 h-3.5 text-white" />
-                              <span>GỬI MAIL BÁO HÀNG VỀ</span>
+                              <span>GỬI MAIL THÔNG BÁO HÀNG VỀ</span>
                             </button>
+
+                            {/* 3. Dưới cùng: Ô nhập mã vận đơn */}
+                            <div className="space-y-1 pt-1.5 border-t border-neutral-100 border-dashed">
+                              <span className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider block font-semibold">🚛 MÃ VẬN ĐƠN (TRACKING CODE):</span>
+                              <input
+                                type="text"
+                                placeholder="Nhập mã vận đơn nhanh..."
+                                value={ord.trackingCode || ''}
+                                onChange={async (e) => {
+                                  const newVal = e.target.value;
+                                  // 1. Cập nhật UI cục bộ ngay lập tức để gõ phím mượt mà không bị giật
+                                  setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, trackingCode: newVal } : o));
+                                  // 2. Lưu bất đồng bộ lên Firestore ngầm mà không gán Promise vào state
+                                  await updateOrderTrackingCode(ord.id, newVal);
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg text-xs bg-neutral-50 placeholder-neutral-400 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 text-neutral-800"
+                              />
+                            </div>
+
+                            {/* 4. Dưới nữa: Nút "GỬI MAIL SHIP HÀNG" */}
+                            {((ord.status === "Đã vận chuyển") || (ord.trackingCode && ord.trackingCode.trim().length > 0)) && (
+                              <button
+                                onClick={() => handleSendShippingEmail(ord.id)}
+                                className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold font-display uppercase tracking-wider text-[10px] rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all"
+                                title="Gửi mail thông báo vận chuyển kèm mã vận đơn tới khách hàng"
+                              >
+                                <Mail className="w-3.5 h-3.5 text-white" />
+                                <span>GỬI MAIL SHIP HÀNG</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
