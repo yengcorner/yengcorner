@@ -160,7 +160,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
-  const getEmailContentForOrder = (order: OrderPayload, templateType: string) => {
+  const getEmailContentForOrder = (order: OrderPayload, templateType: string, weightFee = 0) => {
     let subject = '';
     let body = '';
     
@@ -288,6 +288,120 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   <p style="font-size: 11px; color: #64748b; text-align: center; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 10px; font-weight: 500;">Đây là thư một chiều. Vui lòng không trả lời thư này! Nếu khách muốn thay đổi thông tin cá nhân, hãy liên hệ qua facebook của shop!</p>
 </div>
       `.trim();
+    } else if (templateType === 'arrival') {
+      subject = `[YENG CORNER] THÔNG BÁO HÀNG VỀ & THANH TOÁN ĐƠN HÀNG #${order.id}`;
+      
+      const subtotalVal = order.subtotal ?? 0;
+      const pMethod = order.payment?.method || "";
+      const isHalfDeposit = pMethod.toLowerCase().includes("50%") || pMethod.toLowerCase().includes("cọc");
+      const paidAmount = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+      const remainingAmount = subtotalVal - paidAmount;
+      const totalToPay = remainingAmount + weightFee;
+
+      body = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b; line-height: 1.6;">
+  <!-- Header -->
+  <div style="text-align: center; margin-bottom: 25px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px;">
+    <h2 style="color: #1e3a8a; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">YENG CORNER</h2>
+    <p style="color: #64748b; margin: 5px 0 0 0; font-size: 12px; uppercase: font-weight: 600; text-transform: uppercase;">Thông báo hàng về & Thanh toán</p>
+  </div>
+
+  <div style="margin-bottom: 20px;">
+    <p>Xin chào <strong>${order.shipping?.receiverName || 'Khách hàng'}</strong>,</p>
+    <p>YENG CORNER xin thông báo: Các sản phẩm trong đơn hàng <strong>#${order.id}</strong> của bạn đã về tới kho Việt Nam an toàn. Dưới đây là chi tiết thanh toán cho phần còn lại của đơn hàng:</p>
+  </div>
+  
+  <!-- Chi tiết thanh toán -->
+  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+    <h3 style="font-size: 13px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin: 0 0 12px 0; font-weight: 700;">THÔNG TIN THANH TOÁN CÒN LẠI</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #374151;">
+      <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Giá trị đơn hàng:</td>
+          <td style="padding: 8px 0; font-weight: 600; color: #1e293b; font-family: monospace; text-align: right;">${subtotalVal.toLocaleString('vi-VN')} VND</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Số tiền đã thanh toán (Đã chuyển):</td>
+          <td style="padding: 8px 0; font-weight: 600; color: #047857; font-family: monospace; text-align: right;">${paidAmount.toLocaleString('vi-VN')} VND</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0; color: #dc2626; font-weight: 700;">Số tiền còn lại (chưa tính cân nặng):</td>
+          <td style="padding: 8px 0; font-weight: 700; color: #dc2626; font-family: monospace; text-align: right;">${remainingAmount.toLocaleString('vi-VN')} VND</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0; color: #1e3a8a; font-weight: 500;">Phí vận chuyển Hàn - Việt (Cân nặng):</td>
+          <td style="padding: 8px 0; font-weight: 700; color: #1e3a8a; font-family: monospace; text-align: right;">${weightFee.toLocaleString('vi-VN')} VND</td>
+        </tr>
+        <tr style="border-bottom: 2px solid #cbd5e1; background-color: #eff6ff;">
+          <td style="padding: 10px 8px; color: #1e3a8a; font-weight: 800; font-size: 14px;">TỔNG THANH TOÁN THỰC TẾ:</td>
+          <td style="padding: 10px 8px; font-weight: 800; color: #1e3a8a; font-size: 15px; font-family: monospace; text-align: right;">${totalToPay.toLocaleString('vi-VN')} VND</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <!-- Công thức tính -->
+    <div style="margin-top: 15px; font-size: 11px; color: #475569; background-color: #ffffff; padding: 10px; border-radius: 6px; border: 1px dashed #bfdbfe; line-height: 1.4;">
+      <strong>💡 CÔNG THỨC TÍNH:</strong><br/>
+      Tổng số tiền cần chuyển khoản còn lại = [Số tiền còn lại của đơn hàng] + [Phí vận chuyển Hàn - Việt (Cân nặng)]
+    </div>
+  </div>
+
+  <!-- Danh sách sản phẩm -->
+  <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px;">
+    <h3 style="margin-top: 0; color: #1e293b; font-size: 13px; font-weight: 700; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px;">DANH SÁCH SẢN PHẨM TRONG ĐƠN</h3>
+    <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+      <thead>
+        <tr style="border-bottom: 1px solid #cbd5e1; text-align: left; color: #64748b;">
+          <th style="padding: 6px 0;">Sản phẩm</th>
+          <th style="padding: 6px 0;">Phiên bản</th>
+          <th style="padding: 6px 0; text-align: right;">Số lượng</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(order?.items ?? []).map(item => `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 8px 0; font-weight: bold; color: #1e293b;">${item?.product?.name || "Sản phẩm"}</td>
+            <td style="padding: 8px 0; color: #475569;">${item?.version || "Mặc định"}</td>
+            <td style="padding: 8px 0; text-align: right; font-weight: 600;">${item?.quantity || 1}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- QR và thông tin chuyển khoản -->
+  <div style="border: 1px solid #bfdbfe; background-color: #eff6ff; border-radius: 12px; padding: 15px; margin-bottom: 20px; text-align: center;">
+    <h4 style="margin: 0 0 10px 0; color: #1e3a8a; font-size: 13px; font-weight: 700;">QUÉT MÃ QR ĐỂ CHUYỂN KHOẢN NHANH</h4>
+    
+    <div style="display: inline-block; background-color: #ffffff; padding: 8px; border-radius: 8px; border: 1px solid #bfdbfe; margin-bottom: 10px;">
+      <img 
+        src="https://img.vietqr.io/image/vietcombank-1017217975-compact2.png?amount=${totalToPay}&addInfo=YENG%20CORNER%20${order.id}" 
+        alt="Vietcombank QR Code" 
+        style="width: 180px; height: 180px; object-fit: contain;"
+      />
+    </div>
+    
+    <div style="font-size: 12px; color: #1e40af; line-height: 1.5; text-align: left; max-width: 280px; margin: 0 auto;">
+      Ngân hàng: <strong>Vietcombank (VCB)</strong><br/>
+      Số tài khoản: <strong style="font-family: monospace; font-size: 13px;">1017217975</strong><br/>
+      Chủ tài khoản: <strong>LÊ THỊ HỒNG NGỌC</strong><br/>
+      Nội dung CK: <strong style="font-family: monospace; font-size: 13px; color: #dc2626; background-color: #ffffff; padding: 2px 6px; border-radius: 4px; border: 1px solid #bfdbfe;">YENG CORNER ${order.id}</strong>
+    </div>
+  </div>
+
+  <!-- Quy định nhận chuyển khoản -->
+  <div style="border: 1px solid #fecaca; background-color: #fef2f2; border-radius: 12px; padding: 15px; font-size: 12px; color: #991b1b; line-height: 1.5; margin-bottom: 20px; text-align: left;">
+    <p style="margin: 0; font-weight: bold;">⚠️ QUY ĐỊNH CHUYỂN KHOẢN THANH TOÁN:</p>
+    <p style="margin: 5px 0 0 0; font-weight: 800;">
+      Shop chỉ nhận chuyển khoản phần còn lại trong 24 giờ kể từ lúc gửi mail thông báo hàng về. Các đơn còn 50% còn lại hoặc phí vận chuyển Hàn - Việt cần thu, shop sẽ tự động thu COD phần còn lại.
+    </p>
+  </div>
+  
+  <p style="font-size: 11px; color: #64748b; text-align: center; margin-top: 25px; border-top: 1px solid #f1f5f9; padding-top: 15px; font-weight: 500;">
+    Đây là thư một chiều được tự động gửi từ hệ thống Yeng Corner. Vui lòng không phản hồi trực tiếp email này. Nếu có bất kỳ thắc mắc hoặc cần sửa đổi thông tin, vui lòng nhắn tin trực tiếp qua Fanpage Facebook của Shop để được hỗ trợ kịp thời nhất!
+  </p>
+</div>
+`.trim();
     }
     
     return { subject, body };
@@ -807,6 +921,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Manual offline order creation modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  // Arrival email states
+  const [isArrivalModalOpen, setIsArrivalModalOpen] = useState(false);
+  const [arrivalOrder, setArrivalOrder] = useState<OrderPayload | null>(null);
+  const [weightFee, setWeightFee] = useState<number>(0);
+  const [isSendingArrivalMail, setIsSendingArrivalMail] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({
     customerName: '',
     phone: '',
@@ -1126,6 +1246,45 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     } catch (err: any) {
       console.error(`Failed to send shipping email for order #${orderId}:`, err);
       showToast(`⚠️ Không thể gửi email: ${err.message || err}`, "error");
+    }
+  };
+
+  // Send arrival notification email
+  const handleSendArrivalEmailDirect = async (orderId: string, currentWeightFee: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    try {
+      setIsSendingArrivalMail(true);
+      showToast(`✉️ Đang chuẩn bị gửi mail thông báo hàng về đơn hàng #${orderId}...`, "info");
+      const { subject, body } = getEmailContentForOrder(order, 'arrival', currentWeightFee);
+      
+      const response = await fetch('/api/gmail/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: order.contact?.email ?? "",
+          subject,
+          bodyHtml: body
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || `Gmail API returned status ${response.status}`);
+      }
+
+      showToast(`✉️ Đã gửi email thông báo hàng về tới ${order.contact?.email ?? ""} thành công!`, "success");
+      setIsArrivalModalOpen(false);
+      setArrivalOrder(null);
+      setWeightFee(0);
+    } catch (err: any) {
+      console.error(`Failed to send arrival email for order #${orderId}:`, err);
+      showToast(`⚠️ Không thể gửi email: ${err.message || err}`, "error");
+    } finally {
+      setIsSendingArrivalMail(false);
     }
   };
 
@@ -2251,7 +2410,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // --- Xử lý tách sheet phụ theo sản phẩm ---
   try {
-    var targetTabName = prodNameStr.split(/[\[\-(]/)[0].trim(); 
+    var targetTabName = prodNameStr.split(new RegExp('\\\\s*[\\\\[\\\\-(]\\\\s*'))[0].trim(); 
     if (targetTabName.length > 30) {
       targetTabName = targetTabName.substring(0, 27) + "...";
     }
@@ -2620,6 +2779,19 @@ function getColumnLetter(colIndex) {
                                 <span>GỬI MAIL VẬN CHUYỂN</span>
                               </button>
                             )}
+                            
+                            <button
+                              onClick={() => {
+                                setArrivalOrder(ord);
+                                setWeightFee(0);
+                                setIsArrivalModalOpen(true);
+                              }}
+                              className="w-full mt-2 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold font-display uppercase tracking-wider text-[10px] rounded-lg shadow-sm flex items-center justify-center space-x-1.5 transition-all"
+                              title="Gửi mail thông báo hàng về & yêu cầu thanh toán số tiền còn lại + phí cân nặng"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-white" />
+                              <span>GỬI MAIL BÁO HÀNG VỀ</span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -3215,6 +3387,7 @@ function getColumnLetter(colIndex) {
                         className="w-full px-3 py-2 border border-neutral-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-neutral-800"
                       >
                         <option value="deposit">Mẫu 1: Xác nhận đơn hàng</option>
+                        <option value="arrival">Mẫu 2: Thông báo hàng về & Thanh toán</option>
                         <option value="custom">Thư trống (Nhập tay bên dưới)</option>
                       </select>
                     </div>
@@ -3681,6 +3854,147 @@ function getColumnLetter(colIndex) {
           </div>
         </div>
       )}
+
+      {/* MODAL: Send Arrival Notification Email */}
+      {isArrivalModalOpen && arrivalOrder && (() => {
+        const subtotalVal = arrivalOrder.subtotal ?? 0;
+        const pMethod = arrivalOrder.payment?.method || "";
+        const isHalfDeposit = pMethod.toLowerCase().includes("50%") || pMethod.toLowerCase().includes("cọc");
+        const paidAmount = arrivalOrder.paidAmount !== undefined ? arrivalOrder.paidAmount : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+        const remainingAmount = subtotalVal - paidAmount;
+        const totalToPay = remainingAmount + weightFee;
+        const { subject, body } = getEmailContentForOrder(arrivalOrder, 'arrival', weightFee);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto animate-fade-in">
+            <div className="relative bg-white max-w-3xl w-full rounded-2xl overflow-hidden shadow-2xl border border-neutral-300 my-8">
+              <div className="p-4 sm:p-5 border-b flex justify-between items-center bg-indigo-50">
+                <div className="flex items-center space-x-2">
+                  <Mail className="w-5 h-5 text-indigo-900" />
+                  <h3 className="text-sm font-display font-bold text-indigo-900 uppercase">GỬI EMAIL BÁO HÀNG VỀ & THANH TOÁN</h3>
+                </div>
+                <button 
+                  onClick={() => {
+                    setIsArrivalModalOpen(false);
+                    setArrivalOrder(null);
+                    setWeightFee(0);
+                  }}
+                  className="p-1 hover:bg-indigo-100 text-indigo-900 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 sm:p-6 space-y-5 max-h-[80vh] overflow-y-auto font-sans text-xs">
+                {/* Recipient Details Summary Block */}
+                <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 grid grid-cols-1 md:grid-cols-2 gap-4 text-neutral-800">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-neutral-400 block uppercase mb-1">MÃ ĐƠN HÀNG:</span>
+                    <span className="font-mono text-sm font-extrabold text-[#1e40af]">#{arrivalOrder.id}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-neutral-400 block uppercase mb-1">KHÁCH HÀNG:</span>
+                    <span className="text-sm font-bold text-neutral-800">{arrivalOrder.shipping?.receiverName} ({arrivalOrder.contact?.email})</span>
+                  </div>
+                </div>
+
+                {/* Pricing / Fees Adjustment */}
+                <div className="bg-indigo-50/55 p-4 rounded-xl border border-indigo-100 space-y-3">
+                  <h4 className="text-[10.5px] font-mono font-bold text-indigo-900 block uppercase tracking-wide">CẤU HÌNH PHÍ CÂN NẶNG & SỐ TIỀN CẦN THU</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold text-neutral-500 block mb-1">SỐ TIỀN CÒN LẠI (CÒN LẠI):</span>
+                      <div className="px-3 py-2 border bg-neutral-100 rounded-lg font-mono font-bold text-neutral-700">
+                        {remainingAmount.toLocaleString('vi-VN')} đ
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">PHÍ CÂN NẶNG (HÀN - VIỆT):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={weightFee}
+                        onChange={(e) => setWeightFee(Math.max(0, Number(e.target.value) || 0))}
+                        placeholder="Nhập phí cân nặng..."
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 bg-white text-neutral-900 font-mono font-bold"
+                      />
+                    </div>
+                    <div className="bg-indigo-900 text-white p-2.5 rounded-lg border border-indigo-950 flex flex-col justify-center">
+                      <span className="text-[9px] font-mono font-bold text-indigo-300 block uppercase">TỔNG KHÁCH CẦN CHUYỂN:</span>
+                      <span className="font-mono text-sm font-extrabold text-amber-300">
+                        {totalToPay.toLocaleString('vi-VN')} đ
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Calculation explanation warning */}
+                  <div className="text-[10px] text-neutral-500 italic bg-white p-2.5 rounded border border-neutral-100 leading-relaxed">
+                    💡 <strong>Tổng thanh toán thực tế</strong> sẽ được gửi cho khách bao gồm <strong>{remainingAmount.toLocaleString('vi-VN')} đ</strong> (Tiền còn lại của đơn) và <strong>{weightFee.toLocaleString('vi-VN')} đ</strong> (Phí cân nặng do Admin điền). Mã QR bên dưới sẽ tự động thay đổi giá trị theo số tiền này.
+                  </div>
+                </div>
+
+                {/* Live Preview Email Subject and Body Frame */}
+                <div className="space-y-2">
+                  <h4 className="text-[10.5px] font-mono font-bold text-neutral-500 block uppercase tracking-wide">XEM TRƯỚC EMAIL TRỰC QUAN (LIVE PREVIEW)</h4>
+                  
+                  {/* Subject Line Display */}
+                  <div className="p-3 border rounded-lg bg-neutral-50 flex items-center space-x-2 font-sans">
+                    <span className="text-[10px] font-mono font-bold text-neutral-400 block shrink-0 uppercase">TIÊU ĐỀ:</span>
+                    <span className="text-xs font-bold text-neutral-800">{subject}</span>
+                  </div>
+
+                  {/* Body IFrame Container */}
+                  <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white">
+                    <div className="bg-neutral-100 px-3 py-1.5 border-b text-[10px] text-neutral-500 font-mono flex items-center justify-between">
+                      <span>NỘI DUNG THƯ (HTML RENDERED)</span>
+                      <span>Hộp thư khách hàng preview</span>
+                    </div>
+                    <iframe 
+                      srcDoc={body} 
+                      title="Email live mockup view template"
+                      className="w-full h-80 border-0 bg-neutral-50"
+                    />
+                  </div>
+                </div>
+
+                {/* Footer Submit and Cancel buttons */}
+                <div className="pt-4 border-t flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsArrivalModalOpen(false);
+                      setArrivalOrder(null);
+                      setWeightFee(0);
+                    }}
+                    disabled={isSendingArrivalMail}
+                    className="px-4 py-2 border border-neutral-300 text-neutral-700 bg-white hover:bg-neutral-50 rounded-xl font-semibold transition-colors disabled:opacity-50"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSendArrivalEmailDirect(arrivalOrder.id, weightFee)}
+                    disabled={isSendingArrivalMail}
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-display font-bold tracking-wider uppercase rounded-xl transition-all shadow-sm flex items-center space-x-2 disabled:bg-indigo-300"
+                  >
+                    {isSendingArrivalMail ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Đang gửi mail...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Gửi email thông báo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL: Product Add/Edit form pop-up */}
       {isProductModalOpen && (
