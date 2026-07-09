@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw } from 'lucide-react';
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
-import { deductProductStock } from '../utils/products';
+import { deductProductStock, getProducts, getProductStockForVersion } from '../utils/products';
 import { initAuth, googleSignIn, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
@@ -321,6 +321,20 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
     setSubmitting(true);
 
+    // Validate latest stock before order submission
+    const freshProducts = getProducts();
+    for (const item of cart) {
+      const freshProduct = freshProducts.find(p => p.id === item.product.id);
+      if (freshProduct) {
+        const availableStock = getProductStockForVersion(freshProduct, item.version);
+        if (item.quantity > availableStock) {
+          alert(`⚠️ Rất tiếc, sản phẩm "${item.product.name}" [Phân loại: ${item.version || 'Mặc định'}] chỉ còn tối đa ${availableStock} sản phẩm trong kho. Vui lòng quay lại giỏ hàng để cập nhật số lượng!`);
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
+
     const orderId = "YENG" + Math.floor(1000 + Math.random() * 9000);
 
     // Compress image locally using HTML5 Canvas to keep base64 extremely lightweight yet clear
@@ -381,7 +395,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       setSubmitting(false);
 
       // Deduct stock for all ordered items in Firestore
-      completeOrderObj.items.forEach(async (item) => {
+      for (const item of completeOrderObj.items) {
         if (item.product && item.product.id) {
           try {
             await deductProductStock(item.product.id, item.version, item.quantity);
@@ -389,7 +403,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
             console.error("Lỗi khi trừ kho sản phẩm:", e);
           }
         }
-      });
+      }
 
       setGeneratedOrder(completeOrderObj);
       setOrderConfirmed(true);
