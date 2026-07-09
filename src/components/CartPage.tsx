@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingCart, Trash2, ArrowRight, ArrowLeft, Ticket, ShieldCheck, Tag, X } from 'lucide-react';
 import { CartItem, Coupon } from '../types';
+import { getProductStockForVersion } from '../utils/products';
 
 interface CartPageProps {
   cart: CartItem[];
@@ -194,6 +195,10 @@ export default function CartPage({
                   <span>• Phát hành:</span>
                   <strong className="text-neutral-800 font-semibold">{item.product.releaseDate || "Đã ra mắt"}</strong>
                 </div>
+                <div className="flex items-center gap-1 justify-center sm:justify-start">
+                  <span>• Tồn kho:</span>
+                  <strong className="text-[#1A73E8] font-semibold">{getProductStockForVersion(item.product, item.version)} sản phẩm</strong>
+                </div>
               </div>
             </div>
 
@@ -211,9 +216,16 @@ export default function CartPage({
                 </button>
                 <span className="w-8 text-center font-mono font-bold">{item.quantity}</span>
                 <button
-                  onClick={() => updateCartQuantity && updateCartQuantity(item.product.id, item.version, item.quantity + 1)}
-                  disabled={!updateCartQuantity}
-                  className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-50"
+                  onClick={() => {
+                    const stock = getProductStockForVersion(item.product, item.version);
+                    if (item.quantity >= stock) {
+                      alert(`Sản phẩm này chỉ còn tối đa ${stock} sản phẩm trong kho!`);
+                      return;
+                    }
+                    updateCartQuantity && updateCartQuantity(item.product.id, item.version, item.quantity + 1);
+                  }}
+                  disabled={!updateCartQuantity || item.quantity >= getProductStockForVersion(item.product, item.version)}
+                  className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
                   aria-label="Increase quantity"
                 >
                   +
