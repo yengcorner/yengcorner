@@ -379,14 +379,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     <div style="font-size: 12px; color: #1e40af; line-height: 1.5; text-align: left; max-width: 280px; margin: 0 auto;">
       Ngân hàng: <strong>Vietcombank (VCB)</strong><br/>
       Số tài khoản: <strong style="font-family: monospace; font-size: 13px;">1017217975</strong><br/>
-      Chủ tài khoản: <strong>LÊ THỊ HỒNG NGỌC</strong><br/>
-      Nội dung CK: <strong style="font-family: monospace; font-size: 13px; color: #dc2626; background-color: #ffffff; padding: 2px 6px; border-radius: 4px; border: 1px solid #bfdbfe;">YENG CORNER ${order.id}</strong>
+      Chủ tài khoản: <strong>LÊ THỊ HỒNG NGỌC</strong>
     </div>
   </div>
 
   <!-- Nhắc nhở gửi bill -->
   <div style="border: 1px solid #fed7aa; background-color: #ffedd5; border-radius: 12px; padding: 15px; font-size: 12px; color: #ea580c; line-height: 1.6; margin-bottom: 20px; text-align: left; font-weight: bold; border-left: 5px solid #ea580c;">
-    Các bạn chuyển khoản nốt vui lòng liên hệ shop qua FB/IG/THR gửi bill chuyển khoản kèm mã đơn hàng "YENG${order.id}" để shop cập nhật đơn hàng.
+    Các bạn chuyển khoản nốt vui lòng liên hệ shop qua FB/IG/THR gửi bill chuyển khoản kèm mã đơn hàng "YENG${order.id.replace(/^YENG/i, '')}" để shop cập nhật đơn hàng.
   </div>
 
   <!-- Quy định nhận chuyển khoản -->
