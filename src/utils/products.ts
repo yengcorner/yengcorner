@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc, getDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -353,21 +353,70 @@ export function isProductSoldOut(product: Product): boolean {
 
 export async function deductProductStock(productId: number, version: string, quantityToDeduct: number): Promise<void> {
   try {
-    const docId = productIdToDocIdMap.get(productId) || productId.toString();
-    const docRef = doc(db, "products", docId);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
-      console.warn(`Product document not found for stock deduction: ${productId}`);
+    console.log(`[Deduct Stock] Bắt đầu trừ kho: productId=${productId}, version="${version}", quantityToDeduct=${quantityToDeduct}`);
+    
+    let docRef = null;
+    let product: Product | null = null;
+
+    // 1. Tìm thông qua cache map trước (hỗ trợ cả kiểu number và kiểu string)
+    const mappedDocId = productIdToDocIdMap.get(Number(productId)) || productIdToDocIdMap.get(productId as any);
+    if (mappedDocId) {
+      const testRef = doc(db, "products", mappedDocId);
+      const testSnap = await getDoc(testRef);
+      if (testSnap.exists()) {
+        docRef = testRef;
+        product = testSnap.data() as Product;
+        console.log(`[Deduct Stock] Tìm thấy sản phẩm qua cached ID Map: "${product.name}" (docId: ${mappedDocId})`);
+      }
+    }
+
+    // 2. Nếu map thất bại, truy vấn trực tiếp Firestore dựa trên trường "id" (cả định dạng number và string)
+    if (!docRef) {
+      console.log(`[Deduct Stock] Không tìm thấy qua ID Map. Đang truy vấn trực tiếp Firestore bằng field "id" = ${productId}...`);
+      const qNum = query(collection(db, "products"), where("id", "==", Number(productId)));
+      const qSnapNum = await getDocs(qNum);
+      if (!qSnapNum.empty) {
+        docRef = qSnapNum.docs[0].ref;
+        product = qSnapNum.docs[0].data() as Product;
+        console.log(`[Deduct Stock] Tìm thấy sản phẩm bằng truy vấn "id" (number): "${product.name}" (docId: ${docRef.id})`);
+      } else {
+        const qStr = query(collection(db, "products"), where("id", "==", String(productId)));
+        const qSnapStr = await getDocs(qStr);
+        if (!qSnapStr.empty) {
+          docRef = qSnapStr.docs[0].ref;
+          product = qSnapStr.docs[0].data() as Product;
+          console.log(`[Deduct Stock] Tìm thấy sản phẩm bằng truy vấn "id" (string): "${product.name}" (docId: ${docRef.id})`);
+        }
+      }
+    }
+
+    // 3. Dự phòng cuối cùng: dùng productId làm Document ID trực tiếp
+    if (!docRef) {
+      const directRef = doc(db, "products", productId.toString());
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) {
+        docRef = directRef;
+        product = directSnap.data() as Product;
+        console.log(`[Deduct Stock] Tìm thấy sản phẩm bằng Document ID trực tiếp: "${product.name}"`);
+      }
+    }
+
+    if (!docRef || !product) {
+      console.error(`[Deduct Stock] THẤT BẠI: Không thể tìm thấy tài liệu sản phẩm trong Firestore cho ID: ${productId}`);
       return;
     }
-    const product = docSnap.data() as Product;
-    
-    // Case 1: Multi-tier variant (has variantMatrix)
+
+    // Tiến hành trừ kho sản phẩm
+    let updatePayload: any = {};
+    let totalStockRemaining = 0;
+
+    // Phân tích các trường hợp sản phẩm có phân loại/biến thể
+    // Case 1: Có ma trận thuộc tính (variantMatrix)
     if (product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
       let updatedMatrix = [...product.variantMatrix];
       let matchedIdx = updatedMatrix.findIndex(v => {
         const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
-        return combinedName === version;
+        return combinedName.trim().toLowerCase() === version.trim().toLowerCase();
       });
       
       if (matchedIdx > -1) {
@@ -377,24 +426,21 @@ export async function deductProductStock(productId: number, version: string, qua
           ...updatedMatrix[matchedIdx],
           stock: nextStock
         };
-        
-        // Check if all matrix options are now out of stock
-        const totalStockRemaining = updatedMatrix.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
-        let nextStatus = product.status;
-        if (totalStockRemaining === 0) {
-          nextStatus = "Hết hàng";
-        }
-        
-        await updateDoc(docRef, {
-          variantMatrix: updatedMatrix,
-          status: nextStatus
-        });
+        updatePayload.variantMatrix = updatedMatrix;
+        console.log(`[Deduct Stock] Đã khớp phân loại trong variantMatrix: "${version}". Kho cũ: ${currentStock} -> Kho mới: ${nextStock}`);
+      } else {
+        console.warn(`[Deduct Stock] Không tìm thấy phân loại khớp chính xác với "${version}" trong variantMatrix.`);
       }
+
+      totalStockRemaining = updatedMatrix.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
     } 
-    // Case 2: Simple variations list (variations)
+    // Case 2: Có danh sách phân loại đơn giản (variations)
     else if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
       let updatedVariations = [...product.variations];
-      let matchedIdx = updatedVariations.findIndex(v => v.name === version);
+      let matchedIdx = updatedVariations.findIndex(v => 
+        v.name.trim().toLowerCase() === version.trim().toLowerCase()
+      );
+      
       if (matchedIdx > -1) {
         let currentStock = updatedVariations[matchedIdx].stock !== undefined ? updatedVariations[matchedIdx].stock! : 99;
         let nextStock = Math.max(0, currentStock - quantityToDeduct);
@@ -402,36 +448,43 @@ export async function deductProductStock(productId: number, version: string, qua
           ...updatedVariations[matchedIdx],
           stock: nextStock
         };
-        
-        // Check if all variations are out of stock
-        const totalStockRemaining = updatedVariations.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
-        let nextStatus = product.status;
-        if (totalStockRemaining === 0) {
-          nextStatus = "Hết hàng";
-        }
-        
-        await updateDoc(docRef, {
-          variations: updatedVariations,
-          status: nextStatus
-        });
+        updatePayload.variations = updatedVariations;
+        console.log(`[Deduct Stock] Đã khớp phân loại trong variations: "${version}". Kho cũ: ${currentStock} -> Kho mới: ${nextStock}`);
+      } else {
+        console.warn(`[Deduct Stock] Không tìm thấy phân loại khớp chính xác với "${version}" trong variations.`);
       }
+
+      totalStockRemaining = updatedVariations.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
     } 
-    // Case 3: Base product (no variants, just base stock)
+    // Case 3: Sản phẩm cơ bản không phân loại
     else {
       let currentStock = product.stock !== undefined ? product.stock : 99;
       let nextStock = Math.max(0, currentStock - quantityToDeduct);
-      let nextStatus = product.status;
-      if (nextStock === 0) {
-        nextStatus = "Hết hàng";
-      }
-      
-      await updateDoc(docRef, {
-        stock: nextStock,
-        status: nextStatus
-      });
+      updatePayload.stock = nextStock;
+      totalStockRemaining = nextStock;
+      console.log(`[Deduct Stock] Sản phẩm cơ bản. Kho cũ: ${currentStock} -> Kho mới: ${nextStock}`);
     }
+
+    // Đồng thời cập nhật kho tổng của base product (nếu có trường stock chính) để đồng bộ thông tin
+    if (product.stock !== undefined) {
+      const currentBaseStock = product.stock;
+      const nextBaseStock = Math.max(0, currentBaseStock - quantityToDeduct);
+      updatePayload.stock = nextBaseStock;
+    }
+
+    // Cập nhật trạng thái "Hết hàng" nếu tổng số lượng tồn kho còn lại bằng 0
+    let nextStatus = product.status;
+    if (totalStockRemaining <= 0) {
+      nextStatus = "Hết hàng";
+      updatePayload.status = "Hết hàng";
+    }
+    
+    console.log(`[Deduct Stock] Đang gửi yêu cầu updateDoc lên Firestore cho "${product.name}":`, updatePayload);
+    await updateDoc(docRef, updatePayload);
+    console.log(`[Deduct Stock] Cập nhật tồn kho THÀNH CÔNG cho "${product.name}".`);
   } catch (err) {
-    console.error(`Lỗi trừ kho hàng của sản phẩm #${productId} (phân loại: ${version}):`, err);
+    console.error(`[Deduct Stock] LỖI khi trừ kho hàng của sản phẩm ID ${productId} (phân loại: ${version}):`, err);
+    handleFirestoreError(err, OperationType.UPDATE, `products/${productId}`);
   }
 }
 
