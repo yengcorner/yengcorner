@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, HelpCircle, Heart, ShoppingBag, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -249,14 +249,7 @@ export default function ShopAllPage({
                       CHI TIẾT
                     </button>
                     {(() => {
-                      const isSoldOut = 
-                        product.status?.toLowerCase() === 'sold_out' || 
-                        product.status?.toLowerCase() === 'sold out' || 
-                        product.status === 'Hết hàng' ||
-                        product.tag?.toLowerCase().trim() === 'sold_out' || 
-                        product.tag?.toLowerCase().trim() === 'sold out' || 
-                        product.tag?.toLowerCase().trim() === 'hết hàng' ||
-                        (product.stock !== undefined && product.stock <= 0);
+                      const isSoldOut = isProductSoldOut(product);
 
                       return (
                         <button 
