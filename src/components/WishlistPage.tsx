@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ArrowRight, ShoppingBag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut } from '../utils/products';
 
 interface WishlistPageProps {
   wishlist: number[];
@@ -159,22 +159,7 @@ export default function WishlistPage({
                       CHI TIẾT
                     </button>
                     {(() => {
-                      let hasAvailableVariant = true;
-                      if (product.attribute1Name && product.variantMatrix && product.variantMatrix.length > 0) {
-                        hasAvailableVariant = product.variantMatrix.some(v => v.stock === undefined || v.stock > 0);
-                      } else if (product.variations && product.variations.length > 0) {
-                        hasAvailableVariant = product.variations.some(v => v.stock === undefined || v.stock > 0);
-                      }
-
-                      const isSoldOut = 
-                        product.status?.toLowerCase() === 'sold_out' || 
-                        product.status?.toLowerCase() === 'sold out' || 
-                        product.status === 'Hết hàng' ||
-                        product.tag?.toLowerCase().trim() === 'sold_out' || 
-                        product.tag?.toLowerCase().trim() === 'sold out' || 
-                        product.tag?.toLowerCase().trim() === 'hết hàng' ||
-                        (product.stock !== undefined && product.stock <= 0) ||
-                        !hasAvailableVariant;
+                      const isSoldOut = isProductSoldOut(product);
 
                       return (
                         <button 
