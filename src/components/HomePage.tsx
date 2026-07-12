@@ -33,9 +33,32 @@ export default function HomePage({
     return unsubscribe;
   }, []);
 
+  const normalizeCategory = (cat: string): string => {
+    if (!cat) return "";
+    const norm = cat.toLowerCase().trim();
+    if (norm === 'kstyle' || norm === 'k-style' || norm === 'k style') {
+      return 'k-style';
+    }
+    if (norm === 'merch' || norm === 'merchandise') {
+      return 'merch';
+    }
+    if (norm === 'album') {
+      return 'album';
+    }
+    return norm;
+  };
+
+  const getDisplayCategoryName = (cat: string): string => {
+    const norm = normalizeCategory(cat);
+    if (norm === 'k-style') return 'K-style';
+    if (norm === 'merch') return 'Merch';
+    if (norm === 'album') return 'Album';
+    return cat;
+  };
+
   // Dynamically extract active categories from productsList
   const rawCategories = Array.from(
-    new Set(productsList.map(p => p.category).filter(Boolean))
+    new Set(productsList.map(p => getDisplayCategoryName(p.category || "")).filter(Boolean))
   ) as string[];
 
   // Fixed order sequence: "Album", "Merch", "K-style", then others
@@ -54,10 +77,11 @@ export default function HomePage({
     }
   });
 
-  // Filter products by selectedCategory case-insensitively
-  const filteredProducts = productsList.filter(p => 
-    p.category && p.category.toLowerCase() === selectedCategory.toLowerCase()
-  );
+  // Filter products by selectedCategory case-insensitively & taking care of alternate spellings
+  const filteredProducts = productsList.filter(p => {
+    if (!p.category) return false;
+    return normalizeCategory(p.category) === normalizeCategory(selectedCategory);
+  });
 
   // Show only up to 8 products per selected category on HomePage
   const displayProducts = filteredProducts.slice(0, 8);
