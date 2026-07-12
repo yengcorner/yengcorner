@@ -24,6 +24,8 @@ export default function HomePage({
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
 
+  const [selectedCategory, setSelectedCategory] = useState<string>('Album');
+
   useEffect(() => {
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
@@ -31,8 +33,34 @@ export default function HomePage({
     return unsubscribe;
   }, []);
 
-  // Show only 4 to 8 featured products on HomePage
-  const displayProducts = productsList.slice(0, 8);
+  // Dynamically extract active categories from productsList
+  const rawCategories = Array.from(
+    new Set(productsList.map(p => p.category).filter(Boolean))
+  ) as string[];
+
+  // Fixed order sequence: "Album", "Merch", "Kstyle", then others
+  const fixedOrder = ["Album", "Merch", "Kstyle"];
+  const orderedCategories: string[] = [];
+  
+  // Ensure the fixedOrder ones are placed first
+  fixedOrder.forEach(cat => {
+    orderedCategories.push(cat);
+  });
+  
+  rawCategories.forEach(cat => {
+    const matched = fixedOrder.some(f => f.toLowerCase() === cat.toLowerCase());
+    if (!matched) {
+      orderedCategories.push(cat);
+    }
+  });
+
+  // Filter products by selectedCategory case-insensitively
+  const filteredProducts = productsList.filter(p => 
+    p.category && p.category.toLowerCase() === selectedCategory.toLowerCase()
+  );
+
+  // Show only up to 8 products per selected category on HomePage
+  const displayProducts = filteredProducts.slice(0, 8);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -109,16 +137,36 @@ export default function HomePage({
 
       {/* Category Filter section & Products Grid listing */}
       <section className="space-y-8">
-        <div className="flex items-center justify-between border-b border-neutral-200 pb-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 pb-4">
           <div className="flex items-center space-x-2.5">
             <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
             <h2 className="text-xl font-display font-semibold tracking-wider text-black uppercase">Khám phá sản phẩm</h2>
           </div>
         </div>
 
+        {/* Dynamic Category Tabs with Fixed Sequence: Album, Merch, Kstyle, then others */}
+        <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+          {orderedCategories.map((cat) => {
+            const isActive = selectedCategory.toLowerCase() === cat.toLowerCase();
+            return (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-full text-xs font-display font-bold uppercase tracking-wider transition-all whitespace-nowrap shrink-0 border ${
+                  isActive
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-200'
+                    : 'bg-white border-neutral-250 text-neutral-600 hover:text-black hover:border-neutral-400'
+                }`}
+              >
+                {cat}
+              </button>
+            );
+          })}
+        </div>
+
         {displayProducts.length === 0 ? (
           <div className="text-center py-16 bg-white border border-dashed border-neutral-200 rounded-2xl">
-            <p className="text-sm text-neutral-500">Chưa có sản phẩm nào thuộc danh mục này.</p>
+            <p className="text-sm text-neutral-500">Chưa có sản phẩm nào thuộc danh mục "{selectedCategory}".</p>
           </div>
         ) : (
           <div className="space-y-10">
@@ -127,13 +175,13 @@ export default function HomePage({
               initial="hidden"
               whileInView="show"
               viewport={{ once: true, margin: "-100px" }}
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+              className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 sm:gap-4 md:gap-6"
             >
               {displayProducts.map((product) => (
                 <motion.div
                   key={product.id}
                   variants={itemVariants}
-                  className="group bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300"
+                  className="group bg-white rounded-lg sm:rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300"
                 >
                   {/* Image Section */}
                   <div className="relative aspect-square overflow-hidden bg-neutral-100 cursor-pointer border-b border-neutral-100" onClick={() => navigateToProduct(product.id)}>
@@ -144,8 +192,8 @@ export default function HomePage({
                       referrerPolicy="no-referrer"
                     />
                     {/* Category tag */}
-                    <div className="absolute top-3 left-3 z-10">
-                      <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
+                    <div className="absolute top-1 left-1 sm:top-3 sm:left-3 z-10">
+                      <span className={`px-1 py-0.5 sm:px-2.5 sm:py-1 text-[8px] sm:text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
                         {product.tag}
                       </span>
                     </div>
@@ -155,27 +203,27 @@ export default function HomePage({
                         e.stopPropagation();
                         toggleWishlist(product.id);
                       }}
-                      className={`absolute top-3 right-3 p-2 rounded-full transition-colors shadow-sm ${
+                      className={`absolute top-1 right-1 sm:top-3 sm:right-3 p-1 sm:p-2 rounded-full transition-colors shadow-sm ${
                         wishlist.includes(product.id)
                           ? 'bg-red-50 text-red-500'
                           : 'bg-white/80 hover:bg-white text-neutral-600 hover:text-red-500'
                       }`}
                     >
-                      <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-red-500 text-red-500' : ''}`} />
+                      <Heart className={`w-3 h-3 sm:w-4 sm:h-4 ${wishlist.includes(product.id) ? 'fill-red-500 text-red-500' : ''}`} />
                     </button>
                   </div>
 
                   {/* Body Content */}
-                  <div className="p-5 flex flex-col flex-1 space-y-4">
-                    <div className="space-y-1">
+                  <div className="p-1.5 sm:p-4 lg:p-5 flex flex-col flex-1 space-y-2 sm:space-y-4">
+                    <div className="space-y-0.5 sm:space-y-1">
                       <h3 
                         onClick={() => navigateToProduct(product.id)} 
-                        className="text-sm font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 h-10 tracking-tight"
+                        className="text-[11px] sm:text-xs md:text-sm font-medium sm:font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 h-8 sm:h-10 tracking-tight"
                       >
                         {product.name}
                       </h3>
                       {product.artist && (
-                        <p className="text-[11.5px] text-blue-600 font-sans line-clamp-1 font-semibold flex items-center gap-1">
+                        <p className="text-[9px] sm:text-[11.5px] text-blue-600 font-sans line-clamp-1 font-semibold flex items-center gap-0.5 sm:gap-1">
                           <span>🎤</span> 
                           <span>{product.artist}</span>
                         </p>
@@ -183,30 +231,30 @@ export default function HomePage({
                     </div>
 
                     {/* Bullet Spec Highlights */}
-                    <div className="p-3 bg-neutral-50 rounded-lg text-[11px] text-neutral-600 min-h-[48px] flex flex-col justify-center space-y-0.5 leading-normal">
-                      <div className="flex items-center gap-1">
-                        <span>• Hạn order:</span>
-                        <strong className="text-neutral-850 font-semibold">{product.orderDeadline || "Sẵn hàng"}</strong>
+                    <div className="hidden xs:flex p-1.5 sm:p-3 bg-neutral-50 rounded-lg text-[9px] sm:text-[11px] text-neutral-600 min-h-[36px] sm:min-h-[48px] flex-col justify-center space-y-0.5 leading-normal">
+                      <div className="flex items-center gap-0.5 sm:gap-1">
+                        <span>• Hạn:</span>
+                        <strong className="text-neutral-850 font-semibold truncate">{product.orderDeadline || "Sẵn hàng"}</strong>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5 sm:gap-1">
                         <span>• Phát hành:</span>
-                        <strong className="text-neutral-850 font-semibold">{product.releaseDate || "Đã ra mắt"}</strong>
+                        <strong className="text-neutral-850 font-semibold truncate">{product.releaseDate || "Đã ra mắt"}</strong>
                       </div>
                     </div>
 
                     {/* Pricing and CTAs */}
-                    <div className="pt-2 flex flex-col space-y-3 mt-auto">
+                    <div className="pt-1 sm:pt-2 flex flex-col space-y-1.5 sm:space-y-3 mt-auto">
                       <div className="flex items-baseline justify-between">
-                        <span className="text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
-                        <span className="text-lg font-mono font-bold text-black text-right">
-                          {product.price.toLocaleString('vi-VN')} <span className="text-xs font-sans">VND</span>
+                        <span className="hidden xs:inline-block text-[8px] sm:text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
+                        <span className="text-[11px] xs:text-xs sm:text-sm md:text-base lg:text-lg font-mono font-bold text-black text-right w-full xs:w-auto">
+                          {product.price.toLocaleString('vi-VN')}<span className="text-[9px] sm:text-xs font-sans ml-0.5 font-normal">đ</span>
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div className="grid grid-cols-2 gap-1 sm:gap-2 pt-1">
                         <button 
                           onClick={() => navigateToProduct(product.id)}
-                          className="py-2.5 px-3 border border-neutral-200 hover:border-black text-neutral-700 hover:text-black text-xs font-display font-medium rounded-lg text-center transition-colors shadow-sm"
+                          className="py-1.5 sm:py-2.5 px-1 sm:px-3 border border-neutral-200 hover:border-black text-neutral-700 hover:text-black text-[9px] sm:text-xs font-display font-medium rounded-lg text-center transition-colors shadow-sm"
                         >
                           CHI TIẾT
                         </button>
@@ -224,14 +272,14 @@ export default function HomePage({
                                 addToCart(product, 1, defaultVer);
                               }}
                               disabled={isSoldOut}
-                              className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
+                              className={`py-1.5 sm:py-2.5 px-1 sm:px-3 text-[9px] sm:text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-0.5 sm:space-x-1.5 transition-colors shadow-sm ${
                                 isSoldOut
                                   ? "bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed"
                                   : "bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8]"
                               }`}
                             >
-                              <ShoppingBag className={`w-3.5 h-3.5 ${isSoldOut ? "text-neutral-400" : "text-[#1A73E8]"}`} />
-                              <span>{isSoldOut ? "HẾT HÀNG" : "MUA NGAY"}</span>
+                              <ShoppingBag className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${isSoldOut ? "text-neutral-400" : "text-[#1A73E8]"}`} />
+                              <span className="truncate">{isSoldOut ? "HẾT" : "MUA"}</span>
                             </button>
                           );
                         })()}
@@ -241,7 +289,7 @@ export default function HomePage({
                 </motion.div>
               ))}
             </motion.div>
- 
+
             {/* View all products redirection button */}
             <div className="flex justify-center pt-4">
               <button
