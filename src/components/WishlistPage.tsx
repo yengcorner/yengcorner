@@ -91,10 +91,10 @@ export default function WishlistPage({
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
                 />
-                {((product as any).isPreOrder === true || product.status?.toLowerCase() === 'pre-order' || product.tag?.toLowerCase() === 'pre-order') && (
+                {product.tag && product.tag.trim() !== "" && (
                   <div className="absolute top-3 left-3 z-10">
-                    <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag || 'pre-order')}`}>
-                      {product.tag || 'PRE-ORDER'}
+                    <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag)}`}>
+                      {product.tag}
                     </span>
                   </div>
                 )}
