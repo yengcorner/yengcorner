@@ -99,11 +99,13 @@ export default function HomePage({
                         referrerPolicy="no-referrer"
                       />
                       {/* Category tag */}
-                      <div className="absolute top-2.5 left-2.5 z-10">
-                        <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
-                          {product.tag}
-                        </span>
-                      </div>
+                      {((product as any).isPreOrder === true || product.status?.toLowerCase() === 'pre-order' || product.tag?.toLowerCase() === 'pre-order') && (
+                        <div className="absolute top-2.5 left-2.5 z-10">
+                          <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag || 'pre-order')}`}>
+                            {product.tag || 'PRE-ORDER'}
+                          </span>
+                        </div>
+                      )}
                       {/* Heart button */}
                       <button 
                         onClick={(e) => {
