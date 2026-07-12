@@ -52,16 +52,12 @@ export default function HomePage({
   const merchProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'merch');
   const kStyleProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'k-style');
 
-  const renderProductSlider = (title: string, icon: React.ReactNode, products: Product[]) => {
+  const renderProductSlider = (title: string, products: Product[]) => {
     return (
       <section className="space-y-6">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-          <div className="flex items-center space-x-2.5">
-            {icon}
+          <div className="flex items-center">
             <h2 className="text-lg sm:text-xl font-display font-semibold tracking-wider text-black uppercase">{title}</h2>
-            <span className="text-xs bg-neutral-100 text-neutral-600 px-2.5 py-0.5 rounded-full font-mono font-bold">
-              {products.length}
-            </span>
           </div>
           <button
             onClick={() => setCurrentPage('shop')}
@@ -272,28 +268,24 @@ export default function HomePage({
       {/* 1. KHU VỰC SẢN PHẨM PRE-ORDER */}
       {renderProductSlider(
         "Sản phẩm Pre-Order", 
-        <Sparkles className="w-5 h-5 text-amber-500 fill-amber-500/20" />, 
         preOrderProducts
       )}
 
       {/* 2. KHU VỰC ALBUM */}
       {renderProductSlider(
         "Album", 
-        <Compass className="w-5 h-5 text-blue-600" />, 
         albumProducts
       )}
 
       {/* 3. KHU VỰC MERCH */}
       {renderProductSlider(
         "Merch", 
-        <ShoppingBag className="w-5 h-5 text-emerald-600" />, 
         merchProducts
       )}
 
       {/* 4. KHU VỰC K-STYLE */}
       {renderProductSlider(
         "K-style", 
-        <TrendingUp className="w-5 h-5 text-purple-600" />, 
         kStyleProducts
       )}
 
