@@ -20,18 +20,12 @@ export default function HomePage({
   toggleWishlist 
 }: HomePageProps) {
   // Filter out retired K-POP category
-  const [productsList, setProductsList] = useState<Product[]>(() => 
+  const [allProducts, setAllProducts] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
 
+  const [displayedProducts, setDisplayedProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('Album');
-
-  useEffect(() => {
-    const unsubscribe = subscribeProducts((list) => {
-      setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
-    });
-    return unsubscribe;
-  }, []);
 
   const normalizeCategory = (cat: string): string => {
     if (!cat) return "";
@@ -56,9 +50,35 @@ export default function HomePage({
     return cat;
   };
 
-  // Dynamically extract active categories from productsList
+  // Sync displayedProducts with allProducts and selectedCategory
+  useEffect(() => {
+    const filtered = allProducts.filter(p => {
+      if (!p.category) return false;
+      return normalizeCategory(p.category) === normalizeCategory(selectedCategory);
+    });
+    setDisplayedProducts(filtered);
+  }, [allProducts, selectedCategory]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeProducts((list) => {
+      const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop');
+      setAllProducts(filtered);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleCategorySelect = (cat: string) => {
+    setSelectedCategory(cat);
+    const filtered = allProducts.filter(p => {
+      if (!p.category) return false;
+      return normalizeCategory(p.category) === normalizeCategory(cat);
+    });
+    setDisplayedProducts(filtered);
+  };
+
+  // Dynamically extract active categories from allProducts
   const rawCategories = Array.from(
-    new Set(productsList.map(p => getDisplayCategoryName(p.category || "")).filter(Boolean))
+    new Set(allProducts.map(p => getDisplayCategoryName(p.category || "")).filter(Boolean))
   ) as string[];
 
   // Fixed order sequence: "Album", "Merch", "K-style", then others
@@ -77,14 +97,8 @@ export default function HomePage({
     }
   });
 
-  // Filter products by selectedCategory case-insensitively & taking care of alternate spellings
-  const filteredProducts = productsList.filter(p => {
-    if (!p.category) return false;
-    return normalizeCategory(p.category) === normalizeCategory(selectedCategory);
-  });
-
   // Show only up to 8 products per selected category on HomePage
-  const displayProducts = filteredProducts.slice(0, 8);
+  const displayProducts = displayedProducts.slice(0, 8);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -175,7 +189,7 @@ export default function HomePage({
             return (
               <button
                 key={cat}
-                onClick={() => setSelectedCategory(cat)}
+                onClick={() => handleCategorySelect(cat)}
                 className={`px-4 py-2 rounded-full text-xs font-display font-bold uppercase tracking-wider transition-all whitespace-nowrap shrink-0 border ${
                   isActive
                     ? 'bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-200'
