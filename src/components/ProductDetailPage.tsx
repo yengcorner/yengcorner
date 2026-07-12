@@ -258,9 +258,11 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
         <div className="space-y-6">
           <div className="space-y-3">
             <div className="flex items-center space-x-2">
-              <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeStyles(product.tag)}`}>
-                {product.tag}
-              </span>
+              {((product as any).isPreOrder === true || product.status?.toLowerCase() === 'pre-order' || product.tag?.toLowerCase() === 'pre-order') && (
+                <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeStyles(product.tag || 'pre-order')}`}>
+                  {product.tag || 'PRE-ORDER'}
+                </span>
+              )}
               <span className="text-[10px] font-mono tracking-widest text-neutral-400 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded uppercase">
                 {product.category}
               </span>
