@@ -220,11 +220,13 @@ export default function ShopAllPage({
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute top-3 left-3 z-10">
-                  <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag)}`}>
-                    {product.tag}
-                  </span>
-                </div>
+                {((product as any).isPreOrder === true || product.status?.toLowerCase() === 'pre-order' || product.tag?.toLowerCase() === 'pre-order') && (
+                  <div className="absolute top-3 left-3 z-10">
+                    <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag || 'pre-order')}`}>
+                      {product.tag || 'PRE-ORDER'}
+                    </span>
+                  </div>
+                )}
                 {/* Save item Button */}
                 <button 
                   onClick={(e) => {
