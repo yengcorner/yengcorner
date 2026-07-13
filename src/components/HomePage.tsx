@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
 interface HomePageProps {
   navigateToProduct: (id: number) => void;
@@ -40,6 +40,9 @@ export default function HomePage({
   };
 
   useEffect(() => {
+    // Force call cache-busting fetch from DB server on page mount
+    fetchProductsFromServer();
+
     const unsubscribe = subscribeProducts((list) => {
       const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop');
       setAllProducts(filtered);
