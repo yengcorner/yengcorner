@@ -132,6 +132,53 @@ export const getProducts = (): Product[] => {
   return cachedProducts;
 };
 
+// Fetch fresh products directly from server bypassing any cache (Cache-Busting)
+export const fetchProductsFromServer = async (): Promise<Product[]> => {
+  try {
+    const timestamp = Date.now();
+    const response = await fetch(`/api/products?t=${timestamp}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list) && list.length > 0) {
+        cachedProducts = list;
+        localStorage.setItem('yeng_products', JSON.stringify(list));
+        
+        // Sync ID Map
+        list.forEach((p: Product) => {
+          if (p.id) {
+            productIdToDocIdMap.set(Number(p.id), p.id.toString());
+          }
+        });
+
+        // Dispatch update event
+        const event = new CustomEvent('yeng_products_updated', { detail: list });
+        window.dispatchEvent(event);
+        console.log("[fetchProductsFromServer] Successfully updated products list in real-time from server:", list.length);
+        return list;
+      }
+    } else {
+      console.warn("[fetchProductsFromServer] Server returned error status:", response.status);
+    }
+  } catch (err) {
+    console.error("[fetchProductsFromServer] Failed to fetch products from server:", err);
+  }
+  return cachedProducts;
+};
+
+// Trigger an initial fetch from the server on boot
+try {
+  fetchProductsFromServer();
+} catch (e) {
+  console.error("Error doing initial boot fetch:", e);
+}
+
 export const subscribeProducts = (callback: (products: Product[]) => void) => {
   // Call immediately with current cache
   callback(cachedProducts);
