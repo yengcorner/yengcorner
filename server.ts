@@ -32,19 +32,11 @@ const PORT = 3000;
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
-// Initialize Firebase Admin SDK for robust server-side Firestore operations with bypass access
+// Initialize Firebase Admin SDK bypassed to rely on fully authorized and robust Firebase Client SDK
+// In sandboxed preview/dev environments with custom database ID, default service credentials do not have full IAM roles.
+// Since firestore.rules allows all reads/writes, Firebase Client SDK is fully authorized and runs perfectly.
 let dbAdmin: any = null;
-try {
-  if (getAdminApps().length === 0) {
-    initializeAdminApp({
-      projectId: firebaseConfig.projectId
-    });
-  }
-  dbAdmin = getFirestoreAdmin(getAdminApp(), firebaseConfig.firestoreDatabaseId);
-  console.log("[Firebase Admin] Initialized successfully with database ID:", firebaseConfig.firestoreDatabaseId);
-} catch (adminErr: any) {
-  console.error("[Firebase Admin] Fatal: Cannot initialize Admin SDK:", adminErr.message);
-}
+console.log("[Firebase Admin] Bypassing Admin SDK to use fully functional Client SDK with client rules instead.");
 
 const gmailDocRef = doc(db, "gmail", "settings");
 
@@ -952,30 +944,38 @@ app.use(express.json({ limit: '10mb' }));
     res.setHeader("Expires", "0");
     try {
       let products: any[] = [];
+      let success = false;
       if (dbAdmin) {
-        console.log("[API Products] Fetching fresh products via Firebase Admin SDK...");
-        const snapshot = await dbAdmin.collection("products").get();
-        snapshot.forEach((docSnap: any) => {
-          const data = docSnap.data();
-          if (data) {
-            let numericId = Number(data.id);
-            if (isNaN(numericId) || !numericId) {
-              numericId = Number(docSnap.id);
-            }
-            if (isNaN(numericId) || !numericId) {
-              let hash = 0;
-              const str = docSnap.id;
-              for (let i = 0; i < str.length; i++) {
-                hash = (hash << 5) - hash + str.charCodeAt(i);
-                hash |= 0;
+        try {
+          console.log("[API Products] Fetching fresh products via Firebase Admin SDK...");
+          const snapshot = await dbAdmin.collection("products").get();
+          snapshot.forEach((docSnap: any) => {
+            const data = docSnap.data();
+            if (data) {
+              let numericId = Number(data.id);
+              if (isNaN(numericId) || !numericId) {
+                numericId = Number(docSnap.id);
               }
-              numericId = Math.abs(hash);
+              if (isNaN(numericId) || !numericId) {
+                let hash = 0;
+                const str = docSnap.id;
+                for (let i = 0; i < str.length; i++) {
+                  hash = (hash << 5) - hash + str.charCodeAt(i);
+                  hash |= 0;
+                }
+                numericId = Math.abs(hash);
+              }
+              data.id = numericId;
+              products.push(data);
             }
-            data.id = numericId;
-            products.push(data);
-          }
-        });
-      } else {
+          });
+          success = true;
+        } catch (adminErr: any) {
+          console.warn("[API Products] Admin SDK fetch failed, falling back to Client SDK:", adminErr.message);
+        }
+      }
+
+      if (!success) {
         console.log("[API Products] Fetching fresh products via Firebase Client SDK...");
         const snapshot = await getDocs(collection(db, "products"));
         snapshot.forEach((docSnap) => {
@@ -1016,19 +1016,27 @@ app.use(express.json({ limit: '10mb' }));
     res.setHeader("Expires", "0");
     try {
       let orders: any[] = [];
+      let success = false;
       if (dbAdmin) {
-        console.log("[API Orders] Fetching fresh orders via Firebase Admin SDK...");
-        const snapshot = await dbAdmin.collection("orders").get();
-        snapshot.forEach((docSnap: any) => {
-          const data = docSnap.data();
-          if (data) {
-            orders.push({
-              ...data,
-              id: data.id || docSnap.id
-            });
-          }
-        });
-      } else {
+        try {
+          console.log("[API Orders] Fetching fresh orders via Firebase Admin SDK...");
+          const snapshot = await dbAdmin.collection("orders").get();
+          snapshot.forEach((docSnap: any) => {
+            const data = docSnap.data();
+            if (data) {
+              orders.push({
+                ...data,
+                id: data.id || docSnap.id
+              });
+            }
+          });
+          success = true;
+        } catch (adminErr: any) {
+          console.warn("[API Orders] Admin SDK fetch failed, falling back to Client SDK:", adminErr.message);
+        }
+      }
+
+      if (!success) {
         console.log("[API Orders] Fetching fresh orders via Firebase Client SDK...");
         const snapshot = await getDocs(collection(db, "orders"));
         snapshot.forEach((docSnap) => {
