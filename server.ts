@@ -1009,6 +1009,48 @@ app.use(express.json({ limit: '10mb' }));
     }
   });
 
+  // GET orders endpoint with cache-busting and no-cache headers to retrieve fresh data directly from Database
+  app.get("/api/orders", async (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    try {
+      let orders: any[] = [];
+      if (dbAdmin) {
+        console.log("[API Orders] Fetching fresh orders via Firebase Admin SDK...");
+        const snapshot = await dbAdmin.collection("orders").get();
+        snapshot.forEach((docSnap: any) => {
+          const data = docSnap.data();
+          if (data) {
+            orders.push({
+              ...data,
+              id: data.id || docSnap.id
+            });
+          }
+        });
+      } else {
+        console.log("[API Orders] Fetching fresh orders via Firebase Client SDK...");
+        const snapshot = await getDocs(collection(db, "orders"));
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data) {
+            orders.push({
+              ...data,
+              id: data.id || docSnap.id
+            });
+          }
+        });
+      }
+      // Sort orders by timestamp descending (newest first)
+      orders.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      console.log(`[API Orders] Successfully fetched ${orders.length} orders with no-cache.`);
+      return res.json(orders);
+    } catch (error: any) {
+      console.error("[API Orders Error]", error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
