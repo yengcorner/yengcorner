@@ -234,26 +234,31 @@ app.use(express.json({ limit: '10mb' }));
     // Load configuration using the ultra-reliable REST & local disk fallback helper
     const tokenData = await fetchGmailConfigFromFirestore() || {};
 
-    // Dynamically fetch googleSheetsUrl directly from Firestore on every request using await getDoc() as required
-    let googleSheetsUrl = "";
-    try {
-      console.log("[Order Sync Helper] Fetching googleSheetsUrl directly from Firestore via getDoc()...");
-      const gmailDocRef = doc(db, "gmail", "settings");
-      const docSnap = await getDoc(gmailDocRef);
-      const configData = docSnap.exists() ? docSnap.data() : {};
-      googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || tokenData?.googleSheetsUrl || tokenData?.googleSheetUrl || "";
-      console.log("[Order Sync Helper] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
-    } catch (dbErr: any) {
-      console.error("[Order Sync Helper] getDoc failed, trying Admin SDK fallback:", dbErr.message);
-      if (dbAdmin) {
-        try {
-          const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
-          const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
-          googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
-        } catch (adminErr: any) {
-          console.error("[Order Sync Helper] Admin SDK fallback failed:", adminErr.message);
+    // Dynamically fetch googleSheetsUrl from Firestore on every request (preferring ultra-fast REST-fetched tokenData)
+    let googleSheetsUrl = tokenData?.googleSheetsUrl || tokenData?.googleSheetUrl || "";
+    
+    if (!googleSheetsUrl) {
+      try {
+        console.log("[Order Sync Helper] No cached URL, fetching googleSheetsUrl directly from Firestore via getDoc()...");
+        const gmailDocRef = doc(db, "gmail", "settings");
+        const docSnap = await getDoc(gmailDocRef);
+        const configData = docSnap.exists() ? docSnap.data() : {};
+        googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+        console.log("[Order Sync Helper] getDoc successfully read googleSheetsUrl:", googleSheetsUrl);
+      } catch (dbErr: any) {
+        console.error("[Order Sync Helper] getDoc failed, trying Admin SDK fallback:", dbErr.message);
+        if (dbAdmin) {
+          try {
+            const docSnapAdmin = await dbAdmin.collection("gmail").doc("settings").get();
+            const configData = docSnapAdmin.exists ? docSnapAdmin.data() : {};
+            googleSheetsUrl = configData.googleSheetsUrl || configData.googleSheetUrl || "";
+          } catch (adminErr: any) {
+            console.error("[Order Sync Helper] Admin SDK fallback failed:", adminErr.message);
+          }
         }
       }
+    } else {
+      console.log("[Order Sync Helper] Successfully resolved googleSheetsUrl from REST/cache:", googleSheetsUrl);
     }
 
     // Use the dynamically retrieved URL to synchronize to Google Sheets
@@ -937,6 +942,70 @@ app.use(express.json({ limit: '10mb' }));
       res.status(500).json({ 
         error: error.message || "Không thể gửi email. Vui lòng kiểm tra lại cấu hình." 
       });
+    }
+  });
+
+  // GET products endpoint with cache-busting and no-cache headers to retrieve fresh data directly from Database
+  app.get("/api/products", async (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    try {
+      let products: any[] = [];
+      if (dbAdmin) {
+        console.log("[API Products] Fetching fresh products via Firebase Admin SDK...");
+        const snapshot = await dbAdmin.collection("products").get();
+        snapshot.forEach((docSnap: any) => {
+          const data = docSnap.data();
+          if (data) {
+            let numericId = Number(data.id);
+            if (isNaN(numericId) || !numericId) {
+              numericId = Number(docSnap.id);
+            }
+            if (isNaN(numericId) || !numericId) {
+              let hash = 0;
+              const str = docSnap.id;
+              for (let i = 0; i < str.length; i++) {
+                hash = (hash << 5) - hash + str.charCodeAt(i);
+                hash |= 0;
+              }
+              numericId = Math.abs(hash);
+            }
+            data.id = numericId;
+            products.push(data);
+          }
+        });
+      } else {
+        console.log("[API Products] Fetching fresh products via Firebase Client SDK...");
+        const snapshot = await getDocs(collection(db, "products"));
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data) {
+            let numericId = Number(data.id);
+            if (isNaN(numericId) || !numericId) {
+              numericId = Number(docSnap.id);
+            }
+            if (isNaN(numericId) || !numericId) {
+              let hash = 0;
+              const str = docSnap.id;
+              for (let i = 0; i < str.length; i++) {
+                hash = (hash << 5) - hash + str.charCodeAt(i);
+                hash |= 0;
+              }
+              numericId = Math.abs(hash);
+            }
+            data.id = numericId;
+            products.push(data);
+          }
+        });
+      }
+      // Sort products by id descending to keep UI ordering consistent
+      products.sort((a, b) => Number(b.id) - Number(a.id));
+      console.log(`[API Products] Successfully fetched ${products.length} products with no-cache.`);
+      return res.json(products);
+    } catch (error: any) {
+      console.error("[API Products Error]", error);
+      return res.status(500).json({ error: error.message });
     }
   });
 
