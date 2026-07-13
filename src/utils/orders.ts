@@ -144,6 +144,28 @@ async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
 
 export async function getOrders(): Promise<OrderPayload[]> {
   try {
+    const timestamp = Date.now();
+    const response = await fetch(`/api/orders?t=${timestamp}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list)) {
+        list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        return list;
+      }
+    }
+  } catch (err) {
+    console.warn("[getOrders] Failed to fetch from cache-busting server API, falling back to direct Firestore:", err);
+  }
+
+  try {
     const q = collection(db, 'orders');
     const querySnapshot = await getDocs(q);
     const list: OrderPayload[] = [];
@@ -274,11 +296,17 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     // Kích hoạt đồng bộ hóa hóa đơn sang Google Sheets & gửi Gmail qua server (Đảm bảo hoạt động trên Serverless như Vercel)
     try {
       console.log("[Order Sync] Đang yêu cầu máy chủ đồng bộ hóa đơn hàng...");
-      fetch('/api/orders/notify-new', {
+      const res = await fetch('/api/orders/notify-new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order: finalCleanedOrder })
-      }).catch(err => console.error("[Order Sync Background] Lỗi kích hoạt đồng bộ ngầm:", err));
+      });
+      if (res.ok) {
+        const resData = await res.json();
+        console.log("[Order Sync] Đồng bộ hóa từ máy chủ thành công:", resData);
+      } else {
+        console.warn("[Order Sync] Máy chủ trả về mã lỗi:", res.status);
+      }
     } catch (err: any) {
       console.error("[Order Sync] Không thể gọi API đồng bộ hóa trên máy chủ:", err.message);
     }
