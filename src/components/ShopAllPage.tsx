@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, HelpCircle, Heart, ShoppingBag, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -22,6 +22,9 @@ export default function ShopAllPage({
   );
 
   useEffect(() => {
+    // Force call cache-busting fetch from DB server on page mount
+    fetchProductsFromServer();
+
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
     });
