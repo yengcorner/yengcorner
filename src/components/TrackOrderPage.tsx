@@ -22,7 +22,11 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
       return;
     }
 
+    // Reset previous search results and state to ensure clean data reload
+    setMatchingOrders([]);
+    setSearched(false);
     setLoading(true);
+    
     try {
       const allOrders = await getOrders();
       const filtered = allOrders.filter(o => {
@@ -48,13 +52,14 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
     const method = order.payment?.method || "";
     const isHalfDeposit = method.toLowerCase().includes("50%") || 
                           method.toLowerCase().includes("cọc");
-    const paidAmount = isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal;
+    // Retrieve custom paidAmount from database if it exists, otherwise fall back to payment method calculation
+    const paidAmount = order.paidAmount !== undefined ? order.paidAmount : (isHalfDeposit ? Math.round(order.subtotal * 0.5) : order.subtotal);
     const remainingAmount = order.subtotal - paidAmount;
     return {
       isHalfDeposit,
       paidAmount,
       remainingAmount,
-      displayMethod: isHalfDeposit ? "Đã đặt cọc 50%" : "Đã thanh toán 100%"
+      displayMethod: paidAmount === order.subtotal ? "Đã thanh toán 100%" : (isHalfDeposit ? "Đã đặt cọc 50%" : "Đã thanh toán một phần")
     };
   };
 
