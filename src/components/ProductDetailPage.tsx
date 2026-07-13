@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut } from '../utils/products';
+import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
 interface ProductDetailPageProps {
   id: number | null;
@@ -13,6 +13,9 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   const [productsList, setProductsList] = useState<Product[]>(() => getProducts());
 
   useEffect(() => {
+    // Force call cache-busting fetch from DB server on page mount
+    fetchProductsFromServer();
+
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list);
     });
