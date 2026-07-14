@@ -222,6 +222,7 @@ export default function ShopAllPage({
                   alt={product.name} 
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 {product.tag && product.tag.trim() !== "" && (
                   <div className="absolute top-3 left-3 z-10">
