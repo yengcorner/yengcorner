@@ -74,6 +74,27 @@ export function convertToSlug(text: string): string {
 // Memory cache of products
 let cachedProducts: Product[] = [];
 
+export const PRODUCTS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
+
+export const isProductsCacheExpired = (): boolean => {
+  try {
+    const storedTime = localStorage.getItem('yeng_products_timestamp');
+    if (!storedTime) return true;
+    return Date.now() - Number(storedTime) > PRODUCTS_CACHE_MAX_AGE;
+  } catch (e) {
+    return true;
+  }
+};
+
+export const saveProductsToLocalStorage = (list: Product[]) => {
+  try {
+    localStorage.setItem('yeng_products', JSON.stringify(list));
+    localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+  } catch (e) {
+    console.error("Error setting products to localStorage:", e);
+  }
+};
+
 // Load cached products initially from localStorage if available as a synchronous fallback
 try {
   const saved = localStorage.getItem('yeng_products');
@@ -118,7 +139,7 @@ onSnapshot(collection(db, "products"), (snapshot) => {
   // Sort products by id descending
   list.sort((a, b) => Number(b.id) - Number(a.id));
   cachedProducts = list;
-  localStorage.setItem('yeng_products', JSON.stringify(list));
+  saveProductsToLocalStorage(list);
   
   // Dispatch an update event so that any active React components can reactively update
   const event = new CustomEvent('yeng_products_updated', { detail: list });
@@ -129,11 +150,58 @@ onSnapshot(collection(db, "products"), (snapshot) => {
 });
 
 export const getProducts = (): Product[] => {
+  if (isProductsCacheExpired()) {
+    console.log("[getProducts] Products cache expired, triggering background revalidation from DB server...");
+    fetchProductsFromServer().catch(err => console.warn("Background revalidation of products failed:", err));
+  }
   return cachedProducts;
 };
 
 // Fetch fresh products directly from server bypassing any cache (Cache-Busting)
 export const fetchProductsFromServer = async (): Promise<Product[]> => {
+  try {
+    console.log("[fetchProductsFromServer] Fetching fresh products directly from Firestore client-side...");
+    const snapshot = await getDocs(collection(db, "products"));
+    const list: Product[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if (data) {
+        let numericId = Number(data.id);
+        if (isNaN(numericId) || !numericId) {
+          numericId = Number(docSnap.id);
+        }
+        if (isNaN(numericId) || !numericId) {
+          let hash = 0;
+          const str = docSnap.id;
+          for (let i = 0; i < str.length; i++) {
+            hash = (hash << 5) - hash + str.charCodeAt(i);
+            hash |= 0;
+          }
+          numericId = Math.abs(hash);
+        }
+        data.id = numericId;
+        productIdToDocIdMap.set(numericId, docSnap.id);
+        list.push(data as Product);
+      }
+    });
+
+    if (list.length > 0) {
+      // Sort products by id descending
+      list.sort((a, b) => Number(b.id) - Number(a.id));
+      cachedProducts = list;
+      saveProductsToLocalStorage(list);
+
+      // Dispatch update event
+      const event = new CustomEvent('yeng_products_updated', { detail: list });
+      window.dispatchEvent(event);
+      console.log("[fetchProductsFromServer] Successfully updated products directly from Firestore client-side:", list.length);
+      return list;
+    }
+  } catch (err) {
+    console.warn("[fetchProductsFromServer] Direct Firestore read failed, falling back to server API...", err);
+  }
+
+  // Fallback to server API if direct client-side Firestore read fails
   try {
     const timestamp = Date.now();
     const response = await fetch(`/api/products?t=${timestamp}`, {
@@ -148,7 +216,7 @@ export const fetchProductsFromServer = async (): Promise<Product[]> => {
       const list = await response.json();
       if (Array.isArray(list) && list.length > 0) {
         cachedProducts = list;
-        localStorage.setItem('yeng_products', JSON.stringify(list));
+        saveProductsToLocalStorage(list);
         
         // Sync ID Map
         list.forEach((p: Product) => {
@@ -160,17 +228,34 @@ export const fetchProductsFromServer = async (): Promise<Product[]> => {
         // Dispatch update event
         const event = new CustomEvent('yeng_products_updated', { detail: list });
         window.dispatchEvent(event);
-        console.log("[fetchProductsFromServer] Successfully updated products list in real-time from server:", list.length);
+        console.log("[fetchProductsFromServer] Fallback successful. Updated products list from server API:", list.length);
         return list;
       }
     } else {
-      console.warn("[fetchProductsFromServer] Server returned error status:", response.status);
+      console.warn("[fetchProductsFromServer] Fallback server API returned error status:", response.status);
     }
   } catch (err) {
-    console.error("[fetchProductsFromServer] Failed to fetch products from server:", err);
+    console.error("[fetchProductsFromServer] Fallback server API also failed:", err);
   }
   return cachedProducts;
 };
+
+// Auto background-revalidation on page focus or tab visibility change (SWR pattern)
+if (typeof window !== 'undefined') {
+  const triggerProductsRevalidation = () => {
+    if (isProductsCacheExpired()) {
+      console.log("[Products Revalidation] Window focused/visible and cache is stale. Fetching fresh products in background...");
+      fetchProductsFromServer().catch(err => console.warn("Focus revalidation failed:", err));
+    }
+  };
+
+  window.addEventListener('focus', triggerProductsRevalidation);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      triggerProductsRevalidation();
+    }
+  });
+}
 
 // Trigger an initial fetch from the server on boot
 try {
@@ -219,7 +304,7 @@ export const saveProduct = async (product: Product): Promise<void> => {
       nextProducts.unshift(product);
     }
     cachedProducts = nextProducts;
-    localStorage.setItem('yeng_products', JSON.stringify(nextProducts));
+    saveProductsToLocalStorage(nextProducts);
 
     // Dispatch custom event to notify React components instantly
     const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
@@ -238,7 +323,7 @@ export const deleteProduct = async (productId: number): Promise<void> => {
     // Update memory cache safely and immediately
     const nextProducts = cachedProducts.filter(p => Number(p.id) !== Number(productId));
     cachedProducts = nextProducts;
-    localStorage.setItem('yeng_products', JSON.stringify(nextProducts));
+    saveProductsToLocalStorage(nextProducts);
 
     // Dispatch custom event to notify React components instantly
     const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
@@ -254,7 +339,7 @@ export const resetProductsToDefault = async (): Promise<Product[]> => {
       await deleteDoc(doc(db, "products", p.id.toString()));
     }
     cachedProducts = INITIAL_PRODUCTS;
-    localStorage.setItem('yeng_products', JSON.stringify(INITIAL_PRODUCTS));
+    saveProductsToLocalStorage(INITIAL_PRODUCTS);
 
     // Dispatch custom event to notify React components instantly
     const event = new CustomEvent('yeng_products_updated', { detail: INITIAL_PRODUCTS });
