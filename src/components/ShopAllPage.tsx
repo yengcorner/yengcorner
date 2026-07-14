@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, HelpCircle, Heart, ShoppingBag, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -22,9 +22,6 @@ export default function ShopAllPage({
   );
 
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
     });
@@ -36,53 +33,10 @@ export default function ShopAllPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('default'); // default, price-asc, price-desc, name-asc
 
-  const normalizeCategory = (cat: string): string => {
-    if (!cat) return "";
-    const norm = cat.toLowerCase().trim();
-    if (norm === 'kstyle' || norm === 'k-style' || norm === 'k style') {
-      return 'k-style';
-    }
-    if (norm === 'merch' || norm === 'merchandise') {
-      return 'merch';
-    }
-    if (norm === 'album') {
-      return 'album';
-    }
-    return norm;
-  };
-
-  const getDisplayCategoryName = (cat: string): string => {
-    const norm = normalizeCategory(cat);
-    if (norm === 'k-style') return 'K-style';
-    if (norm === 'merch') return 'Merch';
-    if (norm === 'album') return 'Album';
-    return cat;
-  };
-
   // Dynamically extract active categories
-  const rawCategories = Array.from(
-    new Set(productsList.map(p => getDisplayCategoryName(p.category || "")).filter(Boolean))
+  const dynamicCategories = Array.from(
+    new Set(productsList.map(p => p.category).filter(Boolean))
   ) as string[];
-
-  // Fixed order sequence: "Album", "Merch", "K-style", then others
-  const fixedOrder = ["Album", "Merch", "K-style"];
-  const dynamicCategories: string[] = [];
-  
-  fixedOrder.forEach(cat => {
-    const found = rawCategories.find(r => r.toLowerCase() === cat.toLowerCase());
-    if (found) {
-      dynamicCategories.push(found);
-    } else {
-      dynamicCategories.push(cat); // Keep the capitalized version even if empty
-    }
-  });
-
-  rawCategories.forEach(cat => {
-    const matched = fixedOrder.some(f => f.toLowerCase() === cat.toLowerCase());
-    if (!matched) {
-      dynamicCategories.push(cat);
-    }
-  });
 
   // Dynamically extract active artists/brands
   const dynamicArtists = Array.from(
@@ -92,7 +46,7 @@ export default function ShopAllPage({
   // 1. Filter by category
   let products = filter === 'All' 
     ? productsList 
-    : productsList.filter(p => p.category && normalizeCategory(p.category) === normalizeCategory(filter));
+    : productsList.filter(p => p.category && p.category.toLowerCase() === filter.toLowerCase());
 
   // 1.5 Filter by artist / brand
   if (artistFilter !== 'All') {
@@ -222,15 +176,12 @@ export default function ShopAllPage({
                   alt={product.name} 
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
-                  loading="lazy"
                 />
-                {product.tag && product.tag.trim() !== "" && (
-                  <div className="absolute top-3 left-3 z-10">
-                    <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag)}`}>
-                      {product.tag}
-                    </span>
-                  </div>
-                )}
+                <div className="absolute top-3 left-3 z-10">
+                  <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${getBadgeTagStyles(product.tag)}`}>
+                    {product.tag}
+                  </span>
+                </div>
                 {/* Save item Button */}
                 <button 
                   onClick={(e) => {
@@ -298,7 +249,14 @@ export default function ShopAllPage({
                       CHI TIẾT
                     </button>
                     {(() => {
-                      const isSoldOut = isProductSoldOut(product);
+                      const isSoldOut = 
+                        product.status?.toLowerCase() === 'sold_out' || 
+                        product.status?.toLowerCase() === 'sold out' || 
+                        product.status === 'Hết hàng' ||
+                        product.tag?.toLowerCase().trim() === 'sold_out' || 
+                        product.tag?.toLowerCase().trim() === 'sold out' || 
+                        product.tag?.toLowerCase().trim() === 'hết hàng' ||
+                        (product.stock !== undefined && product.stock <= 0);
 
                       return (
                         <button 
