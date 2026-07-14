@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct } from '../utils/products';
 
 interface HomePageProps {
   navigateToProduct: (id: number) => void;
@@ -20,157 +20,33 @@ export default function HomePage({
   toggleWishlist 
 }: HomePageProps) {
   // Filter out retired K-POP category
-  const [allProducts, setAllProducts] = useState<Product[]>(() => 
+  const [productsList, setProductsList] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
 
-  const normalizeCategory = (cat: string): string => {
-    if (!cat) return "";
-    const norm = cat.toLowerCase().trim();
-    if (norm === 'kstyle' || norm === 'k-style' || norm === 'k style') {
-      return 'k-style';
-    }
-    if (norm === 'merch' || norm === 'merchandise') {
-      return 'merch';
-    }
-    if (norm === 'album') {
-      return 'album';
-    }
-    return norm;
-  };
-
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
-      const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop');
-      setAllProducts(filtered);
+      setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
     });
     return unsubscribe;
   }, []);
 
-  const preOrderProducts = allProducts.filter(p => p.tag?.toLowerCase() === 'pre-order');
-  const albumProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'album');
-  const merchProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'merch');
-  const kStyleProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'k-style');
+  // Show only 4 to 8 featured products on HomePage
+  const displayProducts = productsList.slice(0, 8);
 
-  const renderProductSlider = (title: string, products: Product[]) => {
-    return (
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
-          <div className="flex items-center">
-            <h2 className="text-lg sm:text-xl font-display font-semibold tracking-wider text-black uppercase">{title}</h2>
-          </div>
-          <button
-            onClick={() => setCurrentPage('shop')}
-            className="text-xs font-display font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 uppercase tracking-wider cursor-pointer"
-          >
-            <span>Xem tất cả</span>
-            <span className="text-sm">→</span>
-          </button>
-        </div>
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1
+      }
+    }
+  };
 
-        {products.length === 0 ? (
-          <div className="text-center py-12 bg-white border border-dashed border-neutral-200 rounded-2xl">
-            <p className="text-sm text-neutral-500 font-sans">Chưa có sản phẩm nào thuộc mục này.</p>
-          </div>
-        ) : (
-          <div className="relative">
-            {/* Scroll Container */}
-            <div className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
-              {products.map((product) => {
-                const isSoldOut = isProductSoldOut(product);
-                return (
-                  <motion.div
-                    key={product.id}
-                    initial={{ opacity: 0, x: 20 }}
-                    whileInView={{ opacity: 1, x: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ type: "spring", stiffness: 100 }}
-                    className="snap-start shrink-0 w-[165px] sm:w-[185px] md:w-[220px] bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300 group"
-                  >
-                    {/* Image Section */}
-                    <div 
-                      className="relative aspect-square overflow-hidden bg-neutral-100 cursor-pointer border-b border-neutral-100" 
-                      onClick={() => navigateToProduct(product.id)}
-                    >
-                      <img 
-                        src={product.image} 
-                        alt={product.name} 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                      />
-                      {/* Category tag */}
-                      {product.tag && product.tag.trim() !== "" && (
-                        <div className="absolute top-2.5 left-2.5 z-10">
-                          <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
-                            {product.tag}
-                          </span>
-                        </div>
-                      )}
-                      {/* Heart button */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleWishlist(product.id);
-                        }}
-                        className={`absolute top-2.5 right-2.5 p-1.5 rounded-full transition-colors shadow-sm ${
-                          wishlist.includes(product.id)
-                            ? 'bg-red-50 text-red-500'
-                            : 'bg-white/80 hover:bg-white text-neutral-600 hover:text-red-500'
-                        }`}
-                      >
-                        <Heart className={`w-3.5 h-3.5 ${wishlist.includes(product.id) ? 'fill-red-500 text-red-500' : ''}`} />
-                      </button>
-                    </div>
-
-                    {/* Body Content */}
-                    <div className="p-3 sm:p-4 flex flex-col flex-1 space-y-3">
-                      <div className="space-y-0.5">
-                        <h3 
-                          onClick={() => navigateToProduct(product.id)} 
-                          className="text-xs sm:text-sm font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 h-8 sm:h-10 tracking-tight"
-                        >
-                          {product.name}
-                        </h3>
-                        {product.artist && (
-                          <p className="text-[10px] sm:text-[11.5px] text-blue-600 font-sans line-clamp-1 font-semibold flex items-center gap-1">
-                            <span>🎤</span> 
-                            <span className="truncate">{product.artist}</span>
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Bullet Spec Highlights */}
-                      <div className="p-2 sm:p-2.5 bg-neutral-50 rounded-lg text-[10px] sm:text-[11px] text-neutral-600 min-h-[38px] sm:min-h-[44px] flex flex-col justify-center space-y-0.5 leading-normal">
-                        <div className="flex items-center gap-1 truncate">
-                          <span>• Hạn:</span>
-                          <strong className="text-neutral-800 font-semibold truncate text-[9.5px] sm:text-[10.5px]">{product.orderDeadline || "Sẵn hàng"}</strong>
-                        </div>
-                        <div className="flex items-center gap-1 truncate">
-                          <span>• Phát hành:</span>
-                          <strong className="text-neutral-800 font-semibold truncate text-[9.5px] sm:text-[10.5px]">{product.releaseDate || "Đã ra mắt"}</strong>
-                        </div>
-                      </div>
-
-                      {/* Pricing */}
-                      <div className="pt-2.5 border-t border-neutral-100 flex items-baseline justify-between gap-1 mt-auto">
-                        <span className="text-[9px] font-mono text-neutral-400 uppercase">GIÁ:</span>
-                        <span className="text-xs sm:text-sm md:text-base font-mono font-bold text-black">
-                          {product.price.toLocaleString('vi-VN')} <span className="text-[9px] sm:text-xs font-sans font-normal text-neutral-500">đ</span>
-                        </span>
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </section>
-    );
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
   };
 
   return (
@@ -231,50 +107,161 @@ export default function HomePage({
         </div>
       </section>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        .scrollbar-none::-webkit-scrollbar, .no-scrollbar::-webkit-scrollbar {
-          display: none !important;
-        }
-        .scrollbar-none, .no-scrollbar {
-          -ms-overflow-style: none !important;
-          scrollbar-width: none !important;
-        }
-      `}} />
+      {/* Category Filter section & Products Grid listing */}
+      <section className="space-y-8">
+        <div className="flex items-center justify-between border-b border-neutral-200 pb-4">
+          <div className="flex items-center space-x-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse" />
+            <h2 className="text-xl font-display font-semibold tracking-wider text-black uppercase">Khám phá sản phẩm</h2>
+          </div>
+        </div>
 
-      {/* 1. KHU VỰC SẢN PHẨM PRE-ORDER */}
-      {renderProductSlider(
-        "Sản phẩm Pre-Order", 
-        preOrderProducts
-      )}
+        {displayProducts.length === 0 ? (
+          <div className="text-center py-16 bg-white border border-dashed border-neutral-200 rounded-2xl">
+            <p className="text-sm text-neutral-500">Chưa có sản phẩm nào thuộc danh mục này.</p>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            <motion.div 
+              variants={containerVariants}
+              initial="hidden"
+              whileInView="show"
+              viewport={{ once: true, margin: "-100px" }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+            >
+              {displayProducts.map((product) => (
+                <motion.div
+                  key={product.id}
+                  variants={itemVariants}
+                  className="group bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300"
+                >
+                  {/* Image Section */}
+                  <div className="relative aspect-square overflow-hidden bg-neutral-100 cursor-pointer border-b border-neutral-100" onClick={() => navigateToProduct(product.id)}>
+                    <img 
+                      src={product.image} 
+                      alt={product.name} 
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      referrerPolicy="no-referrer"
+                    />
+                    {/* Category tag */}
+                    <div className="absolute top-3 left-3 z-10">
+                      <span className={`px-2.5 py-1 text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
+                        {product.tag}
+                      </span>
+                    </div>
+                    {/* Heart button */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleWishlist(product.id);
+                      }}
+                      className={`absolute top-3 right-3 p-2 rounded-full transition-colors shadow-sm ${
+                        wishlist.includes(product.id)
+                          ? 'bg-red-50 text-red-500'
+                          : 'bg-white/80 hover:bg-white text-neutral-600 hover:text-red-500'
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${wishlist.includes(product.id) ? 'fill-red-500 text-red-500' : ''}`} />
+                    </button>
+                  </div>
 
-      {/* 2. KHU VỰC ALBUM */}
-      {renderProductSlider(
-        "Album", 
-        albumProducts
-      )}
+                  {/* Body Content */}
+                  <div className="p-5 flex flex-col flex-1 space-y-4">
+                    <div className="space-y-1">
+                      <h3 
+                        onClick={() => navigateToProduct(product.id)} 
+                        className="text-sm font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 h-10 tracking-tight"
+                      >
+                        {product.name}
+                      </h3>
+                      {product.artist && (
+                        <p className="text-[11.5px] text-blue-600 font-sans line-clamp-1 font-semibold flex items-center gap-1">
+                          <span>🎤</span> 
+                          <span>{product.artist}</span>
+                        </p>
+                      )}
+                    </div>
 
-      {/* 3. KHU VỰC MERCH */}
-      {renderProductSlider(
-        "Merch", 
-        merchProducts
-      )}
+                    {/* Bullet Spec Highlights */}
+                    <div className="p-3 bg-neutral-50 rounded-lg text-[11px] text-neutral-600 min-h-[48px] flex flex-col justify-center space-y-0.5 leading-normal">
+                      <div className="flex items-center gap-1">
+                        <span>• Hạn order:</span>
+                        <strong className="text-neutral-850 font-semibold">{product.orderDeadline || "Sẵn hàng"}</strong>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span>• Phát hành:</span>
+                        <strong className="text-neutral-850 font-semibold">{product.releaseDate || "Đã ra mắt"}</strong>
+                      </div>
+                    </div>
 
-      {/* 4. KHU VỰC K-STYLE */}
-      {renderProductSlider(
-        "K-style", 
-        kStyleProducts
-      )}
+                    {/* Pricing and CTAs */}
+                    <div className="pt-2 flex flex-col space-y-3 mt-auto">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
+                        <span className="text-lg font-mono font-bold text-black text-right">
+                          {product.price.toLocaleString('vi-VN')} <span className="text-xs font-sans">VND</span>
+                        </span>
+                      </div>
 
-      {/* View all products redirection button */}
-      <div className="flex justify-center pt-4">
-        <button
-          onClick={() => setCurrentPage('shop')}
-          className="px-8 py-3.5 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] font-display font-bold text-xs tracking-widest rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center space-x-2.5 cursor-pointer uppercase border border-[#E8F0FE] hover:border-[#D2E3FC]"
-        >
-          <span>XEM TẤT CẢ SẢN PHẨM</span>
-          <span className="text-base">→</span>
-        </button>
-      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <button 
+                          onClick={() => navigateToProduct(product.id)}
+                          className="py-2.5 px-3 border border-neutral-200 hover:border-black text-neutral-700 hover:text-black text-xs font-display font-medium rounded-lg text-center transition-colors shadow-sm"
+                        >
+                          CHI TIẾT
+                        </button>
+                        {(() => {
+                          const isSoldOut = 
+                            product.status?.toLowerCase() === 'sold_out' || 
+                            product.status?.toLowerCase() === 'sold out' || 
+                            product.status === 'Hết hàng' ||
+                            product.tag?.toLowerCase().trim() === 'sold_out' || 
+                            product.tag?.toLowerCase().trim() === 'sold out' || 
+                            product.tag?.toLowerCase().trim() === 'hết hàng' ||
+                            (product.stock !== undefined && product.stock <= 0);
+
+                          return (
+                            <button 
+                              onClick={() => {
+                                if (isSoldOut) {
+                                  alert("⚠️ Sản phẩm này đã hết hàng!");
+                                  return;
+                                }
+                                const defaultVer = resolveDefaultVersionForProduct(product);
+                                addToCart(product, 1, defaultVer);
+                              }}
+                              disabled={isSoldOut}
+                              className={`py-2.5 px-3 text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-colors shadow-sm ${
+                                isSoldOut
+                                  ? "bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed"
+                                  : "bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8]"
+                              }`}
+                            >
+                              <ShoppingBag className={`w-3.5 h-3.5 ${isSoldOut ? "text-neutral-400" : "text-[#1A73E8]"}`} />
+                              <span>{isSoldOut ? "HẾT HÀNG" : "MUA NGAY"}</span>
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+ 
+            {/* View all products redirection button */}
+            <div className="flex justify-center pt-4">
+              <button
+                onClick={() => setCurrentPage('shop')}
+                className="px-8 py-3.5 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] font-display font-bold text-xs tracking-widest rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center space-x-2.5 cursor-pointer uppercase border border-[#E8F0FE] hover:border-[#D2E3FC]"
+              >
+                <span>XEM TẤT CẢ SẢN PHẨM</span>
+                <span className="text-base">→</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
