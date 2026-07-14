@@ -405,6 +405,26 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
   }
 }
 
+export async function updateOrderStatusAndPaidAmount(orderId: string, status: string, paidAmount: number): Promise<OrderPayload[]> {
+  try {
+    const docRef = doc(db, 'orders', orderId);
+    await updateDoc(docRef, { status, paidAmount });
+    return await getOrders();
+  } catch (e) {
+    console.error("Lỗi cập nhật trạng thái và số tiền đã thanh toán trên Firestore:", e);
+    try {
+      const currentOrders = await getOrdersLocalFallback();
+      const updated = currentOrders.map(ord => 
+        ord.id === orderId ? { ...ord, status, paidAmount } : ord
+      );
+      saveOrdersToLocalStorage(updated);
+      syncAllProductSpecificOrders();
+      return updated;
+    } catch (err) {}
+    return [];
+  }
+}
+
 export async function updateOrderTrackingCode(orderId: string, trackingCode: string): Promise<OrderPayload[]> {
   try {
     const docRef = doc(db, 'orders', orderId);
