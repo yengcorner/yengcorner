@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -170,8 +170,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const isHalfDeposit = pMethod.toLowerCase().includes("50%") || pMethod.toLowerCase().includes("cọc");
       const displayPaymentMethod = isHalfDeposit ? "Cọc 50%" : "Thanh toán 100%";
       const subtotalVal = order.subtotal ?? 0;
-      const paidAmount = isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal;
-      const remainingAmount = subtotalVal - paidAmount;
+      const paidAmount = (order.paidAmount !== undefined && order.paidAmount !== null && !isNaN(Number(order.paidAmount)))
+        ? Number(order.paidAmount)
+        : (isHalfDeposit ? Math.round(subtotalVal * 0.5) : subtotalVal);
+      const remainingAmount = Math.max(0, subtotalVal - paidAmount);
 
       body = `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
@@ -1174,43 +1176,60 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   
   // Confirm order and send automatic confirmation email
   const handleConfirmOrder = async (orderId: string) => {
-  // 1. Update order status to "Đã xác nhận"
-  const updated = await updateOrderStatus(orderId, "Đã xác nhận"); // 👈 Thêm chữ await ở đây
-  setOrders(updated);
-  showToast(`✅ Đã duyệt đơn hàng #${orderId} và cập nhật trạng thái thành "Đã xác nhận"!`, "success");
-
-  // 2. Trigger automatic confirmation email
-  const order = updated.find(o => o.id === orderId);
-  if (!order) return;
-
-  try {
-    // Generate email body using 'deposit' template (the main confirmation email template)
-    const { subject, body } = getEmailContentForOrder(order, 'deposit');
-    
-    const response = await fetch('/api/gmail/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        to: order.contact?.email ?? "",
-        subject,
-        bodyHtml: body
-      })
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || `Gmail API returned status ${response.status}`);
+    // 1. Lấy trực tiếp số tiền đã thanh toán (đã chuyển) mới nhất từ ô Input trên giao diện Admin
+    const inputEl = document.getElementById(`paid-amount-${orderId}`) as HTMLInputElement;
+    let latestPaidAmount: number | undefined = undefined;
+    if (inputEl) {
+      const val = Number(inputEl.value);
+      if (!isNaN(val)) {
+        latestPaidAmount = val;
+      }
     }
 
-    showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact?.email ?? ""} thành công!`, "success");
+    let updated: OrderPayload[];
+    if (latestPaidAmount !== undefined) {
+      // Cập nhật cả trạng thái và số tiền đã chuyển đồng thời vào Database
+      updated = await updateOrderStatusAndPaidAmount(orderId, "Đã xác nhận", latestPaidAmount);
+    } else {
+      // Cập nhật trạng thái đơn hàng thông thường
+      updated = await updateOrderStatus(orderId, "Đã xác nhận");
+    }
 
-  } catch (err: any) { // 👈 Thêm block catch bọc đúng chỗ này
-    console.error(`Failed to send auto confirmation email for order #${orderId}:`, err);
-    showToast(`⚠️ Không thể gửi email tự động: ${err.message || err}`, "error");
-  }
-};
+    setOrders(updated);
+    showToast(`✅ Đã duyệt đơn hàng #${orderId} và cập nhật trạng thái thành "Đã xác nhận"!`, "success");
+
+    // 2. Kích hoạt gửi email xác nhận tự động với thông tin mới nhất vừa được cập nhật
+    const order = updated.find(o => o.id === orderId);
+    if (!order) return;
+
+    try {
+      // Generate email body using 'deposit' template (the main confirmation email template)
+      const { subject, body } = getEmailContentForOrder(order, 'deposit');
+      
+      const response = await fetch('/api/gmail/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: order.contact?.email ?? "",
+          subject,
+          bodyHtml: body
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || `Gmail API returned status ${response.status}`);
+      }
+
+      showToast(`✉️ Đã gửi email xác nhận tự động tới ${order.contact?.email ?? ""} thành công!`, "success");
+
+    } catch (err: any) {
+      console.error(`Failed to send auto confirmation email for order #${orderId}:`, err);
+      showToast(`⚠️ Không thể gửi email tự động: ${err.message || err}`, "error");
+    }
+  };
   // Send shipping notification email
   const handleSendShippingEmail = async (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
