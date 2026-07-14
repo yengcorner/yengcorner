@@ -105,6 +105,44 @@ const getInitialMockOrders = (): OrderPayload[] => {
 
 const STORAGE_KEY = 'yeng_corner_orders_v1';
 
+const ORDERS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
+
+export const isOrdersCacheExpired = (): boolean => {
+  try {
+    const storedTime = localStorage.getItem(STORAGE_KEY + '_timestamp');
+    if (!storedTime) return true;
+    return Date.now() - Number(storedTime) > ORDERS_CACHE_MAX_AGE;
+  } catch (e) {
+    return true;
+  }
+};
+
+export const saveOrdersToLocalStorage = (list: OrderPayload[]) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
+  } catch (e) {
+    console.error("Error setting orders to localStorage:", e);
+  }
+};
+
+// Auto background-revalidation on page focus or tab visibility change (SWR pattern)
+if (typeof window !== 'undefined') {
+  const triggerOrdersRevalidation = () => {
+    if (isOrdersCacheExpired()) {
+      console.log("[Orders Revalidation] Window focused/visible and orders cache is stale. Fetching fresh orders in background...");
+      getOrders().catch(err => console.warn("Focus orders revalidation failed:", err));
+    }
+  };
+
+  window.addEventListener('focus', triggerOrdersRevalidation);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      triggerOrdersRevalidation();
+    }
+  });
+}
+
 export function slugify(text: string): string {
   if (!text) return 'unknown';
   const from = "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ";
@@ -142,30 +180,19 @@ async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
   }
 }
 
-export async function getOrders(): Promise<OrderPayload[]> {
-  try {
-    const timestamp = Date.now();
-    const response = await fetch(`/api/orders?t=${timestamp}`, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
-    });
-    if (response.ok) {
-      const list = await response.json();
-      if (Array.isArray(list)) {
-        list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-        return list;
-      }
+export async function getOrders(forceRefresh: boolean = false): Promise<OrderPayload[]> {
+  if (!forceRefresh && !isOrdersCacheExpired()) {
+    console.log("[getOrders] Orders cache is fresh, returning local cache.");
+    const localList = await getOrdersLocalFallback();
+    if (localList.length > 0) {
+      localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return localList;
     }
-  } catch (err) {
-    console.warn("[getOrders] Failed to fetch from cache-busting server API, falling back to direct Firestore:", err);
   }
 
+  // Fetch directly from Firestore client-side first (ultra fast and authorized)
   try {
+    console.log("[getOrders] Fetching fresh orders directly from Firestore client-side...");
     const q = collection(db, 'orders');
     const querySnapshot = await getDocs(q);
     const list: OrderPayload[] = [];
@@ -183,14 +210,40 @@ export async function getOrders(): Promise<OrderPayload[]> {
     list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     
     // Đồng bộ vào localStorage cache để các tính năng offline/truy xuất nhanh hoạt động mượt mà
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    saveOrdersToLocalStorage(list);
+    console.log("[getOrders] Successfully fetched orders directly from Firestore:", list.length);
     return list;
-  } catch (e) {
-    console.warn("Lỗi đọc orders từ Firestore, sử dụng localStorage fallback:", e);
-    const localList = await getOrdersLocalFallback();
-    localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return localList;
+  } catch (err) {
+    console.warn("[getOrders] Direct Firestore client fetch failed, falling back to server API...", err);
   }
+
+  // Fallback to server API if direct client-side Firestore read fails
+  try {
+    const timestamp = Date.now();
+    const response = await fetch(`/api/orders?t=${timestamp}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list)) {
+        list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        saveOrdersToLocalStorage(list);
+        return list;
+      }
+    }
+  } catch (err) {
+    console.warn("[getOrders] Failed to fetch from fallback server API:", err);
+  }
+
+  // Final fallback to localStorage if everything fails
+  const localList = await getOrdersLocalFallback();
+  localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return localList;
 }
 
 export function listenToOrders(callback: (orders: OrderPayload[]) => void): () => void {
@@ -364,7 +417,7 @@ export async function updateOrderTrackingCode(orderId: string, trackingCode: str
       const updated = currentOrders.map(ord => 
         ord.id === orderId ? { ...ord, trackingCode } : ord
       );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
     } catch (err) {}
@@ -384,7 +437,7 @@ export async function updateOrderPaidAmount(orderId: string, paidAmount: number)
       const updated = currentOrders.map(ord => 
         ord.id === orderId ? { ...ord, paidAmount } : ord
       );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
     } catch (err) {}
@@ -419,7 +472,7 @@ export async function updateBulkOrdersTracking(updates: { orderId: string; track
         }
         return ord;
       });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
     } catch (err) {}
@@ -437,7 +490,7 @@ export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
     try {
       const currentOrders = await getOrdersLocalFallback();
       const updated = currentOrders.filter(ord => ord.id !== orderId);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
     } catch (err) {}
@@ -458,7 +511,7 @@ export async function resetOrdersToDefault(): Promise<OrderPayload[]> {
     console.error("Lỗi đặt lại đơn hàng mặc định trên Firestore:", e);
     try {
       const initial = getInitialMockOrders();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+      saveOrdersToLocalStorage(initial);
       syncAllProductSpecificOrders();
       return initial;
     } catch (err) {}
