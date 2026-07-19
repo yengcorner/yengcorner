@@ -21,7 +21,7 @@ export default function HomePage({
 }: HomePageProps) {
   // Filter out retired K-POP category
   const [allProducts, setAllProducts] = useState<Product[]>(() => 
-    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
+    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p))
   );
 
   const normalizeCategory = (cat: string): string => {
@@ -44,7 +44,7 @@ export default function HomePage({
     fetchProductsFromServer();
 
     const unsubscribe = subscribeProducts((list) => {
-      const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop');
+      const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p));
       setAllProducts(filtered);
     });
     return unsubscribe;
@@ -100,6 +100,7 @@ export default function HomePage({
                         alt={product.name} 
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         referrerPolicy="no-referrer"
+                        loading="lazy"
                       />
                       {/* Category tag */}
                       {product.tag && product.tag.trim() !== "" && (
