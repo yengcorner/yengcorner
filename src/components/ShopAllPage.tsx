@@ -116,6 +116,11 @@ export default function ShopAllPage({
     products = [...products].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // 4. Prioritize in-stock products and move sold-out products to the bottom of the list
+  const inStock = products.filter(p => !isProductSoldOut(p));
+  const soldOut = products.filter(p => isProductSoldOut(p));
+  products = [...inStock, ...soldOut];
+
   return (
     <div className="space-y-8">
       {/* Title */}
