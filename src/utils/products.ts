@@ -448,7 +448,7 @@ export function getProductStockForVersion(product: Product, version: string): nu
       return combinedName.trim().toLowerCase() === targetVer || v.option1.trim().toLowerCase() === targetVer;
     });
     if (matched) {
-      return matched.stock !== undefined ? matched.stock : 99;
+      return matched.stock !== undefined ? matched.stock : 0;
     }
     // If version is not matched but matrix exists
     return 0;
@@ -457,12 +457,12 @@ export function getProductStockForVersion(product: Product, version: string): nu
   if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
     const matched = product.variations.find(v => v.name.trim().toLowerCase() === targetVer);
     if (matched) {
-      return matched.stock !== undefined ? matched.stock : 99;
+      return matched.stock !== undefined ? matched.stock : 0;
     }
     return 0;
   }
   // Case 3: Base product
-  return product.stock !== undefined ? product.stock : 99;
+  return product.stock !== undefined ? product.stock : 0;
 }
 
 /**
@@ -479,13 +479,13 @@ export function isProductSoldOut(product: Product): boolean {
 
   // 1. Multi-tier variantMatrix
   if (product.attribute1Name && product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
-    const totalStock = product.variantMatrix.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 99), 0);
+    const totalStock = product.variantMatrix.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 0), 0);
     return totalStock === 0;
   }
 
   // 2. Variations
   if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
-    const totalStock = product.variations.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 99), 0);
+    const totalStock = product.variations.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 0), 0);
     return totalStock === 0;
   }
 
@@ -566,7 +566,7 @@ export async function deductProductStock(productId: number, version: string, qua
       });
       
       if (matchedIdx > -1) {
-        let currentStock = updatedMatrix[matchedIdx].stock !== undefined ? updatedMatrix[matchedIdx].stock! : 99;
+        let currentStock = updatedMatrix[matchedIdx].stock !== undefined ? updatedMatrix[matchedIdx].stock! : 0;
         let nextStock = Math.max(0, currentStock - quantityToDeduct);
         updatedMatrix[matchedIdx] = {
           ...updatedMatrix[matchedIdx],
@@ -578,7 +578,7 @@ export async function deductProductStock(productId: number, version: string, qua
         console.warn(`[Deduct Stock] Không tìm thấy phân loại khớp chính xác với "${version}" trong variantMatrix.`);
       }
 
-      totalStockRemaining = updatedMatrix.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
+      totalStockRemaining = updatedMatrix.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 0), 0);
     } 
     // Case 2: Có danh sách phân loại đơn giản (variations)
     else if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
@@ -588,7 +588,7 @@ export async function deductProductStock(productId: number, version: string, qua
       );
       
       if (matchedIdx > -1) {
-        let currentStock = updatedVariations[matchedIdx].stock !== undefined ? updatedVariations[matchedIdx].stock! : 99;
+        let currentStock = updatedVariations[matchedIdx].stock !== undefined ? updatedVariations[matchedIdx].stock! : 0;
         let nextStock = Math.max(0, currentStock - quantityToDeduct);
         updatedVariations[matchedIdx] = {
           ...updatedVariations[matchedIdx],
@@ -600,11 +600,11 @@ export async function deductProductStock(productId: number, version: string, qua
         console.warn(`[Deduct Stock] Không tìm thấy phân loại khớp chính xác với "${version}" trong variations.`);
       }
 
-      totalStockRemaining = updatedVariations.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 99), 0);
+      totalStockRemaining = updatedVariations.reduce((sum, item) => sum + (item.stock !== undefined ? item.stock : 0), 0);
     } 
     // Case 3: Sản phẩm cơ bản không phân loại
     else {
-      let currentStock = product.stock !== undefined ? product.stock : 99;
+      let currentStock = product.stock !== undefined ? product.stock : 0;
       let nextStock = Math.max(0, currentStock - quantityToDeduct);
       updatePayload.stock = nextStock;
       totalStockRemaining = nextStock;
