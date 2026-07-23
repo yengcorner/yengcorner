@@ -1004,15 +1004,27 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       
       setVariantMatrix(prev => {
         const prevArray = Array.isArray(prev) ? prev : [];
+        const origMatrix = editingProduct?.variantMatrix || [];
         const newMatrix: any[] = [];
         keys1.forEach(k1 => {
           keys2.forEach(k2 => {
             const existing = prevArray.find(v => v && v.option1 === k1 && v.option2 === k2);
+            const origInProduct = origMatrix.find(v => v && v.option1 === k1 && v.option2 === k2);
+
+            const stockVal = existing && existing.stock !== undefined 
+              ? existing.stock 
+              : (origInProduct && origInProduct.stock !== undefined 
+                ? origInProduct.stock 
+                : (editingProduct && editingProduct.stock !== undefined 
+                  ? editingProduct.stock 
+                  : (productForm.stock !== undefined ? productForm.stock : 0)));
+
             newMatrix.push({
               option1: k1,
               option2: k2,
-              price: existing ? (Number(existing.price) || basePrice) : basePrice,
-              pob: existing ? (existing.pob || '') : ''
+              price: existing ? (Number(existing.price) || basePrice) : (origInProduct ? (Number(origInProduct.price) || basePrice) : basePrice),
+              pob: existing ? (existing.pob || '') : (origInProduct?.pob || ''),
+              stock: stockVal
             });
           });
         });
@@ -1022,12 +1034,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const keys = (productForm.versionsText || '').split(',').map(v => v.trim()).filter(v => v.length > 0);
       setFormVariations(prev => {
         const prevArray = Array.isArray(prev) ? prev : [];
+        const origVars = editingProduct?.variations || [];
         return keys.map(key => {
           const existing = prevArray.find(v => v && v.name === key);
+          const origInProduct = origVars.find(v => v && v.name === key);
+
+          const stockVal = existing && existing.stock !== undefined 
+            ? existing.stock 
+            : (origInProduct && origInProduct.stock !== undefined 
+              ? origInProduct.stock 
+              : (editingProduct && editingProduct.stock !== undefined 
+                ? editingProduct.stock 
+                : (productForm.stock !== undefined ? productForm.stock : 0)));
+
           return {
             name: key,
-            price: existing ? (Number(existing.price) || basePrice) : basePrice,
-            description: existing ? (existing.description || '') : ''
+            price: existing ? (Number(existing.price) || basePrice) : (origInProduct ? (Number(origInProduct.price) || basePrice) : basePrice),
+            description: existing ? (existing.description || '') : (origInProduct?.description || ''),
+            stock: stockVal
           };
         });
       });
@@ -1037,7 +1061,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     showSecondAttribute,
     productForm.versionsText,
     productForm.attribute2OptionsText,
-    productForm.price
+    productForm.price,
+    productForm.stock,
+    editingProduct
   ]);
 
   // Google Sheets integration state
@@ -1692,7 +1718,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     if (isMulti) {
       setFormVariations([]);
-      setVariantMatrix(Array.isArray(prod.variantMatrix) ? [...prod.variantMatrix] : []);
+      const boundMatrix = Array.isArray(prod.variantMatrix) 
+        ? prod.variantMatrix.map(v => ({
+            ...v,
+            stock: v && v.stock !== undefined ? v.stock : (prod.stock !== undefined ? prod.stock : 0)
+          }))
+        : [];
+      setVariantMatrix(boundMatrix);
       
       setProductForm({
         id: prod.id || 0,
@@ -1718,7 +1750,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
-      setFormVariations(Array.isArray(prod.variations) ? [...prod.variations] : []);
+      const boundVariations = Array.isArray(prod.variations) 
+        ? prod.variations.map(v => ({
+            ...v,
+            stock: v && v.stock !== undefined ? v.stock : (prod.stock !== undefined ? prod.stock : 0)
+          }))
+        : [];
+      setFormVariations(boundVariations);
       setVariantMatrix([]);
       
       const versionsStr = Array.isArray(prod.variations)
@@ -4649,7 +4687,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 0}
+                                value={v.stock !== undefined ? v.stock : (productForm.stock !== undefined ? productForm.stock : 0)}
                                 onChange={(e) => {
                                   const updated = [...formVariations];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
@@ -4720,7 +4758,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 0}
+                                value={v.stock !== undefined ? v.stock : (productForm.stock !== undefined ? productForm.stock : 0)}
                                 onChange={(e) => {
                                   const updated = [...variantMatrix];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
