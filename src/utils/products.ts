@@ -433,19 +433,33 @@ export function getProductStockForVersion(product: Product, version: string): nu
   
   // Trạng thái chung là Hết hàng thì coi như bằng 0
   if (product.status === "Hết hàng") return 0;
+  if (product.tag?.toLowerCase().trim() === 'sold_out' || 
+      product.tag?.toLowerCase().trim() === 'sold out' || 
+      product.tag?.toLowerCase().trim() === 'hết hàng') {
+    return 0;
+  }
+
+  const targetVer = (version || "").trim().toLowerCase();
 
   // Case 1: Multi-tier variant (has variantMatrix)
   if (product.attribute1Name && product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
     const matched = product.variantMatrix.find(v => {
       const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
-      return combinedName === version;
+      return combinedName.trim().toLowerCase() === targetVer || v.option1.trim().toLowerCase() === targetVer;
     });
-    return matched ? (matched.stock !== undefined ? matched.stock : 99) : 0;
+    if (matched) {
+      return matched.stock !== undefined ? matched.stock : 99;
+    }
+    // If version is not matched but matrix exists
+    return 0;
   }
   // Case 2: Simple variations list (variations)
   if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
-    const matched = product.variations.find(v => v.name === version);
-    return matched ? (matched.stock !== undefined ? matched.stock : 99) : 0;
+    const matched = product.variations.find(v => v.name.trim().toLowerCase() === targetVer);
+    if (matched) {
+      return matched.stock !== undefined ? matched.stock : 99;
+    }
+    return 0;
   }
   // Case 3: Base product
   return product.stock !== undefined ? product.stock : 99;
