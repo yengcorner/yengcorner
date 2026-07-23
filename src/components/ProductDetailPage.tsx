@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn } from 'lucide-react';
 import { Product } from '../types';
 import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
@@ -29,6 +29,28 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   const hasMultiTier = !!(product?.attribute1Name && Array.isArray(product?.attribute1Options) && product.attribute1Options.length > 0);
 
   const [activeImage, setActiveImage] = useState(product?.image || '');
+
+  // Lightbox Modal state for full resolution zoom
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const allImages = [product?.image, ...(Array.isArray(product?.images) ? product.images : [])].filter(Boolean) as string[];
+
+  // Keyboard navigation for Lightbox (Esc, Left arrow, Right arrow)
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxOpen(false);
+      if (e.key === 'ArrowLeft' && allImages.length > 1) {
+        setLightboxIndex(prev => (prev - 1 + allImages.length) % allImages.length);
+      }
+      if (e.key === 'ArrowRight' && allImages.length > 1) {
+        setLightboxIndex(prev => (prev + 1) % allImages.length);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, allImages.length]);
 
   // Helper functions for finding default in-stock variants
   const findFirstAvailableOpt1 = (prod: Product) => {
@@ -221,19 +243,30 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
       {/* Main Block split (1/2 - 1/2 Layout) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
-        {/* Left: Beautiful media gallery block */}
+        {/* Left: Beautiful media gallery block with Lightbox Zoom capability */}
         <div className="space-y-4">
-          <div className="border border-neutral-200 bg-white rounded-2xl overflow-hidden shadow-sm aspect-square p-3">
+          <div 
+            onClick={() => {
+              const currentIdx = allImages.findIndex(img => img === activeImage);
+              setLightboxIndex(currentIdx >= 0 ? currentIdx : 0);
+              setLightboxOpen(true);
+            }}
+            className="border border-neutral-200 bg-white rounded-2xl overflow-hidden shadow-sm aspect-square p-3 cursor-zoom-in relative group"
+            title="Bấm để xem ảnh kích thước đầy đủ (Full resolution/Zoom)"
+          >
             <img 
               src={activeImage || product.image} 
               alt={product.name} 
-              className="w-full h-full object-cover rounded-xl transition-all duration-350"
+              className="w-full h-full object-cover rounded-xl transition-all duration-300 group-hover:scale-[1.02]"
               referrerPolicy="no-referrer"
             />
+            <div className="absolute bottom-5 right-5 bg-black/65 text-white px-3 py-1.5 rounded-xl backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center space-x-1.5 text-xs font-mono border border-white/20 shadow-lg">
+              <ZoomIn className="w-4 h-4 text-white" />
+              <span>Phóng to ảnh</span>
+            </div>
           </div>
 
           {(() => {
-            const allImages = [product.image, ...(Array.isArray(product.images) ? product.images : [])].filter(Boolean);
             if (allImages.length <= 1) return null;
             return (
               <div className="grid grid-cols-4 gap-3">
@@ -244,9 +277,14 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
                       key={i}
                       type="button"
                       onClick={() => setActiveImage(img)}
-                      className={`border rounded-lg overflow-hidden aspect-square p-1 bg-white hover:border-blue-500 transition-colors ${
+                      onDoubleClick={() => {
+                        setLightboxIndex(i);
+                        setLightboxOpen(true);
+                      }}
+                      className={`border rounded-lg overflow-hidden aspect-square p-1 bg-white hover:border-blue-500 transition-colors cursor-zoom-in relative group ${
                         isActive ? 'border-blue-500 ring-2 ring-blue-400 scale-[1.02]' : 'border-neutral-200 opacity-80 hover:opacity-100'
                       }`}
+                      title="Bấm để chọn, đúp đúp hoặc bấm ảnh chính để phóng to"
                     >
                       <img src={img} className="w-full h-full object-cover rounded" alt={`Thumbnail ${i + 1}`} referrerPolicy="no-referrer" />
                     </button>
@@ -566,6 +604,80 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
           {product.detailedDesc || "Không có thông tin mô tả phụ thêm cho sản phẩm này. Hãy liên hệ với trực tiếp với shop để được giải đáp thắc mắc của bạn."}
         </p>
       </div>
+
+      {/* Full Resolution Image Lightbox Modal */}
+      {lightboxOpen && (
+        <div 
+          className="fixed inset-0 z-[9999] bg-black/92 backdrop-blur-md flex items-center justify-center p-4 select-none animate-fade-in"
+          onClick={() => setLightboxOpen(false)}
+        >
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightboxOpen(false);
+            }}
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-2.5 rounded-full border border-white/20 transition-all z-20 shadow-lg"
+            title="Đóng (Esc)"
+          >
+            <X className="w-6 h-6" />
+          </button>
+
+          {/* Prev button */}
+          {allImages.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(prev => (prev - 1 + allImages.length) % allImages.length);
+              }}
+              className="absolute left-3 sm:left-6 text-white/80 hover:text-white bg-black/60 hover:bg-black/90 p-3 rounded-full border border-white/20 transition-all z-20 shadow-xl hover:scale-110 active:scale-95"
+              title="Ảnh trước (Mũi tên trái)"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Main Fullscreen Image Container */}
+          <div 
+            className="relative max-w-5xl max-h-[90vh] flex flex-col items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={allImages[lightboxIndex] || product.image}
+              alt={`${product.name} - ${lightboxIndex + 1}`}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl transition-all duration-200"
+              referrerPolicy="no-referrer"
+            />
+            
+            {/* Image Counter & Caption */}
+            <div className="mt-3 text-center space-y-1">
+              <p className="text-white font-medium text-sm drop-shadow">{product.name}</p>
+              {allImages.length > 1 && (
+                <p className="text-white/60 font-mono text-xs">
+                  {lightboxIndex + 1} / {allImages.length} (Dùng phím mũi tên Trái/Phải để chuyển)
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Next button */}
+          {allImages.length > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxIndex(prev => (prev + 1) % allImages.length);
+              }}
+              className="absolute right-3 sm:right-6 text-white/80 hover:text-white bg-black/60 hover:bg-black/90 p-3 rounded-full border border-white/20 transition-all z-20 shadow-xl hover:scale-110 active:scale-95"
+              title="Ảnh tiếp theo (Mũi tên phải)"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
