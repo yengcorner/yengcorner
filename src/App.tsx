@@ -13,7 +13,7 @@ import WishlistPage from './components/WishlistPage';
 import TrackOrderPage from './components/TrackOrderPage';
 import { CartItem, Product, Coupon } from './types';
 import { CheckCircle2 } from 'lucide-react';
-import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut } from './utils/products';
+import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut, subscribeProducts, fetchProductsFromServer } from './utils/products';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
@@ -62,6 +62,31 @@ export default function App() {
       console.warn("Storage exception logged:", e);
     }
   }, [cart]);
+
+  // Real-time synchronization of cart items with latest Firestore product stock and status
+  useEffect(() => {
+    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products:", err));
+
+    const unsubscribe = subscribeProducts((latestProducts) => {
+      if (!latestProducts || latestProducts.length === 0) return;
+      setCart((prevCart) => {
+        let hasChanges = false;
+        const updatedCart = prevCart.map((item) => {
+          const freshP = latestProducts.find((p) => Number(p.id) === Number(item.product.id));
+          if (freshP) {
+            if (JSON.stringify(freshP) !== JSON.stringify(item.product)) {
+              hasChanges = true;
+              return { ...item, product: freshP };
+            }
+          }
+          return item;
+        });
+        return hasChanges ? updatedCart : prevCart;
+      });
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Keep state saved for wishlist
   useEffect(() => {
