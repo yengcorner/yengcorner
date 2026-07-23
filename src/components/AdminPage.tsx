@@ -8,7 +8,7 @@ import {
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
 import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
-import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
+import { db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 export const dynamic = 'force-dynamic';
 
@@ -47,31 +47,40 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const [productFilterText, setProductFilterText] = useState<string>('');
   const [bulkTemplateType, setBulkTemplateType] = useState<string>('deposit');
 
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setGmailUser(user);
-        setGmailToken(token);
-        // Auto-fetch messages
-        fetchGmailMessages(token);
-        // Synchronize token with backend server
-        try {
-          fetch('/api/gmail/store-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken: token, email: user?.email })
-          }).catch(err => console.error("Failed to sync Gmail token with backend:", err));
-        } catch (syncErr) {
-          console.error("Failed to sync Gmail token with backend synchronously:", syncErr);
+  const checkGmailConnection = async () => {
+    try {
+      const res = await fetch('/api/gmail/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.connected && data.accessToken) {
+          setGmailToken(data.accessToken);
+          setGmailUser({
+            email: data.email || "taphoayeng12@gmail.com",
+            displayName: "Yeng Corner Admin",
+            photoURL: null,
+            uid: "gmail_connected"
+          });
+          fetchGmailMessages(data.accessToken);
+        } else {
+          setGmailToken(null);
+          setGmailUser(null);
         }
-      },
-      () => {
-        setGmailUser(null);
-        setGmailToken(null);
-        setGmailMessages([]);
       }
-    );
-    return () => unsubscribe();
+    } catch (e) {
+      console.error("Failed to fetch Gmail status:", e);
+    }
+  };
+
+  useEffect(() => {
+    checkGmailConnection();
+
+    const handleOAuthMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        checkGmailConnection();
+      }
+    };
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
   }, []);
 
   const fetchGmailMessages = async (token: string) => {
@@ -128,33 +137,42 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   const handleAdminGmailLogin = async () => {
     try {
-      await googleSignIn();
+      const redirectUri = `${window.location.origin}/api/gmail/oauth-callback`;
+      const res = await fetch(`/api/gmail/auth-url?redirectUri=${encodeURIComponent(redirectUri)}`);
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData?.error || "Không thể tạo URL xác thực Google");
+      }
+      const { url } = await res.json();
+      
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const popup = window.open(
+        url,
+        "gmail_oauth_popup",
+        `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes`
+      );
+
+      if (!popup) {
+        alert("⚠️ Trình duyệt đã chặn cửa sổ bật lên (popup). Vui lòng cấp quyền mở popup cho trang web này và bấm thử lại.");
+      }
     } catch (err: any) {
       console.error(err);
-      const isIframe = window.self !== window.top;
-      if (isIframe || err?.code === 'auth/cancelled-popup-request' || err?.message?.includes('cancelled-popup-request')) {
-        alert(
-          "⚠️ ĐĂNG NHẬP THẤT BẠI DO HẠN CHẾ IFRAME (BẢO MẬT TRÌNH DUYỆT)\n\n" +
-          "Trình duyệt đã chặn hoặc tự động hủy yêu cầu của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
-          "HƯỚNG DẪN KHẮC PHỤC:\n" +
-          "1. Hãy nhấn vào nút \"Mở trong tab mới\" (Open in a new tab) ở góc trên cùng bên phải màn hình xem thử để chạy ứng dụng độc lập.\n" +
-          "2. Ở tab mới đó, bạn bấm lại nút \"Kết nối Gmail\" để thực hiện kết nối.\n" +
-          "3. Đăng nhập sẽ thành công mượt mà!"
-        );
-      } else {
-        alert(`Đăng nhập Google thất bại: ${err?.message || err}`);
-      }
+      alert(`Kết nối thất bại: ${err?.message || err}`);
     }
   };
 
   const handleAdminGmailLogout = async () => {
     try {
-      await googleLogout();
       setGmailUser(null);
       setGmailToken(null);
       setGmailMessages([]);
       // Clear on server
       await fetch('/api/gmail/clear-token', { method: 'POST' });
+      showToast("Đã ngắt kết nối Gmail thành công!", "success");
     } catch (err) {
       console.error(err);
     }
@@ -967,7 +985,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     attribute1OptionsText: '',
     attribute2Name: '',
     attribute2OptionsText: '',
-    stock: 99,
+    stock: 0,
     shippingFeeIncluded: ''
   });
   const [customCategories, setCustomCategories] = useState<string[]>(() => {
@@ -1012,7 +1030,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
               option1: k1,
               option2: k2,
               price: existing ? (Number(existing.price) || basePrice) : basePrice,
-              pob: existing ? (existing.pob || '') : ''
+              pob: existing ? (existing.pob || '') : '',
+              stock: existing && existing.stock !== undefined ? existing.stock : (productForm.stock !== undefined ? productForm.stock : 0)
             });
           });
         });
@@ -1027,7 +1046,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           return {
             name: key,
             price: existing ? (Number(existing.price) || basePrice) : basePrice,
-            description: existing ? (existing.description || '') : ''
+            description: existing ? (existing.description || '') : '',
+            stock: existing && existing.stock !== undefined ? existing.stock : (productForm.stock !== undefined ? productForm.stock : 0)
           };
         });
       });
@@ -1673,7 +1693,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       attribute1OptionsText: '',
       attribute2Name: '',
       attribute2OptionsText: '',
-      stock: 99
+      stock: 0
     });
     setNotifySubscribers(false);
     setIsProductModalOpen(true);
@@ -1714,7 +1734,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         attribute2Name: prod.attribute2Name ?? '',
         attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
-        stock: prod.stock ?? 99,
+        stock: prod.stock ?? 0,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
@@ -1745,7 +1765,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: '',
         attribute2Name: '',
         attribute2OptionsText: '',
-        stock: prod.stock ?? 99,
+        stock: prod.stock ?? 0,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     }
@@ -4638,7 +4658,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 99}
+                                value={v.stock !== undefined ? v.stock : 0}
                                 onChange={(e) => {
                                   const updated = [...formVariations];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
@@ -4709,7 +4729,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 99}
+                                value={v.stock !== undefined ? v.stock : 0}
                                 onChange={(e) => {
                                   const updated = [...variantMatrix];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
