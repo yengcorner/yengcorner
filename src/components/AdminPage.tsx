@@ -967,7 +967,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     attribute1OptionsText: '',
     attribute2Name: '',
     attribute2OptionsText: '',
-    stock: 99,
+    stock: 0,
     shippingFeeIncluded: ''
   });
   const [customCategories, setCustomCategories] = useState<string[]>(() => {
@@ -1673,7 +1673,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       attribute1OptionsText: '',
       attribute2Name: '',
       attribute2OptionsText: '',
-      stock: 99
+      stock: 0
     });
     setNotifySubscribers(false);
     setIsProductModalOpen(true);
@@ -1714,7 +1714,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         attribute2Name: prod.attribute2Name ?? '',
         attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
-        stock: prod.stock ?? 99,
+        stock: prod.stock ?? 0,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
@@ -1745,7 +1745,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: '',
         attribute2Name: '',
         attribute2OptionsText: '',
-        stock: prod.stock ?? 99,
+        stock: prod.stock ?? 0,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     }
@@ -1781,6 +1781,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       return validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
     };
     const targetId = editingProduct ? editingProduct.id : getNextId();
+    const existingProduct = (products || []).find(p => Number(p?.id) === Number(targetId)) || editingProduct || null;
+    const baseObject = existingProduct ? { ...existingProduct } : {};
 
     if (showSecondAttribute) {
       const opts1 = (productForm.versionsText || '')
@@ -1795,17 +1797,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       generatedVersions = (variantMatrix || []).map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
 
       productPayload = {
+        ...baseObject,
         id: targetId,
         name: productForm.name,
         price: Number(productForm.price),
         category: productForm.category,
-        image: productForm.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
+        image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
         tag: productForm.tag,
-        info: productForm.info || "Sản phẩm phân phối chính hãng.",
+        info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
-        versions: generatedVersions.length > 0 ? generatedVersions : undefined,
-        weight: productForm.weight || "0.45 kg",
+        versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
+        weight: productForm.weight || baseObject.weight || "0.45 kg",
         orderDeadline: productForm.orderDeadline,
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
@@ -1815,7 +1818,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute2Name: productForm.attribute2Name,
         attribute2Options: opts2,
         variantMatrix: variantMatrix,
-        stock: productForm.stock,
+        variations: undefined,
+        stock: productForm.stock !== undefined ? productForm.stock : (baseObject.stock !== undefined ? baseObject.stock : 0),
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
     } else {
@@ -1830,26 +1834,33 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
          : parsedVersions;
 
       productPayload = {
+        ...baseObject,
         id: targetId,
         name: productForm.name,
         price: Number(productForm.price),
         category: productForm.category,
-        image: productForm.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
+        image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
         tag: productForm.tag,
-        info: productForm.info || "Sản phẩm phân phối chính hãng.",
+        info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
-        versions: generatedVersions.length > 0 ? generatedVersions : undefined,
-        weight: productForm.weight || "0.45 kg",
+        versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
+        weight: productForm.weight || baseObject.weight || "0.45 kg",
         orderDeadline: productForm.orderDeadline,
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
         artist: productForm.artist,
         variationName: productForm.variationName,
-        variations: formVariations.length > 0 ? formVariations : undefined,
-        stock: productForm.stock,
+        variations: formVariations.length > 0 ? formVariations : (baseObject.variations || undefined),
+        stock: productForm.stock !== undefined ? productForm.stock : (baseObject.stock !== undefined ? baseObject.stock : 0),
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
+
+      if (baseObject.attribute2Name && !showSecondAttribute) {
+        delete productPayload.attribute2Name;
+        delete productPayload.attribute2Options;
+        delete productPayload.variantMatrix;
+      }
     }
 
     // Save locally and track change
@@ -4638,7 +4649,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 99}
+                                value={v.stock !== undefined ? v.stock : 0}
                                 onChange={(e) => {
                                   const updated = [...formVariations];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
@@ -4709,7 +4720,7 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : 99}
+                                value={v.stock !== undefined ? v.stock : 0}
                                 onChange={(e) => {
                                   const updated = [...variantMatrix];
                                   updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
