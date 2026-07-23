@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ShoppingCart, Trash2, ArrowRight, ArrowLeft, Ticket, ShieldCheck, Tag, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShoppingCart, Trash2, ArrowRight, ArrowLeft, Ticket, ShieldCheck, Tag, X, AlertTriangle } from 'lucide-react';
 import { CartItem, Coupon } from '../types';
-import { getProductStockForVersion } from '../utils/products';
+import { getProductStockForVersion, getProducts, fetchProductsFromServer, isProductSoldOut } from '../utils/products';
 
 interface CartPageProps {
   cart: CartItem[];
@@ -24,6 +24,12 @@ export default function CartPage({
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(appliedCoupon ? `Đang áp dụng mã giảm giá "${appliedCoupon.code}"` : null);
 
+  useEffect(() => {
+    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products in CartPage:", err));
+  }, []);
+
+  const freshProducts = getProducts();
+
   const getPrice = (item: CartItem) => {
     if (item.product.variantMatrix && item.product.variantMatrix.length > 0) {
       const matched = item.product.variantMatrix.find(v => {
@@ -40,6 +46,36 @@ export default function CartPage({
   };
 
   const subtotal = cart.reduce((acc, item) => acc + (getPrice(item) * item.quantity), 0);
+
+  // Stock check helpers for overall cart
+  const hasSoldOutItems = cart.some((item) => {
+    const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+    const stock = getProductStockForVersion(freshP, item.version);
+    return stock <= 0 || isProductSoldOut(freshP);
+  });
+
+  const hasOverStockItems = cart.some((item) => {
+    const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+    const stock = getProductStockForVersion(freshP, item.version);
+    return stock > 0 && item.quantity > stock;
+  });
+
+  const handleProceedToCheckout = () => {
+    const freshList = getProducts();
+    for (const item of cart) {
+      const freshP = freshList.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+      const stock = getProductStockForVersion(freshP, item.version);
+      if (stock <= 0 || isProductSoldOut(freshP)) {
+        alert("Trong giỏ hàng của bạn có sản phẩm đã hết hàng, vui lòng xóa khỏi giỏ để tiếp tục");
+        return;
+      }
+      if (item.quantity > stock) {
+        alert(`Sản phẩm "${item.product.name}" (${item.version || 'Mặc định'}) chỉ còn ${stock} sản phẩm trong kho. Vui lòng cập nhật số lượng!`);
+        return;
+      }
+    }
+    setCurrentPage('checkout');
+  };
 
   const handleApplyCoupon = () => {
     setCouponError(null);
@@ -152,107 +188,137 @@ export default function CartPage({
 
       {/* Cart List */}
       <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm divide-y divide-neutral-200">
-        {cart.map((item) => (
-          <div key={`${item.product.id}-${item.version}`} className="p-4 sm:p-5 flex flex-col sm:flex-row items-center sm:items-stretch gap-4 sm:gap-6">
-            {/* Image thumbnail item */}
-            <div className="w-20 h-20 bg-neutral-100 rounded-lg overflow-hidden border border-neutral-200 shrink-0">
-              <img 
-                src={item.product.image} 
-                alt={item.product.name} 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-              />
-            </div>
+        {cart.map((item) => {
+          const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+          const stock = getProductStockForVersion(freshP, item.version);
+          const isSoldOut = stock <= 0 || isProductSoldOut(freshP);
+          const isOverStock = !isSoldOut && item.quantity > stock;
 
-            {/* Info details context */}
-            <div className="flex-1 text-center sm:text-left space-y-1">
-              <h4 className="text-sm font-semibold text-neutral-900 leading-snug line-clamp-2">
-                {item.product.name}
-              </h4>
-              <div className="flex flex-wrap justify-center sm:justify-start items-center gap-2">
-                {item.version && (
-                  <span className="text-[10px] font-mono text-neutral-500 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded">
-                    Phân loại: {item.version}
-                  </span>
-                )}
-                {item.product.artist && (
-                  <span className="text-[10px] font-medium font-sans text-blue-600 bg-blue-50 px-2 py-0.5 border border-blue-100 rounded">
-                    🎤 {item.product.artist}
-                  </span>
+          return (
+            <div key={`${item.product.id}-${item.version}`} className={`p-4 sm:p-5 flex flex-col sm:flex-row items-center sm:items-stretch gap-4 sm:gap-6 ${isSoldOut ? 'bg-red-50/30' : ''}`}>
+              {/* Image thumbnail item */}
+              <div className="w-20 h-20 bg-neutral-100 rounded-lg overflow-hidden border border-neutral-200 shrink-0 relative">
+                <img 
+                  src={item.product.image} 
+                  alt={item.product.name} 
+                  className={`w-full h-full object-cover ${isSoldOut ? 'grayscale opacity-60' : ''}`}
+                  referrerPolicy="no-referrer"
+                />
+                {isSoldOut && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-white uppercase bg-red-600 px-1 py-0.5 rounded">HẾT HÀNG</span>
+                  </div>
                 )}
               </div>
-              <div className="text-sm font-mono font-bold text-neutral-800 pt-1">
-                {getPrice(item).toLocaleString('vi-VN')} đ <span className="text-xs text-neutral-400 font-sans font-normal">/ sản phẩm</span>
-              </div>
-              
-              {/* Synced Bullet Spec Highlights */}
-              <div className="text-[11px] text-neutral-500 pt-1.5 space-y-0.5">
-                <div className="flex items-center gap-1 justify-center sm:justify-start">
-                  <span>• Hạn order:</span>
-                  <strong className="text-neutral-800 font-semibold">{item.product.orderDeadline || "Sẵn hàng"}</strong>
-                </div>
-                <div className="flex items-center gap-1 justify-center sm:justify-start">
-                  <span>• Phát hành:</span>
-                  <strong className="text-neutral-800 font-semibold">{item.product.releaseDate || "Đã ra mắt"}</strong>
-                </div>
-                <div className="flex items-center gap-1 justify-center sm:justify-start">
-                  <span>• Tồn kho:</span>
-                  <strong className="text-[#1A73E8] font-semibold">{getProductStockForVersion(item.product, item.version)} sản phẩm</strong>
-                </div>
-              </div>
-            </div>
 
-            {/* Actions: Controls count & remove */}
-            <div className="flex flex-col items-center justify-between gap-3 sm:items-end sm:justify-between shrink-0">
-              {/* Optional dynamic update count state */}
-              <div className="flex items-center border border-neutral-300 rounded-lg bg-neutral-50 text-xs">
-                <button
-                  onClick={() => updateCartQuantity && updateCartQuantity(item.product.id, item.version, Math.max(1, item.quantity - 1))}
-                  disabled={!updateCartQuantity}
-                  className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-50"
-                  aria-label="Decrease quantity"
-                >
-                  -
-                </button>
-                <span className="w-8 text-center font-mono font-bold">{item.quantity}</span>
+              {/* Info details context */}
+              <div className="flex-1 text-center sm:text-left space-y-1">
+                <h4 className="text-sm font-semibold text-neutral-900 leading-snug line-clamp-2">
+                  {item.product.name}
+                </h4>
+                <div className="flex flex-wrap justify-center sm:justify-start items-center gap-2">
+                  {item.version && (
+                    <span className="text-[10px] font-mono text-neutral-500 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded">
+                      Phân loại: {item.version}
+                    </span>
+                  )}
+                  {item.product.artist && (
+                    <span className="text-[10px] font-medium font-sans text-blue-600 bg-blue-50 px-2 py-0.5 border border-blue-100 rounded">
+                      🎤 {item.product.artist}
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm font-mono font-bold text-neutral-800 pt-1">
+                  {getPrice(item).toLocaleString('vi-VN')} đ <span className="text-xs text-neutral-400 font-sans font-normal">/ sản phẩm</span>
+                </div>
+                
+                {/* Synced Bullet Spec Highlights */}
+                <div className="text-[11px] text-neutral-500 pt-1.5 space-y-0.5">
+                  <div className="flex items-center gap-1 justify-center sm:justify-start">
+                    <span>• Hạn order:</span>
+                    <strong className="text-neutral-800 font-semibold">{item.product.orderDeadline || "Sẵn hàng"}</strong>
+                  </div>
+                  <div className="flex items-center gap-1 justify-center sm:justify-start">
+                    <span>• Phát hành:</span>
+                    <strong className="text-neutral-800 font-semibold">{item.product.releaseDate || "Đã ra mắt"}</strong>
+                  </div>
+                  <div className="flex items-center gap-1 justify-center sm:justify-start">
+                    <span>• Tồn kho:</span>
+                    <strong className={`font-semibold ${isSoldOut ? 'text-red-600' : 'text-[#1A73E8]'}`}>
+                      {isSoldOut ? '0 sản phẩm (Hết hàng)' : `${stock} sản phẩm`}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* RED ALERT FOR SOLD OUT ITEM */}
+                {isSoldOut && (
+                  <div className="mt-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 p-2 rounded-lg flex items-center justify-center sm:justify-start space-x-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>Sản phẩm này hiện đã hết hàng</span>
+                  </div>
+                )}
+
+                {/* AMBER ALERT FOR OVERSTOCK ITEM */}
+                {isOverStock && (
+                  <div className="mt-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 p-2 rounded-lg flex items-center justify-center sm:justify-start space-x-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Số lượng trong giỏ ({item.quantity}) vượt quá tồn kho còn lại ({stock} sản phẩm). Vui lòng giảm số lượng.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions: Controls count & remove */}
+              <div className="flex flex-col items-center justify-between gap-3 sm:items-end sm:justify-between shrink-0">
+                {/* Dynamic update count state */}
+                <div className={`flex items-center border rounded-lg text-xs ${isSoldOut ? 'bg-neutral-100 border-neutral-200 opacity-50' : 'bg-neutral-50 border-neutral-300'}`}>
+                  <button
+                    onClick={() => updateCartQuantity && updateCartQuantity(item.product.id, item.version, Math.max(1, item.quantity - 1))}
+                    disabled={!updateCartQuantity || isSoldOut}
+                    className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Decrease quantity"
+                  >
+                    -
+                  </button>
+                  <span className={`w-8 text-center font-mono font-bold ${isSoldOut ? 'text-neutral-400' : ''}`}>{item.quantity}</span>
+                  <button
+                    onClick={() => {
+                      if (isSoldOut) return;
+                      if (item.quantity >= stock) {
+                        alert(`Sản phẩm này chỉ còn tối đa ${stock} sản phẩm trong kho!`);
+                        return;
+                      }
+                      updateCartQuantity && updateCartQuantity(item.product.id, item.version, item.quantity + 1);
+                    }}
+                    disabled={!updateCartQuantity || isSoldOut || item.quantity >= stock}
+                    className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Increase quantity"
+                  >
+                    +
+                  </button>
+                </div>
+
+                {/* Subtotal of single row item */}
+                <div className="text-right">
+                  <span className="text-xs text-neutral-400 font-mono block">Tổng dòng:</span>
+                  <span className={`text-sm font-mono font-bold border-b border-dashed border-neutral-200 ${isSoldOut ? 'line-through text-neutral-400' : 'text-black'}`}>
+                    {(getPrice(item) * item.quantity).toLocaleString('vi-VN')} VND
+                  </span>
+                </div>
+
                 <button
                   onClick={() => {
-                    const stock = getProductStockForVersion(item.product, item.version);
-                    if (item.quantity >= stock) {
-                      alert(`Sản phẩm này chỉ còn tối đa ${stock} sản phẩm trong kho!`);
-                      return;
-                    }
-                    updateCartQuantity && updateCartQuantity(item.product.id, item.version, item.quantity + 1);
+                    removeFromCart(item.product.id, item.version);
+                    alert(`🗑️ Đã xóa mặt hàng khỏi giỏ!`);
                   }}
-                  disabled={!updateCartQuantity || item.quantity >= getProductStockForVersion(item.product, item.version)}
-                  className="px-2.5 py-1 text-neutral-600 hover:text-black font-semibold disabled:opacity-30 disabled:cursor-not-allowed"
-                  aria-label="Increase quantity"
+                  className="text-xs text-neutral-400 hover:text-red-500 flex items-center space-x-1.5 transition-colors font-mono uppercase"
                 >
-                  +
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  <span className="text-red-600 font-semibold">Xóa bỏ</span>
                 </button>
               </div>
-
-              {/* Subtotal of single row item */}
-              <div className="text-right">
-                <span className="text-xs text-neutral-400 font-mono block">Tổng dòng:</span>
-                <span className="text-sm font-mono font-bold text-black border-b border-dashed border-neutral-200">
-                  {(getPrice(item) * item.quantity).toLocaleString('vi-VN')} VND
-                </span>
-              </div>
-
-              <button
-                onClick={() => {
-                  removeFromCart(item.product.id, item.version);
-                  alert(`🗑️ Đã xóa mặt hàng khỏi giỏ!`);
-                }}
-                className="text-xs text-neutral-400 hover:text-red-500 flex items-center space-x-1.5 transition-colors font-mono uppercase"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Xóa bỏ</span>
-              </button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Checkout overview pricing */}
@@ -339,8 +405,20 @@ export default function CartPage({
         </div>
       </div>
 
+      {/* Out of stock or overstock warning banner */}
+      {(hasSoldOutItems || hasOverStockItems) && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-red-700 text-xs font-bold flex items-center space-x-2">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+          <span>
+            {hasSoldOutItems 
+              ? "Trong giỏ hàng của bạn có sản phẩm đã hết hàng. Vui lòng xóa sản phẩm hết hàng khỏi giỏ để tiếp tục thanh toán." 
+              : "Trong giỏ hàng của bạn có sản phẩm vượt quá số lượng tồn kho còn lại. Vui lòng giảm số lượng để tiếp tục."}
+          </span>
+        </div>
+      )}
+
       {/* Main navigation paths */}
-      <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-3 pt-4">
+      <div className="flex flex-col sm:flex-row sm:justify-between items-center gap-3 pt-2">
         <button
           onClick={() => setCurrentPage('shop')}
           className="w-full sm:w-auto py-3 px-6 bg-white border border-neutral-200 hover:border-blue-400 text-neutral-800 hover:text-blue-900 font-display font-medium text-xs tracking-widest uppercase rounded-xl transition-colors text-center flex items-center justify-center space-x-2"
@@ -350,8 +428,9 @@ export default function CartPage({
         </button>
 
         <button
-          onClick={() => setCurrentPage('checkout')}
-          className="w-full sm:w-auto py-3 px-8 bg-[#e8f0ff] hover:bg-[#d0e1fe] text-blue-900 font-display font-bold text-xs tracking-widest uppercase rounded-xl border border-blue-300 transition-colors shadow-md text-center flex items-center justify-center space-x-2"
+          onClick={handleProceedToCheckout}
+          disabled={hasSoldOutItems || hasOverStockItems}
+          className="w-full sm:w-auto py-3 px-8 bg-[#e8f0ff] hover:bg-[#d0e1fe] disabled:bg-neutral-200 disabled:text-neutral-400 disabled:border-neutral-300 disabled:cursor-not-allowed text-blue-900 font-display font-bold text-xs tracking-widest uppercase rounded-xl border border-blue-300 transition-colors shadow-md text-center flex items-center justify-center space-x-2"
         >
           <span>Tiến hành thanh toán</span>
           <ArrowRight className="w-4 h-4" />
