@@ -288,20 +288,24 @@ export const saveProduct = async (product: Product): Promise<void> => {
       product.id = maxId + 1;
     }
     
+    // Find existing product in cache to merge unedited fields (e.g. stock, status, rating, etc.)
+    const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
+    const mergedProduct = { ...existingInCache, ...product };
+    
     // Recursive data sanitization to remove all undefined values for Firestore compatibility
-    const sanitizedProduct = sanitizeData(product);
+    const sanitizedProduct = sanitizeData(mergedProduct);
     
     const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
     const docRef = doc(db, "products", docId);
-    await setDoc(docRef, sanitizedProduct);
+    await setDoc(docRef, sanitizedProduct, { merge: true });
 
     // Update memory cache safely and immediately
     const idx = cachedProducts.findIndex(p => Number(p.id) === Number(product.id));
     let nextProducts = [...cachedProducts];
     if (idx > -1) {
-      nextProducts[idx] = product;
+      nextProducts[idx] = mergedProduct as Product;
     } else {
-      nextProducts.unshift(product);
+      nextProducts.unshift(mergedProduct as Product);
     }
     cachedProducts = nextProducts;
     saveProductsToLocalStorage(nextProducts);
