@@ -90,20 +90,20 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
   // Stock tracking helper functions
   const getMatrixStock = (o1: string, o2?: string) => {
-    if (!product || !Array.isArray(product.variantMatrix)) return 99;
+    if (!product || !Array.isArray(product.variantMatrix)) return 0;
     const item = product.variantMatrix.find(
       v => v && v.option1 === o1 && (!o2 || v.option2 === o2)
     );
-    return item?.stock !== undefined ? item.stock : 99;
+    return item?.stock !== undefined ? item.stock : 0;
   };
 
   const getVariationStock = (name: string) => {
-    if (!product) return 99;
+    if (!product) return 0;
     if (Array.isArray(product.variations) && product.variations.length > 0) {
       const v = product.variations.find(item => item && item.name === name);
-      return v?.stock !== undefined ? v.stock : 99;
+      return v?.stock !== undefined ? v.stock : 0;
     }
-    return product.stock !== undefined ? product.stock : 99;
+    return product.stock !== undefined ? product.stock : 0;
   };
 
   const isSelectedOutOfStock = (() => {
