@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw } from 'lucide-react';
+import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw, AlertTriangle } from 'lucide-react';
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
-import { deductProductStock, getProducts, getProductStockForVersion } from '../utils/products';
+import { deductProductStock, getProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 import { initAuth, googleSignIn, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
@@ -231,6 +231,23 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
   const [generatedOrder, setGeneratedOrder] = useState<OrderPayload | null>(null);
   const [isQrZoomed, setIsQrZoomed] = useState(false);
 
+  useEffect(() => {
+    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products in CheckoutPage:", err));
+  }, []);
+
+  const freshProducts = getProducts();
+  const hasSoldOutItems = cart.some((item) => {
+    const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+    const stock = getProductStockForVersion(freshP, item.version);
+    return stock <= 0 || isProductSoldOut(freshP);
+  });
+
+  const hasOverStockItems = cart.some((item) => {
+    const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+    const stock = getProductStockForVersion(freshP, item.version);
+    return stock > 0 && item.quantity > stock;
+  });
+
   const [formData, setFormData] = useState({
     email: '',
     snsLink: '',
@@ -322,16 +339,19 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
     setSubmitting(true);
 
     // Validate latest stock before order submission
-    const freshProducts = getProducts();
+    const freshProductsList = getProducts();
     for (const item of cart) {
-      const freshProduct = freshProducts.find(p => p.id === item.product.id);
-      if (freshProduct) {
-        const availableStock = getProductStockForVersion(freshProduct, item.version);
-        if (item.quantity > availableStock) {
-          alert(`⚠️ Rất tiếc, sản phẩm "${item.product.name}" [Phân loại: ${item.version || 'Mặc định'}] chỉ còn tối đa ${availableStock} sản phẩm trong kho. Vui lòng quay lại giỏ hàng để cập nhật số lượng!`);
-          setSubmitting(false);
-          return;
-        }
+      const freshProduct = freshProductsList.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+      const availableStock = getProductStockForVersion(freshProduct, item.version);
+      if (availableStock <= 0 || isProductSoldOut(freshProduct)) {
+        alert("Trong giỏ hàng của bạn có sản phẩm đã hết hàng, vui lòng xóa khỏi giỏ để tiếp tục");
+        setSubmitting(false);
+        return;
+      }
+      if (item.quantity > availableStock) {
+        alert(`⚠️ Rất tiếc, sản phẩm "${item.product.name}" [Phân loại: ${item.version || 'Mặc định'}] chỉ còn tối đa ${availableStock} sản phẩm trong kho. Vui lòng quay lại giỏ hàng để cập nhật số lượng!`);
+        setSubmitting(false);
+        return;
       }
     }
 
@@ -564,6 +584,27 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
         </div>
       </div>
 
+      {/* Red warning banner if any item is sold out or overstock */}
+      {(hasSoldOutItems || hasOverStockItems) && (
+        <div className="bg-red-50 border-2 border-red-300 p-4 rounded-xl text-red-800 text-xs font-bold flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+            <span>
+              {hasSoldOutItems 
+                ? "Trong giỏ hàng của bạn có sản phẩm đã HẾT HÀNG. Vui lòng quay lại giỏ hàng để xóa sản phẩm trước khi thanh toán!"
+                : "Trong giỏ hàng của bạn có sản phẩm vượt quá số lượng tồn kho còn lại. Vui lòng quay lại giỏ hàng để điều chỉnh!"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCurrentPage('cart')}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold uppercase transition-colors shrink-0 shadow-sm"
+          >
+            QUAY LẠI GIỎ HÀNG
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
         {/* LEFT COLUMN: Order summary */}
         <div className="space-y-6 lg:sticky lg:top-24">
@@ -572,38 +613,58 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
           </h3>
 
           <div className="border border-neutral-200 rounded-xl overflow-hidden bg-white shadow-sm split-y p-5 space-y-4">
-            {cart.map((item) => (
-              <div 
-                key={`${item.product.id}-${item.version}`} 
-                className="flex items-start justify-between gap-4 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0"
-              >
-                <div className="flex items-start space-x-3 select-none">
-                  <div className="w-12 h-12 rounded-lg bg-neutral-100 overflow-hidden border shrink-0">
-                    <img src={item.product.image} className="w-full h-full object-cover" alt="item" referrerPolicy="no-referrer" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-800 line-clamp-1 max-w-[200px]">{item.product.name}</h4>
-                    <span className="text-[10px] font-mono text-neutral-500 bg-neutral-50 border px-1.5 py-0.5 rounded mt-0.5 inline-block">
-                      SL: {item.quantity}{item.version ? ` | ${item.version}` : ''}
-                    </span>
-                    {/* Synced Spec Highlights */}
-                    <div className="text-[10px] text-neutral-500 mt-1 space-y-0.5">
-                      <div className="flex items-center gap-1">
-                        <span>• Hạn order:</span>
-                        <strong className="text-neutral-700 font-semibold">{item.product.orderDeadline || "Sẵn hàng"}</strong>
+            {cart.map((item) => {
+              const freshP = freshProducts.find(p => Number(p.id) === Number(item.product.id)) || item.product;
+              const stock = getProductStockForVersion(freshP, item.version);
+              const isItemSoldOut = stock <= 0 || isProductSoldOut(freshP);
+
+              return (
+                <div 
+                  key={`${item.product.id}-${item.version}`} 
+                  className={`flex items-start justify-between gap-4 pb-3 border-b border-neutral-100 last:border-b-0 last:pb-0 ${isItemSoldOut ? 'bg-red-50/60 p-2.5 rounded-lg border-red-200' : ''}`}
+                >
+                  <div className="flex items-start space-x-3 select-none">
+                    <div className="w-12 h-12 rounded-lg bg-neutral-100 overflow-hidden border shrink-0 relative">
+                      <img src={item.product.image} className={`w-full h-full object-cover ${isItemSoldOut ? 'grayscale opacity-60' : ''}`} alt="item" referrerPolicy="no-referrer" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-neutral-800 line-clamp-1 max-w-[200px]">{item.product.name}</h4>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-mono text-neutral-500 bg-neutral-50 border px-1.5 py-0.5 rounded inline-block">
+                          SL: {item.quantity}{item.version ? ` | ${item.version}` : ''}
+                        </span>
+                        {isItemSoldOut && (
+                          <span className="text-[10px] font-bold text-red-600 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded inline-block">
+                            HẾT HÀNG
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <span>• Phát hành:</span>
-                        <strong className="text-neutral-700 font-semibold">{item.product.releaseDate || "Đã ra mắt"}</strong>
+                      {/* Synced Spec Highlights */}
+                      <div className="text-[10px] text-neutral-500 mt-1 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <span>• Hạn order:</span>
+                          <strong className="text-neutral-700 font-semibold">{item.product.orderDeadline || "Sẵn hàng"}</strong>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span>• Tồn kho:</span>
+                          <strong className={isItemSoldOut ? "text-red-600 font-bold" : "text-neutral-700 font-semibold"}>
+                            {isItemSoldOut ? "0 sản phẩm (Hết hàng)" : `${stock} sản phẩm`}
+                          </strong>
+                        </div>
                       </div>
+                      {isItemSoldOut && (
+                        <p className="text-[10px] font-bold text-red-600 mt-1">⚠️ Sản phẩm này hiện đã hết hàng</p>
+                      )}
                     </div>
                   </div>
+                  <div className="text-right font-mono text-xs font-bold text-neutral-900">
+                    <span className={isItemSoldOut ? "line-through text-neutral-400" : ""}>
+                      {(getPrice(item) * item.quantity).toLocaleString('vi-VN')} đ
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right font-mono text-xs font-bold text-neutral-900">
-                  {(getPrice(item) * item.quantity).toLocaleString('vi-VN')} đ
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Price details with Coupon */}
             <div className="space-y-2 border-t border-dashed pt-3 text-xs text-neutral-500">
@@ -915,8 +976,8 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={submitting}
-                className="w-full py-4 bg-[#e8f0ff] text-blue-900 border border-blue-300 hover:bg-[#d0e1fe] disabled:bg-neutral-300 font-display font-bold text-sm tracking-widest uppercase rounded-xl shadow-md transition-all flex items-center justify-center space-x-2.5 hover:translate-y-[-1px] active:translate-y-0 disabled:pointer-events-none"
+                disabled={submitting || hasSoldOutItems || hasOverStockItems}
+                className="w-full py-4 bg-[#e8f0ff] text-blue-900 border border-blue-300 hover:bg-[#d0e1fe] disabled:bg-neutral-200 disabled:text-neutral-400 disabled:border-neutral-300 disabled:cursor-not-allowed font-display font-bold text-sm tracking-widest uppercase rounded-xl shadow-md transition-all flex items-center justify-center space-x-2.5 hover:translate-y-[-1px] active:translate-y-0"
               >
                 {submitting ? (
                   <>
