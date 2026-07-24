@@ -1,445 +1,316 @@
 import React, { useState, useEffect } from 'react';
-import Header from './components/Header';
-import Footer from './components/Footer';
-import HomePage from './components/HomePage';
-import ShopAllPage from './components/ShopAllPage';
-import ProductDetailPage from './components/ProductDetailPage';
-import CartPage from './components/CartPage';
-import CheckoutPage from './components/CheckoutPage';
-import RulesPage from './components/RulesPage';
-import AboutPage from './components/AboutPage';
-import AdminPage from './components/AdminPage';
-import WishlistPage from './components/WishlistPage';
-import TrackOrderPage from './components/TrackOrderPage';
-import { CartItem, Product, Coupon } from './types';
-import { CheckCircle2 } from 'lucide-react';
-import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut, subscribeProducts, fetchProductsFromServer } from './utils/products';
+import { motion } from 'motion/react';
+import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
+import { Product } from '../types';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
-export default function App() {
-  const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
-  const [rulesAnchor, setRulesAnchor] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+interface HomePageProps {
+  navigateToProduct: (id: number) => void;
+  addToCart: (product: Product, quantity?: number, version?: string) => void;
+  setCurrentPage: (page: string) => void;
+  navigateToShop?: (category?: string) => void;
+  wishlist: number[];
+  toggleWishlist: (id: number) => void;
+}
 
-  const triggerToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
-  };
+export default function HomePage({ 
+  navigateToProduct, 
+  addToCart, 
+  setCurrentPage, 
+  navigateToShop,
+  wishlist, 
+  toggleWishlist 
+}: HomePageProps) {
+  // Filter out retired K-POP category
+  const [allProducts, setAllProducts] = useState<Product[]>(() => 
+    getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p))
+  );
 
-  const navigateToRulesSection = (anchor: string) => {
-    setRulesAnchor(anchor);
-    setCurrentPage('rules');
-  };
-  
-  // Persistent client-side cart storage
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('yeng_corner_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Persistent client-side wishlist storage
-  const [wishlist, setWishlist] = useState<number[]>(() => {
-    try {
-      const saved = localStorage.getItem('yeng_corner_wishlist');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Keep state saved in case of page reload or review changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('yeng_corner_cart', JSON.stringify(cart));
-    } catch (e) {
-      console.warn("Storage exception logged:", e);
-    }
-  }, [cart]);
-
-  // Real-time synchronization of cart items with latest Firestore product stock and status
-  useEffect(() => {
-    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products:", err));
-
-    const unsubscribe = subscribeProducts((latestProducts) => {
-      if (!latestProducts || latestProducts.length === 0) return;
-      setCart((prevCart) => {
-        let hasChanges = false;
-        const updatedCart = prevCart.map((item) => {
-          const freshP = latestProducts.find((p) => Number(p.id) === Number(item.product.id));
-          if (freshP) {
-            if (JSON.stringify(freshP) !== JSON.stringify(item.product)) {
-              hasChanges = true;
-              return { ...item, product: freshP };
-            }
-          }
-          return item;
-        });
-        return hasChanges ? updatedCart : prevCart;
-      });
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Keep state saved for wishlist
-  useEffect(() => {
-    try {
-      localStorage.setItem('yeng_corner_wishlist', JSON.stringify(wishlist));
-    } catch (e) {
-      console.warn("Storage exception logged:", e);
-    }
-  }, [wishlist]);
-
-  const toggleWishlist = (productId: number) => {
-    setWishlist((prevWishlist) => {
-      if (prevWishlist.includes(productId)) {
-        return prevWishlist.filter((id) => id !== productId);
-      } else {
-        return [...prevWishlist, productId];
-      }
-    });
-  };
-
-  // Scroll to top upon transition page contexts
-  useEffect(() => {
-    if (currentPage === 'rules' && rulesAnchor) {
-      return;
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentPage, rulesAnchor]);
-
-  // Synchronize route from current URL
-  const syncRouteFromURL = () => {
-    const pathname = window.location.pathname;
-    const searchParams = new URLSearchParams(window.location.search);
-    const prodIdParam = searchParams.get('id') || searchParams.get('productId');
-
-    if (pathname === '/admin' || pathname === '/admin-yeng') {
-      setCurrentPage('admin-yeng');
-    } else if (pathname.startsWith('/product/')) {
-      const parts = pathname.split('/');
-      const slugOrId = parts[parts.length - 1];
-      const id = parseInt(slugOrId, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
-      } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === slugOrId);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
-      }
-    } else if (prodIdParam) {
-      const id = parseInt(prodIdParam, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
-      } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === prodIdParam);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
-      }
-    } else if (pathname === '/shop') {
+  const handleGoToShop = (category: string = 'All') => {
+    if (navigateToShop) {
+      navigateToShop(category);
+    } else {
       setCurrentPage('shop');
-    } else if (pathname === '/wishlist') {
-      setCurrentPage('wishlist');
-    } else if (pathname === '/cart') {
-      setCurrentPage('cart');
-    } else if (pathname === '/checkout') {
-      setCurrentPage('checkout');
-    } else if (pathname === '/rules') {
-      setCurrentPage('rules');
-    } else if (pathname === '/about') {
-      setCurrentPage('about');
-    } else if (pathname === '/track-order') {
-      setCurrentPage('track-order');
-    } else {
-      setCurrentPage('home');
     }
   };
 
-  // Sync route on mount
-  useEffect(() => {
-    syncRouteFromURL();
-  }, []);
-
-  // Listen to popstate for back/forward navigation support
-  useEffect(() => {
-    window.addEventListener('popstate', syncRouteFromURL);
-    return () => window.removeEventListener('popstate', syncRouteFromURL);
-  }, []);
-
-  // Listen to pageshow event to completely break bfcache (back-forward cache) on mobile devices (Safari/iOS)
-  useEffect(() => {
-    const handlePageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        window.location.reload();
-      }
-    };
-    window.addEventListener('pageshow', handlePageShow);
-    return () => window.removeEventListener('pageshow', handlePageShow);
-  }, []);
-
-  // Sync URL gracefully when page state or selected product changes
-  useEffect(() => {
-    const getTargetURL = () => {
-      if (currentPage === 'admin-yeng') {
-        return '/admin';
-      } else if (currentPage === 'product-detail' && selectedProductId !== null) {
-        const productsList = getProducts();
-        const currentProd = productsList.find((p) => p.id === selectedProductId);
-        if (currentProd) {
-          return `/product/${convertToSlug(currentProd.name)}`;
-        }
-        return `/product/${selectedProductId}`;
-      } else if (currentPage === 'track-order') {
-        return '/track-order';
-      } else if (currentPage === 'shop') {
-        return '/shop';
-      } else if (currentPage === 'wishlist') {
-        return '/wishlist';
-      } else if (currentPage === 'cart') {
-        return '/cart';
-      } else if (currentPage === 'checkout') {
-        return '/checkout';
-      } else if (currentPage === 'rules') {
-        return '/rules';
-      } else if (currentPage === 'about') {
-        return '/about';
-      } else {
-        return '/';
-      }
-    };
-
-    const target = getTargetURL();
-    if (window.location.pathname !== target) {
-      window.history.pushState({}, '', target);
+  const normalizeCategory = (cat: string): string => {
+    if (!cat) return "";
+    const norm = cat.toLowerCase().trim();
+    if (norm === 'kstyle' || norm === 'k-style' || norm === 'k style') {
+      return 'k-style';
     }
-  }, [currentPage, selectedProductId]);
-
-  const addToCart = (product: Product, quantity = 1, version = "") => {
-    const freshProducts = getProducts();
-    const freshProduct = freshProducts.find(p => p.id === product.id) || product;
-    
-    if (isProductSoldOut(freshProduct)) {
-      alert("Sản phẩm này đã HẾT HÀNG, không thể thêm vào giỏ hàng!");
-      return;
+    if (norm === 'merch' || norm === 'merchandise') {
+      return 'merch';
     }
-
-    const availableStock = getProductStockForVersion(freshProduct, version);
-    if (availableStock <= 0) {
-      alert(`Phân loại "${version || 'Mặc định'}" của sản phẩm này đã hết hàng!`);
-      return;
+    if (norm === 'album') {
+      return 'album';
     }
+    return norm;
+  };
 
-    let isOverStock = false;
-    let actualAdded = quantity;
+  useEffect(() => {
+    // Force call cache-busting fetch from DB server on page mount
+    fetchProductsFromServer();
 
-    setCart((prevCart) => {
-      const existingIdx = prevCart.findIndex(
-        (item) => item.product.id === product.id && item.version === version
-      );
-      
-      let existingQty = 0;
-      if (existingIdx > -1) {
-        existingQty = prevCart[existingIdx].quantity;
-      }
-
-      if (existingQty + quantity > availableStock) {
-        isOverStock = true;
-        actualAdded = Math.max(0, availableStock - existingQty);
-        
-        if (actualAdded <= 0) {
-          return prevCart; // No changes possible
-        }
-        
-        const nextCart = [...prevCart];
-        if (existingIdx > -1) {
-          nextCart[existingIdx] = {
-            ...nextCart[existingIdx],
-            quantity: availableStock,
-          };
-        } else {
-          nextCart.push({ product: freshProduct, quantity: availableStock, version });
-        }
-        return nextCart;
-      }
-
-      if (existingIdx > -1) {
-        const nextCart = [...prevCart];
-        nextCart[existingIdx] = {
-          ...nextCart[existingIdx],
-          quantity: existingQty + quantity,
-        };
-        return nextCart;
-      }
-      return [...prevCart, { product: freshProduct, quantity, version }];
+    const unsubscribe = subscribeProducts((list) => {
+      const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p));
+      setAllProducts(filtered);
     });
+    return unsubscribe;
+  }, []);
 
-    if (isOverStock) {
-      alert(`Sản phẩm này chỉ còn tối đa ${availableStock} sản phẩm trong kho cho phân loại "${version || 'Mặc định'}"! Hệ thống đã tự động giới hạn số lượng trong giỏ hàng.`);
-    } else {
-      triggerToast("Đã thêm sản phẩm vào giỏ hàng thành công!");
-    }
-  };
+  const preOrderProducts = allProducts.filter(p => p.tag?.toLowerCase() === 'pre-order');
+  const albumProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'album');
+  const merchProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'merch');
+  const kStyleProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'k-style');
 
-  const removeFromCart = (id: number, version: string) => {
-    setCart((prevCart) => 
-      prevCart.filter((item) => !(item.product.id === id && item.version === version))
+  const renderProductSlider = (title: string, products: Product[], targetCategory: string) => {
+    return (
+      <section className="space-y-6">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+          <div className="flex items-center">
+            <h2 className="text-lg sm:text-xl font-display font-semibold tracking-wider text-black uppercase">{title}</h2>
+          </div>
+          <button
+            onClick={() => handleGoToShop(targetCategory)}
+            className="text-xs font-display font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 uppercase tracking-wider cursor-pointer"
+          >
+            <span>Xem tất cả</span>
+            <span className="text-sm">→</span>
+          </button>
+        </div>
+
+        {products.length === 0 ? (
+          <div className="text-center py-12 bg-white border border-dashed border-neutral-200 rounded-2xl">
+            <p className="text-sm text-neutral-500 font-sans">Chưa có sản phẩm nào thuộc mục này.</p>
+          </div>
+        ) : (
+          <div className="relative">
+            {/* Scroll Container */}
+            <div className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+              {products.map((product) => {
+                const isSoldOut = isProductSoldOut(product);
+                return (
+                  <motion.div
+                    key={product.id}
+                    initial={{ opacity: 0, x: 20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ type: "spring", stiffness: 100 }}
+                    className="snap-start shrink-0 w-[165px] sm:w-[185px] md:w-[220px] bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300 group"
+                  >
+                    {/* Image Section */}
+                    <div 
+                      className="relative aspect-square overflow-hidden bg-neutral-100 cursor-pointer border-b border-neutral-100" 
+                      onClick={() => navigateToProduct(product.id)}
+                    >
+                      <img 
+                        src={product.image} 
+                        alt={product.name} 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                      />
+                      {/* Category tag */}
+                      {product.tag && product.tag.trim() !== "" && (
+                        <div className="absolute top-2.5 left-2.5 z-10">
+                          <span className={`px-2 py-0.5 text-[9px] sm:text-[10px] font-mono tracking-wider font-semibold rounded uppercase border ${exportTagStyles(product.tag)}`}>
+                            {product.tag}
+                          </span>
+                        </div>
+                      )}
+                      {/* Heart button */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWishlist(product.id);
+                        }}
+                        className={`absolute top-2.5 right-2.5 p-1.5 rounded-full transition-colors shadow-sm ${
+                          wishlist.includes(product.id)
+                            ? 'bg-red-50 text-red-500'
+                            : 'bg-white/80 hover:bg-white text-neutral-600 hover:text-red-500'
+                        }`}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${wishlist.includes(product.id) ? 'fill-red-500 text-red-500' : ''}`} />
+                      </button>
+                    </div>
+
+                    {/* Body Content */}
+                    <div className="p-3 sm:p-4 flex flex-col flex-1 space-y-3">
+                      <div className="space-y-0.5">
+                        <h3 
+                          onClick={() => navigateToProduct(product.id)} 
+                          className="text-xs sm:text-sm font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 h-8 sm:h-10 tracking-tight"
+                        >
+                          {product.name}
+                        </h3>
+                        {product.artist && (
+                          <p className="text-[10px] sm:text-[11.5px] text-blue-600 font-sans line-clamp-1 font-semibold flex items-center gap-1">
+                            <span>🎤</span> 
+                            <span className="truncate">{product.artist}</span>
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Bullet Spec Highlights */}
+                      <div className="p-2 sm:p-2.5 bg-neutral-50 rounded-lg text-[10px] sm:text-[11px] text-neutral-600 min-h-[38px] sm:min-h-[44px] flex flex-col justify-center space-y-0.5 leading-normal">
+                        <div className="flex items-center gap-1 truncate">
+                          <span>• Hạn:</span>
+                          <strong className="text-neutral-800 font-semibold truncate text-[9.5px] sm:text-[10.5px]">{product.orderDeadline || "Sẵn hàng"}</strong>
+                        </div>
+                        <div className="flex items-center gap-1 truncate">
+                          <span>• Phát hành:</span>
+                          <strong className="text-neutral-800 font-semibold truncate text-[9.5px] sm:text-[10.5px]">{product.releaseDate || "Đã ra mắt"}</strong>
+                        </div>
+                      </div>
+
+                      {/* Pricing */}
+                      <div className="pt-2.5 border-t border-neutral-100 flex items-baseline justify-between gap-1 mt-auto">
+                        <span className="text-[9px] font-mono text-neutral-400 uppercase">GIÁ:</span>
+                        <span className="text-xs sm:text-sm md:text-base font-mono font-bold text-black">
+                          {product.price.toLocaleString('vi-VN')} <span className="text-[9px] sm:text-xs font-sans font-normal text-neutral-500">đ</span>
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
     );
-  };
-
-  const updateCartQuantity = (id: number, version: string, newQty: number) => {
-    if (newQty < 1) return;
-
-    const freshProducts = getProducts();
-    const freshProduct = freshProducts.find(p => p.id === id);
-    if (freshProduct) {
-      const availableStock = getProductStockForVersion(freshProduct, version);
-      if (newQty > availableStock) {
-        alert(`Sản phẩm này chỉ còn tối đa ${availableStock} sản phẩm trong kho cho phân loại "${version || 'Mặc định'}"!`);
-        newQty = availableStock;
-      }
-    }
-
-    setCart((prevCart) =>
-      prevCart.map((item) =>
-        item.product.id === id && item.version === version
-          ? { ...item, quantity: newQty }
-          : item
-      )
-    );
-  };
-
-  const clearCart = () => {
-    setCart([]);
-  };
-
-  const navigateToProduct = (id: number) => {
-    setSelectedProductId(id);
-    setCurrentPage('product-detail');
   };
 
   return (
-    <div className="bg-[#fafafa] min-h-screen text-neutral-900 flex flex-col font-sans selection:bg-neutral-900 selection:text-white antialiased">
-      {/* Premium Header with marquee strips */}
-      <Header 
-        currentPage={currentPage} 
-        setCurrentPage={setCurrentPage} 
-        cart={cart} 
-        wishlist={wishlist}
-      />
+    <div className="space-y-16">
+      {/* Premium Hero Section */}
+      <section className="relative overflow-hidden bg-[#e8f0ff] text-neutral-900 rounded-[24px] border border-blue-200 p-8 sm:p-12 lg:p-16">
+        {/* Subtle grid pattern background overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e40af0a_1px,transparent_1px),linear-gradient(to_bottom,#1e40af0a_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none" />
+        
+        {/* Ambience light effects - centered glowing planets */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-[20%] -translate-y-1/2 w-[350px] h-[350px] sm:w-[500px] sm:h-[500px] bg-white rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-[30%] -translate-y-1/2 w-[220px] h-[220px] sm:w-[320px] sm:h-[320px] bg-blue-100 rounded-full blur-[60px] pointer-events-none" />
 
-      {/* Main Core View Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="animate-fade-in duration-300">
-          {currentPage === 'home' && (
-            <HomePage 
-              navigateToProduct={navigateToProduct} 
-              addToCart={addToCart} 
-              setCurrentPage={setCurrentPage} 
-              wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-            />
-          )}
-
-          {currentPage === 'shop' && (
-            <ShopAllPage 
-              navigateToProduct={navigateToProduct} 
-              addToCart={addToCart} 
-              wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-            />
-          )}
-
-          {currentPage === 'wishlist' && (
-            <WishlistPage
-              wishlist={wishlist}
-              toggleWishlist={toggleWishlist}
-              navigateToProduct={navigateToProduct}
-              addToCart={addToCart}
-              setCurrentPage={setCurrentPage}
-            />
-          )}
-
-          {currentPage === 'product-detail' && (
-            <ProductDetailPage 
-              id={selectedProductId} 
-              addToCart={addToCart} 
-              setCurrentPage={setCurrentPage} 
-            />
-          )}
-
-          {currentPage === 'cart' && (
-            <CartPage 
-              cart={cart} 
-              removeFromCart={removeFromCart} 
-              updateCartQuantity={updateCartQuantity} 
-              setCurrentPage={setCurrentPage} 
-              appliedCoupon={appliedCoupon}
-              setAppliedCoupon={setAppliedCoupon}
-            />
-          )}
-
-          {currentPage === 'checkout' && (
-            <CheckoutPage 
-              cart={cart} 
-              setCurrentPage={setCurrentPage} 
-              clearCart={clearCart} 
-              appliedCoupon={appliedCoupon}
-              setAppliedCoupon={setAppliedCoupon}
-            />
-          )}
-
-          {currentPage === 'rules' && (
-            <RulesPage rulesAnchor={rulesAnchor} setRulesAnchor={setRulesAnchor} />
-          )}
-
-          {currentPage === 'about' && (
-            <AboutPage />
-          )}
-
-          {currentPage === 'track-order' && (
-            <TrackOrderPage setCurrentPage={setCurrentPage} />
-          )}
-
-          {currentPage === 'admin-yeng' && (
-            <AdminPage setCurrentPage={setCurrentPage} />
-          )}
-        </div>
-      </main>
-
-      {/* Footer benefits & navigation */}
-      <Footer setCurrentPage={setCurrentPage} navigateToRulesSection={navigateToRulesSection} />
-
-      {/* Floating Success Toast notification */}
-      {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-[9999] bg-white border border-neutral-250 text-neutral-950 px-5 py-3.5 rounded-xl shadow-2xl flex items-center space-x-3 max-w-xs font-sans animate-bounce">
-          <div className="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-550 text-emerald-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+        <div className="relative max-w-3xl space-y-6">
+          <div className="inline-flex items-center space-x-2 bg-white text-blue-900 text-xs px-4 py-2 rounded-full border border-blue-300 font-mono tracking-wider select-none">
+            <span>UY TÍN • CHẤT LƯỢNG</span>
           </div>
-          <div>
-            <p className="text-[10px] font-bold text-neutral-900 tracking-wider uppercase">YENG CORNER</p>
-            <p className="text-[11px] text-neutral-500 font-semibold">{toastMessage}</p>
-          </div>
+
+          <motion.h1 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-4xl sm:text-5xl lg:text-6.5xl font-display font-bold tracking-tight leading-tight uppercase text-blue-950"
+          >
+            YENG CORNER
+          </motion.h1>
+
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+            className="text-sm sm:text-base text-neutral-700 leading-relaxed font-sans max-w-2xl whitespace-pre-line"
+          >
+            Xin chào ! Shop mình được thành lập từ năm 2019 và nhờ sự ủng hộ và yêu quý của các bạn mà mình vẫn có động lực để tiếp tục phát triển hơn ♡{"\n"}
+            Mình nhận order all Korea.
+          </motion.p>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4, duration: 0.4 }}
+            className="pt-4 flex flex-wrap gap-4"
+          >
+            <button 
+              onClick={() => handleGoToShop('All')}
+              className="px-7 py-3 sm:px-8 sm:py-3.5 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-bold rounded-xl hover:bg-blue-100/50 active:scale-95 transition-all inline-flex items-center gap-1.5"
+            >
+              <span>MUA SẮM NGAY</span>
+              <span className="text-lg font-normal">→</span>
+            </button>
+            <button 
+              onClick={() => setCurrentPage('rules')}
+              className="px-6 py-3 sm:px-7 sm:py-3.5 bg-[#e8f0ff] border border-blue-300 text-blue-900 font-semibold rounded-xl hover:bg-white active:scale-95 transition-all text-sm uppercase"
+            >
+              CHÍNH SÁCH SHOP
+            </button>
+          </motion.div>
         </div>
+      </section>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .scrollbar-none::-webkit-scrollbar, .no-scrollbar::-webkit-scrollbar {
+          display: none !important;
+        }
+        .scrollbar-none, .no-scrollbar {
+          -ms-overflow-style: none !important;
+          scrollbar-width: none !important;
+        }
+      `}} />
+
+      {/* 1. KHU VỰC SẢN PHẨM PRE-ORDER */}
+      {renderProductSlider(
+        "Sản phẩm Pre-Order", 
+        preOrderProducts,
+        "Pre-Order"
       )}
+
+      {/* 2. KHU VỰC ALBUM */}
+      {renderProductSlider(
+        "Album", 
+        albumProducts,
+        "Album"
+      )}
+
+      {/* 3. KHU VỰC MERCH */}
+      {renderProductSlider(
+        "Merch", 
+        merchProducts,
+        "Merch"
+      )}
+
+      {/* 4. KHU VỰC K-STYLE */}
+      {renderProductSlider(
+        "K-style", 
+        kStyleProducts,
+        "K-style"
+      )}
+
+      {/* View all products redirection button */}
+      <div className="flex justify-center pt-4">
+        <button
+          onClick={() => handleGoToShop('All')}
+          className="px-8 py-3.5 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] font-display font-bold text-xs tracking-widest rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center space-x-2.5 cursor-pointer uppercase border border-[#E8F0FE] hover:border-[#D2E3FC]"
+        >
+          <span>XEM TẤT CẢ SẢN PHẨM</span>
+          <span className="text-base">→</span>
+        </button>
+      </div>
     </div>
   );
+}
+
+// Simple browser dialog alert alternative for high-end feel
+function triggerAddedNotifier(name: string) {
+  alert(`🛒 Đã thêm thành công: "${name}" vào giỏ hàng của bạn!`);
+}
+
+// Export custom tag color stylings
+function exportTagStyles(tag?: string) {
+  if (!tag) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  }
+  switch (tag.toLowerCase()) {
+    case 'sẵn hàng':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'pre-order':
+      return 'bg-[#E8F0FE] text-[#1A73E8] border-[#1A73E8]/20';
+    case 'order web':
+      return 'bg-amber-50 text-amber-700 border-amber-200';
+    default:
+      return 'bg-neutral-50 text-neutral-700 border-neutral-200';
+  }
 }
