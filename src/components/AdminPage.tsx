@@ -1015,9 +1015,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
               ? existing.stock 
               : (origInProduct && origInProduct.stock !== undefined 
                 ? origInProduct.stock 
-                : (editingProduct && editingProduct.stock !== undefined 
+                : (editingProduct && editingProduct.stock !== undefined && editingProduct.stock > 0
                   ? editingProduct.stock 
-                  : (productForm.stock !== undefined ? productForm.stock : 0)));
+                  : (productForm.stock !== undefined && productForm.stock > 0 ? productForm.stock : 100)));
 
             newMatrix.push({
               option1: k1,
@@ -1043,9 +1043,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             ? existing.stock 
             : (origInProduct && origInProduct.stock !== undefined 
               ? origInProduct.stock 
-              : (editingProduct && editingProduct.stock !== undefined 
+              : (editingProduct && editingProduct.stock !== undefined && editingProduct.stock > 0
                 ? editingProduct.stock 
-                : (productForm.stock !== undefined ? productForm.stock : 0)));
+                : (productForm.stock !== undefined && productForm.stock > 0 ? productForm.stock : 100)));
 
           return {
             name: key,
@@ -1718,14 +1718,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     if (isMulti) {
       setFormVariations([]);
-      const boundMatrix = Array.isArray(prod.variantMatrix) 
+      const boundMatrix = Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0
         ? prod.variantMatrix.map(v => ({
             ...v,
-            stock: v && v.stock !== undefined ? v.stock : (prod.stock !== undefined ? prod.stock : 0)
+            stock: v && v.stock !== undefined && v.stock !== null ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100)
           }))
         : [];
       setVariantMatrix(boundMatrix);
       
+      const matrixStockSum = boundMatrix.reduce((sum, v) => sum + Number(v.stock || 0), 0);
+      const masterStockVal = boundMatrix.length > 0 ? matrixStockSum : (prod.stock ?? 100);
+
       setProductForm({
         id: prod.id || 0,
         name: prod.name || '',
@@ -1746,22 +1749,34 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
         attribute2Name: prod.attribute2Name ?? '',
         attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
-        stock: prod.stock ?? 0,
+        stock: masterStockVal,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
-      const boundVariations = Array.isArray(prod.variations) 
-        ? prod.variations.map(v => ({
-            ...v,
-            stock: v && v.stock !== undefined ? v.stock : (prod.stock !== undefined ? prod.stock : 0)
-          }))
-        : [];
+      let boundVariations: any[] = [];
+      if (Array.isArray(prod.variations) && prod.variations.length > 0) {
+        boundVariations = prod.variations.map(v => ({
+          ...v,
+          stock: v && v.stock !== undefined && v.stock !== null ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100)
+        }));
+      } else if (Array.isArray(prod.versions) && prod.versions.length > 0) {
+        boundVariations = prod.versions.map(vName => ({
+          name: typeof vName === 'string' ? vName : String(vName),
+          price: Number(prod.price) || 0,
+          description: '',
+          stock: prod.stock !== undefined ? Number(prod.stock) : 100
+        }));
+      }
+
       setFormVariations(boundVariations);
       setVariantMatrix([]);
       
-      const versionsStr = Array.isArray(prod.variations)
-        ? (prod.variations || []).map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
+      const versionsStr = Array.isArray(prod.variations) && prod.variations.length > 0
+        ? prod.variations.map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
         : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''));
+
+      const varsStockSum = boundVariations.reduce((sum, v) => sum + Number(v.stock || 0), 0);
+      const masterStockVal = boundVariations.length > 0 ? varsStockSum : (prod.stock ?? 100);
 
       setProductForm({
         id: prod.id || 0,
@@ -1783,7 +1798,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1OptionsText: '',
         attribute2Name: '',
         attribute2OptionsText: '',
-        stock: prod.stock ?? 0,
+        stock: masterStockVal,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     }
@@ -1832,7 +1847,25 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         .map(v => v.trim())
         .filter(v => v.length > 0);
 
-      generatedVersions = (variantMatrix || []).map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
+      const cleanedMatrix = (variantMatrix || []).map(v => {
+        const itemStock = v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock))
+          ? Number(v.stock)
+          : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0);
+        return {
+          ...v,
+          stock: itemStock,
+          price: Number(v.price) || Number(productForm.price) || 0
+        };
+      });
+
+      const masterStock = cleanedMatrix.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+      generatedVersions = cleanedMatrix.map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
+
+      const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
+      let tagVal = productForm.tag || "PRE-ORDER";
+      if (masterStock > 0 && (tagVal.toLowerCase().trim() === "sold out" || tagVal.toLowerCase().trim() === "sold_out" || tagVal.toLowerCase().trim() === "hết hàng")) {
+        tagVal = "PRE-ORDER";
+      }
 
       productPayload = {
         ...baseObject,
@@ -1842,7 +1875,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         category: productForm.category,
         image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
-        tag: productForm.tag,
+        tag: tagVal,
+        status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
         versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
@@ -1851,25 +1885,48 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
         artist: productForm.artist,
-        attribute1Name: productForm.variationName,
+        attribute1Name: productForm.variationName || "SIZE",
         attribute1Options: opts1,
-        attribute2Name: productForm.attribute2Name,
+        attribute2Name: productForm.attribute2Name || "COLOR",
         attribute2Options: opts2,
-        variantMatrix: variantMatrix,
+        variantMatrix: cleanedMatrix,
         variations: undefined,
-        stock: productForm.stock !== undefined ? productForm.stock : (baseObject.stock !== undefined ? baseObject.stock : 0),
+        stock: masterStock,
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
     } else {
-      // Parse versions
       const parsedVersions = (productForm.versionsText || '')
          .split(',')
          .map(v => v.trim())
          .filter(v => v.length > 0);
       
-      generatedVersions = formVariations.length > 0 
-         ? (formVariations || []).map(v => v?.name || "") 
-         : parsedVersions;
+      const cleanedVariations = (formVariations || []).map(v => {
+        const itemStock = v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock))
+          ? Number(v.stock)
+          : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0);
+        return {
+          ...v,
+          stock: itemStock,
+          price: Number(v.price) || Number(productForm.price) || 0
+        };
+      });
+
+      let masterStock = 0;
+      if (cleanedVariations.length > 0) {
+        masterStock = cleanedVariations.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+        generatedVersions = cleanedVariations.map(v => v?.name || "");
+      } else {
+        masterStock = productForm.stock !== undefined && productForm.stock !== null && !isNaN(Number(productForm.stock))
+          ? Number(productForm.stock) 
+          : (baseObject.stock !== undefined ? Number(baseObject.stock) : 0);
+        generatedVersions = parsedVersions;
+      }
+
+      const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
+      let tagVal = productForm.tag || "PRE-ORDER";
+      if (masterStock > 0 && (tagVal.toLowerCase().trim() === "sold out" || tagVal.toLowerCase().trim() === "sold_out" || tagVal.toLowerCase().trim() === "hết hàng")) {
+        tagVal = "PRE-ORDER";
+      }
 
       productPayload = {
         ...baseObject,
@@ -1879,7 +1936,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         category: productForm.category,
         image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
-        tag: productForm.tag,
+        tag: tagVal,
+        status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
         versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
@@ -1888,9 +1946,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
         artist: productForm.artist,
-        variationName: productForm.variationName,
-        variations: formVariations.length > 0 ? formVariations : (baseObject.variations || undefined),
-        stock: productForm.stock !== undefined ? productForm.stock : (baseObject.stock !== undefined ? baseObject.stock : 0),
+        variationName: productForm.variationName || "VERSION",
+        variations: cleanedVariations.length > 0 ? cleanedVariations : (baseObject.variations || undefined),
+        stock: masterStock,
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
 
