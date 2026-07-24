@@ -8,6 +8,7 @@ interface HomePageProps {
   navigateToProduct: (id: number) => void;
   addToCart: (product: Product, quantity?: number, version?: string) => void;
   setCurrentPage: (page: string) => void;
+  navigateToShop?: (category?: string) => void;
   wishlist: number[];
   toggleWishlist: (id: number) => void;
 }
@@ -16,6 +17,7 @@ export default function HomePage({
   navigateToProduct, 
   addToCart, 
   setCurrentPage, 
+  navigateToShop,
   wishlist, 
   toggleWishlist 
 }: HomePageProps) {
@@ -23,6 +25,14 @@ export default function HomePage({
   const [allProducts, setAllProducts] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p))
   );
+
+  const handleGoToShop = (category: string = 'All') => {
+    if (navigateToShop) {
+      navigateToShop(category);
+    } else {
+      setCurrentPage('shop');
+    }
+  };
 
   const normalizeCategory = (cat: string): string => {
     if (!cat) return "";
@@ -55,7 +65,7 @@ export default function HomePage({
   const merchProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'merch');
   const kStyleProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'k-style');
 
-  const renderProductSlider = (title: string, products: Product[]) => {
+  const renderProductSlider = (title: string, products: Product[], targetCategory: string) => {
     return (
       <section className="space-y-6">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
@@ -63,7 +73,7 @@ export default function HomePage({
             <h2 className="text-lg sm:text-xl font-display font-semibold tracking-wider text-black uppercase">{title}</h2>
           </div>
           <button
-            onClick={() => setCurrentPage('shop')}
+            onClick={() => handleGoToShop(targetCategory)}
             className="text-xs font-display font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 uppercase tracking-wider cursor-pointer"
           >
             <span>Xem tất cả</span>
@@ -215,7 +225,7 @@ export default function HomePage({
             className="pt-4 flex flex-wrap gap-4"
           >
             <button 
-              onClick={() => setCurrentPage('shop')}
+              onClick={() => handleGoToShop('All')}
               className="px-7 py-3 sm:px-8 sm:py-3.5 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-bold rounded-xl hover:bg-blue-100/50 active:scale-95 transition-all inline-flex items-center gap-1.5"
             >
               <span>MUA SẮM NGAY</span>
@@ -244,31 +254,35 @@ export default function HomePage({
       {/* 1. KHU VỰC SẢN PHẨM PRE-ORDER */}
       {renderProductSlider(
         "Sản phẩm Pre-Order", 
-        preOrderProducts
+        preOrderProducts,
+        "Pre-Order"
       )}
 
       {/* 2. KHU VỰC ALBUM */}
       {renderProductSlider(
         "Album", 
-        albumProducts
+        albumProducts,
+        "Album"
       )}
 
       {/* 3. KHU VỰC MERCH */}
       {renderProductSlider(
         "Merch", 
-        merchProducts
+        merchProducts,
+        "Merch"
       )}
 
       {/* 4. KHU VỰC K-STYLE */}
       {renderProductSlider(
         "K-style", 
-        kStyleProducts
+        kStyleProducts,
+        "K-style"
       )}
 
       {/* View all products redirection button */}
       <div className="flex justify-center pt-4">
         <button
-          onClick={() => setCurrentPage('shop')}
+          onClick={() => handleGoToShop('All')}
           className="px-8 py-3.5 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] font-display font-bold text-xs tracking-widest rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center space-x-2.5 cursor-pointer uppercase border border-[#E8F0FE] hover:border-[#D2E3FC]"
         >
           <span>XEM TẤT CẢ SẢN PHẨM</span>
