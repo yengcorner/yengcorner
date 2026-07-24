@@ -8,13 +8,15 @@ interface ShopAllPageProps {
   addToCart: (product: Product, quantity?: number, version?: string) => void;
   wishlist: number[];
   toggleWishlist: (id: number) => void;
+  initialCategory?: string;
 }
 
 export default function ShopAllPage({ 
   navigateToProduct, 
   addToCart, 
   wishlist, 
-  toggleWishlist 
+  toggleWishlist,
+  initialCategory = 'All'
 }: ShopAllPageProps) {
   // Filter out retired K-POP category
   const [productsList, setProductsList] = useState<Product[]>(() => 
@@ -31,11 +33,6 @@ export default function ShopAllPage({
     return unsubscribe;
   }, []);
 
-  const [filter, setFilter] = useState('All');
-  const [artistFilter, setArtistFilter] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('default'); // default, price-asc, price-desc, name-asc
-
   const normalizeCategory = (cat: string): string => {
     if (!cat) return "";
     const norm = cat.toLowerCase().trim();
@@ -48,11 +45,15 @@ export default function ShopAllPage({
     if (norm === 'album') {
       return 'album';
     }
+    if (norm === 'pre-order' || norm === 'preorder' || norm === 'pre order') {
+      return 'pre-order';
+    }
     return norm;
   };
 
   const getDisplayCategoryName = (cat: string): string => {
     const norm = normalizeCategory(cat);
+    if (norm === 'pre-order') return 'Pre-Order';
     if (norm === 'k-style') return 'K-style';
     if (norm === 'merch') return 'Merch';
     if (norm === 'album') return 'Album';
@@ -64,8 +65,8 @@ export default function ShopAllPage({
     new Set(productsList.map(p => getDisplayCategoryName(p.category || "")).filter(Boolean))
   ) as string[];
 
-  // Fixed order sequence: "Album", "Merch", "K-style", then others
-  const fixedOrder = ["Album", "Merch", "K-style"];
+  // Fixed order sequence: "Pre-Order", "Album", "Merch", "K-style", then others
+  const fixedOrder = ["Pre-Order", "Album", "Merch", "K-style"];
   const dynamicCategories: string[] = [];
   
   fixedOrder.forEach(cat => {
@@ -84,15 +85,49 @@ export default function ShopAllPage({
     }
   });
 
+  const [filter, setFilter] = useState<string>(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const catParam = searchParams.get('category') || searchParams.get('filter');
+    const target = catParam || initialCategory || 'All';
+    const match = dynamicCategories.find(c => c.toLowerCase() === target.toLowerCase());
+    return match || target;
+  });
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const catParam = searchParams.get('category') || searchParams.get('filter');
+    const target = (initialCategory && initialCategory !== 'All') ? initialCategory : catParam;
+
+    if (target && target !== 'All') {
+      const match = dynamicCategories.find(c => c.toLowerCase() === target.toLowerCase());
+      setFilter(match || target);
+    } else if (initialCategory === 'All') {
+      setFilter('All');
+    }
+  }, [initialCategory]);
+
+  const [artistFilter, setArtistFilter] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('default'); // default, price-asc, price-desc, name-asc
+
   // Dynamically extract active artists/brands
   const dynamicArtists = Array.from(
     new Set(productsList.map(p => p.artist).filter(Boolean))
   ) as string[];
 
-  // 1. Filter by category
+  // 1. Filter by category / tag
   let products = filter === 'All' 
     ? productsList 
-    : productsList.filter(p => p.category && normalizeCategory(p.category) === normalizeCategory(filter));
+    : productsList.filter(p => {
+        const normFilter = filter.toLowerCase().trim();
+        const normCat = normalizeCategory(p.category || "");
+        const tagVal = (p.tag || "").toLowerCase().trim();
+
+        if (normFilter === 'pre-order' || normFilter === 'preorder' || normFilter === 'pre order') {
+          return tagVal === 'pre-order' || normCat === 'pre-order';
+        }
+        return normCat === normalizeCategory(filter) || (p.category && p.category.toLowerCase().trim() === normFilter);
+      });
 
   // 1.5 Filter by artist / brand
   if (artistFilter !== 'All') {
