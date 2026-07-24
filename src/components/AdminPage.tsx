@@ -1735,7 +1735,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         price: Number(prod.price) || 0,
         category: prod.category || '',
         image: prod.image || '',
-        tag: prod.tag ?? 'Pre-order',
+        tag: prod.tag ?? '',
         info: prod.info || '',
         detailedDesc: prod.detailedDesc ?? '',
         versionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
@@ -1784,7 +1784,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         price: Number(prod.price) || 0,
         category: prod.category || '',
         image: prod.image || '',
-        tag: prod.tag ?? 'Pre-order',
+        tag: prod.tag ?? '',
         info: prod.info || '',
         detailedDesc: prod.detailedDesc ?? '',
         versionsText: versionsStr,
@@ -1862,10 +1862,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       generatedVersions = cleanedMatrix.map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
 
       const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
-      let tagVal = productForm.tag || "PRE-ORDER";
-      if (masterStock > 0 && (tagVal.toLowerCase().trim() === "sold out" || tagVal.toLowerCase().trim() === "sold_out" || tagVal.toLowerCase().trim() === "hết hàng")) {
-        tagVal = "PRE-ORDER";
-      }
+      const tagVal = productForm.tag ? productForm.tag.trim() : "";
 
       productPayload = {
         ...baseObject,
@@ -1923,10 +1920,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       }
 
       const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
-      let tagVal = productForm.tag || "PRE-ORDER";
-      if (masterStock > 0 && (tagVal.toLowerCase().trim() === "sold out" || tagVal.toLowerCase().trim() === "sold_out" || tagVal.toLowerCase().trim() === "hết hàng")) {
-        tagVal = "PRE-ORDER";
-      }
+      const tagVal = productForm.tag ? productForm.tag.trim() : "";
 
       productPayload = {
         ...baseObject,
@@ -4245,7 +4239,7 @@ function getColumnLetter(colIndex) {
                   <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">Trạng thái (Tag):</label>
                   <div className="flex gap-2">
                     {["Pre-order", "Có sẵn"].map((tagOption) => {
-                      const isSelected = productForm.tag === tagOption;
+                      const isSelected = (productForm.tag || '').toLowerCase().trim() === tagOption.toLowerCase().trim();
                       return (
                         <button
                           key={tagOption}
