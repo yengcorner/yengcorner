@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, SlidersHorizontal, HelpCircle, Heart, ShoppingBag, Tag } from 'lucide-react';
+import { Search, SlidersHorizontal, HelpCircle, Heart, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -223,12 +223,12 @@ export default function ShopAllPage({
             return (
               <div
                 key={product.id}
-                className="group bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300"
+                onClick={() => navigateToProduct(product.id)}
+                className="group bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md hover:border-neutral-300 transition-all duration-300 cursor-pointer"
               >
                 {/* Product Thumbnail Banner */}
                 <div 
                   className="relative aspect-square overflow-hidden bg-neutral-100 cursor-pointer border-b border-neutral-100" 
-                  onClick={() => navigateToProduct(product.id)}
                 >
                   <img 
                     src={product.image} 
@@ -265,7 +265,6 @@ export default function ShopAllPage({
                 <div className="p-3 sm:p-4 md:p-5 flex flex-col flex-1 space-y-2.5 sm:space-y-4">
                   <div className="space-y-1">
                     <h3 
-                      onClick={() => navigateToProduct(product.id)} 
                       className="text-xs sm:text-sm font-semibold text-neutral-900 group-hover:text-black cursor-pointer leading-tight line-clamp-2 min-h-[32px] sm:min-h-[40px] tracking-tight"
                     >
                       {product.name}
@@ -294,47 +293,13 @@ export default function ShopAllPage({
                     </div>
                   </div>
 
-                  {/* Confirm pricing and quickly add to card */}
+                  {/* Confirm pricing */}
                   <div className="pt-1 sm:pt-2 flex flex-col space-y-2 sm:space-y-3 mt-auto">
                     <div className="flex items-baseline justify-between gap-1">
                       <span className="text-[10px] sm:text-xs font-mono text-neutral-400 uppercase">GIÁ:</span>
                       <span className="text-sm sm:text-base md:text-lg font-mono font-bold text-black truncate">
                         {product.price.toLocaleString('vi-VN')} <span className="text-[10px] sm:text-xs font-sans">VND</span>
                       </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1.5 sm:gap-2 pt-0.5">
-                      <button 
-                        onClick={() => navigateToProduct(product.id)}
-                        className="py-1.5 sm:py-2.5 px-1 sm:px-3 border border-neutral-200 hover:border-black text-neutral-700 hover:text-black text-[10px] sm:text-xs font-display font-medium rounded-lg text-center transition-colors shadow-sm truncate"
-                      >
-                        CHI TIẾT
-                      </button>
-                      {(() => {
-                        const isSoldOut = isProductSoldOut(product);
-
-                        return (
-                          <button 
-                            onClick={() => {
-                              if (isSoldOut) {
-                                alert("⚠️ Sản phẩm này đã hết hàng!");
-                                return;
-                              }
-                              const defaultVer = resolveDefaultVersionForProduct(product);
-                              addToCart(product, 1, defaultVer);
-                            }}
-                            disabled={isSoldOut}
-                            className={`py-1.5 sm:py-2.5 px-1 sm:px-3 text-[10px] sm:text-xs font-display font-medium rounded-lg flex items-center justify-center space-x-1 transition-colors shadow-sm truncate ${
-                              isSoldOut
-                                ? "bg-neutral-100 border border-neutral-200 text-neutral-400 cursor-not-allowed"
-                                : "bg-[#E8F0FE] hover:bg-[#D2E3FC] border border-[#E8F0FE] text-[#1A73E8]"
-                            }`}
-                          >
-                            <ShoppingBag className={`w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 ${isSoldOut ? "text-neutral-400" : "text-[#1A73E8]"}`} />
-                            <span className="truncate">{isSoldOut ? "HẾT HÀNG" : "MUA"}</span>
-                          </button>
-                        );
-                      })()}
                     </div>
                   </div>
                 </div>
