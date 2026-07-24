@@ -213,27 +213,11 @@ export default function ShopAllPage({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
           {products.map((product) => {
-            // Determine if the product has a valid badge state (PRE-ORDER or CÓ SẴN or SẴN HÀNG or ORDER WEB)
+            // Determine if the product has a valid badge tag
             const displayTag = (() => {
               const tagVal = (product.tag || '').trim();
-              const statusVal = (product.status || '').trim();
-              
-              const tagLower = tagVal.toLowerCase();
-              const statusLower = statusVal.toLowerCase();
-              
-              const isValid = (
-                tagLower === 'pre-order' || 
-                tagLower === 'có sẵn' || 
-                tagLower === 'sẵn hàng' || 
-                tagLower === 'order web' ||
-                statusLower === 'pre-order' || 
-                statusLower === 'có sẵn' || 
-                statusLower === 'sẵn hàng' || 
-                statusLower === 'order web'
-              );
-              
-              if (!isValid) return null;
-              return tagVal || statusVal || null;
+              if (!tagVal) return null;
+              return tagVal;
             })();
 
             return (
