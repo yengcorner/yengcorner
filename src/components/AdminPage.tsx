@@ -162,8 +162,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       if (res && res.accessToken) {
         setGmailUser(res.user);
         setGmailToken(res.accessToken);
-        localStorage.setItem('yeng_gmail_access_token', res.accessToken);
-        localStorage.setItem('yeng_gmail_user', JSON.stringify(res.user));
+        const minimalUserInfo = {
+          uid: res.user.uid,
+          email: res.user.email,
+          displayName: res.user.displayName,
+          photoURL: res.user.photoURL
+        };
+        try {
+          localStorage.setItem('yeng_gmail_access_token', res.accessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(minimalUserInfo));
+        } catch (e) {
+          console.warn("Could not set localStorage:", e);
+        }
         fetchGmailMessages(res.accessToken);
       } else {
         const storedToken = localStorage.getItem('yeng_gmail_access_token');
