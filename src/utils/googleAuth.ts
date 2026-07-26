@@ -188,7 +188,12 @@ export const initAuth = (
 };
 
 // Must be called from a button click or user interaction
-export const googleSignIn = async (): Promise<void> => {
+export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  if (isSigningIn) {
+    console.log("[GoogleAuth] Sign-in operation is already in progress.");
+    return null;
+  }
+
   try {
     isSigningIn = true;
     sessionStorage.setItem('yeng_signing_in_google', 'true');
@@ -222,25 +227,28 @@ export const googleSignIn = async (): Promise<void> => {
           } catch (dbErr) {
             console.error("Failed to write token to Firestore from popup result:", dbErr);
           }
-          // Reload the page or invoke callbacks to update UI
-          window.location.reload();
-          return;
+
+          // Sync with backend server silently
+          fetch('/api/gmail/store-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: cachedAccessToken, email: userObj.email })
+          }).catch(err => console.error("Failed to sync token with backend server:", err));
+
+          sessionStorage.removeItem('yeng_signing_in_google');
+          return { user: userObj, accessToken: cachedAccessToken };
         }
       }
+      return null;
     } else {
       console.log("[GoogleAuth] Detected iframe environment (AI Studio). Using signInWithRedirect...");
       await signInWithRedirect(auth, provider);
+      return null;
     }
   } catch (error: any) {
-    console.error('Đăng nhập thất bại, đang chuyển hướng fallback:', error);
-    try {
-      console.log("[GoogleAuth] Fallback to signInWithRedirect...");
-      await signInWithRedirect(auth, provider);
-    } catch (fallbackErr) {
-      console.error('Redirect fallback failed:', fallbackErr);
-      sessionStorage.removeItem('yeng_signing_in_google');
-      throw fallbackErr;
-    }
+    console.error('[GoogleAuth] Sign-in error:', error);
+    sessionStorage.removeItem('yeng_signing_in_google');
+    throw error;
   } finally {
     isSigningIn = false;
   }
