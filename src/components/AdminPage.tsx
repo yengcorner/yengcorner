@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Lock, CheckCircle2, TrendingUp, Coins, Trash2, 
   RefreshCw, X, Eye, User, Phone, Mail, Link, Calendar, 
@@ -151,24 +151,51 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
+  const isConnectingRef = useRef(false);
+
   const handleAdminGmailLogin = async () => {
+    if (isConnectingRef.current) return;
+    isConnectingRef.current = true;
+
     try {
-      await googleSignIn();
-    } catch (err: any) {
-      console.error(err);
-      const isIframe = window.self !== window.top;
-      if (isIframe || err?.code === 'auth/cancelled-popup-request' || err?.message?.includes('cancelled-popup-request')) {
-        alert(
-          "⚠️ ĐĂNG NHẬP THẤT BẠI DO HẠN CHẾ IFRAME (BẢO MẬT TRÌNH DUYỆT)\n\n" +
-          "Trình duyệt đã chặn hoặc tự động hủy yêu cầu của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
-          "HƯỚNG DẪN KHẮC PHỤC:\n" +
-          "1. Hãy nhấn vào nút \"Mở trong tab mới\" (Open in a new tab) ở góc trên cùng bên phải màn hình xem thử để chạy ứng dụng độc lập.\n" +
-          "2. Ở tab mới đó, bạn bấm lại nút \"Kết nối Gmail\" để thực hiện kết nối.\n" +
-          "3. Đăng nhập sẽ thành công mượt mà!"
-        );
+      const res = await googleSignIn();
+      if (res && res.accessToken) {
+        setGmailUser(res.user);
+        setGmailToken(res.accessToken);
+        localStorage.setItem('yeng_gmail_access_token', res.accessToken);
+        localStorage.setItem('yeng_gmail_user', JSON.stringify(res.user));
+        fetchGmailMessages(res.accessToken);
       } else {
-        alert(`Đăng nhập Google thất bại: ${err?.message || err}`);
+        const storedToken = localStorage.getItem('yeng_gmail_access_token');
+        const storedUser = localStorage.getItem('yeng_gmail_user');
+        if (storedToken && storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            setGmailUser(parsed);
+            setGmailToken(storedToken);
+            fetchGmailMessages(storedToken);
+          } catch (e) {}
+        }
       }
+    } catch (err: any) {
+      console.error("[AdminPage] Gmail login error:", err);
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        const isIframe = window.self !== window.top;
+        if (isIframe || err?.message?.includes('cancelled-popup-request')) {
+          alert(
+            "⚠️ ĐĂNG NHẬP THẤT BẠI DO HẠN CHẾ IFRAME (BẢO MẬT TRÌNH DUYỆT)\n\n" +
+            "Trình duyệt đã chặn hoặc tự động hủy yêu cầu của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
+            "HƯỚNG DẪN KHẮC PHỤC:\n" +
+            "1. Hãy nhấn vào nút \"Mở trong tab mới\" (Open in a new tab) ở góc trên cùng bên phải màn hình xem thử để chạy ứng dụng độc lập.\n" +
+            "2. Ở tab mới đó, bạn bấm lại nút \"Kết nối Gmail\" để thực hiện kết nối.\n" +
+            "3. Đăng nhập sẽ thành công mượt mà!"
+          );
+        } else {
+          alert(`Đăng nhập Google thất bại: ${err?.message || err}`);
+        }
+      }
+    } finally {
+      isConnectingRef.current = false;
     }
   };
 
