@@ -16,13 +16,11 @@ export const db = getFirestore(app, firestoreDbId);
 // Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    // If the admin already has a stored Google token, is currently in the middle of a Google redirect sign-in,
-    // or if the URL has OAuth params (?code=...), do NOT run signInAnonymously(auth) as it will cancel
-    // the redirect result exchange or disconnect the admin session.
+    // If the admin already has a stored Google token, or is currently in the middle of a Google redirect sign-in,
+    // do NOT run signInAnonymously(auth) as it will cancel the redirect result exchange or disconnect the admin session.
     const hasStoredToken = !!localStorage.getItem('yeng_gmail_access_token');
     const isSigningInGoogle = sessionStorage.getItem('yeng_signing_in_google') === 'true';
-    const isOAuthCallback = window.location.search.includes('code=') || window.location.search.includes('state=') || window.location.search.includes('oauth=');
-    if (hasStoredToken || isSigningInGoogle || isOAuthCallback) {
+    if (hasStoredToken || isSigningInGoogle) {
       console.log("[GoogleAuth] Skipping passive anonymous sign-in to protect Admin/Gmail Google login flow.");
       return;
     }
@@ -46,7 +44,7 @@ provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
 provider.addScope('https://www.googleapis.com/auth/gmail.compose');
 provider.addScope('https://www.googleapis.com/auth/gmail.modify');
 
-// Ask for offline access/refresh token and consent prompt
+// Ask for offline access/refresh token and consent prompt if possible
 provider.setCustomParameters({
   access_type: 'offline',
   prompt: 'consent'
@@ -77,97 +75,7 @@ export const initAuth = (
     }
   }
 
-  // 2. Proactively check URL parameters for OAuth code callback (?code=...)
-  const urlParams = new URLSearchParams(window.location.search);
-  const codeParam = urlParams.get('code');
-  if (codeParam) {
-    console.log("[GoogleAuth] Detected OAuth code parameter in URL. Exchanging code...");
-    sessionStorage.setItem('yeng_signing_in_google', 'true');
-    const redirectUri = window.location.origin + window.location.pathname;
-
-    fetch(`/api/gmail/oauth-callback?code=${encodeURIComponent(codeParam)}&state=${encodeURIComponent(redirectUri)}`)
-      .then(async (res) => {
-        if (res.ok) {
-          console.log("[GoogleAuth] Successfully exchanged authorization code via backend.");
-          const cleanUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
-          return fetch('/api/gmail/status');
-        }
-      })
-      .then(async (statusRes) => {
-        if (statusRes && statusRes.ok) {
-          const statusData = await statusRes.json();
-          if (statusData.connected && statusData.accessToken) {
-            cachedAccessToken = statusData.accessToken;
-            localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
-            const userObj = {
-              email: statusData.email || "yengcorner@gmail.com",
-              displayName: "Yeng Corner Admin",
-              photoURL: null,
-              isAnonymous: false,
-              uid: "admin_gmail_uid"
-            };
-            localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
-            if (onAuthSuccess) onAuthSuccess(userObj, statusData.accessToken);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error("[GoogleAuth] Error during OAuth code callback handling:", err);
-      })
-      .finally(() => {
-        sessionStorage.removeItem('yeng_signing_in_google');
-      });
-  }
-
-  // 3. Listen for postMessage from popup windows (e.g. OAUTH_AUTH_SUCCESS)
-  const messageHandler = (event: MessageEvent) => {
-    if (event.data && (event.data.type === 'OAUTH_AUTH_SUCCESS' || event.data.type === 'OAUTH_SUCCESS')) {
-      console.log("[GoogleAuth] Received OAuth success postMessage from window:", event.data);
-      sessionStorage.removeItem('yeng_signing_in_google');
-      fetch('/api/gmail/status')
-        .then(res => res.json())
-        .then(statusData => {
-          if (statusData.connected && statusData.accessToken) {
-            cachedAccessToken = statusData.accessToken;
-            localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
-            const userObj = {
-              email: statusData.email || event.data.email || "yengcorner@gmail.com",
-              displayName: "Yeng Corner Admin",
-              photoURL: null,
-              isAnonymous: false,
-              uid: "admin_gmail_uid"
-            };
-            localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
-            if (onAuthSuccess) onAuthSuccess(userObj, statusData.accessToken);
-          }
-        })
-        .catch(err => console.error("[GoogleAuth] Error checking status after postMessage:", err));
-    }
-  };
-  window.addEventListener('message', messageHandler);
-
-  // 4. Proactively check server /api/gmail/status (validates and auto-refreshes token via server refresh_token)
-  fetch('/api/gmail/status')
-    .then(res => res.json())
-    .then(statusData => {
-      if (statusData.connected && statusData.accessToken) {
-        cachedAccessToken = statusData.accessToken;
-        localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
-        const userObj = {
-          email: statusData.email || "yengcorner@gmail.com",
-          displayName: "Yeng Corner Admin",
-          photoURL: null,
-          isAnonymous: false,
-          uid: "admin_gmail_uid"
-        };
-        localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
-        if (onAuthSuccess) onAuthSuccess(userObj, statusData.accessToken);
-      }
-    })
-    .catch(err => console.warn("[GoogleAuth] Server /api/gmail/status check non-critical warning:", err.message));
-
-  // 5. Self-healing synchronization: Fetch Gmail and Google Sheets config from Firestore
+  // 2. Self-healing synchronization: Proactively fetch Gmail and Google Sheets config from Firestore
   getDoc(gmailDocRef).then((docSnap) => {
     if (docSnap.exists()) {
       const data = docSnap.data();
@@ -203,7 +111,7 @@ export const initAuth = (
     console.error("Failed to restore Gmail token / Sheets URL from Firestore on initAuth:", err);
   });
 
-  // 6. Handle redirect result from Google sign-in
+  // 3. Handle redirect result from Google sign-in
   getRedirectResult(auth)
     .then(async (result) => {
       sessionStorage.removeItem('yeng_signing_in_google');
@@ -216,11 +124,7 @@ export const initAuth = (
           localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
           localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
 
-          if (window.location.search.includes('code=') || window.location.search.includes('state=')) {
-            window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-          }
-
-          // Save directly to Firestore
+          // Save directly to Firestore for extreme session persistence across tabs and devices
           try {
             const snap = await getDoc(gmailDocRef);
             const existingData = snap.exists() ? snap.data() : {};
@@ -235,13 +139,6 @@ export const initAuth = (
             console.error("Failed to write token to Firestore from redirect result:", dbErr);
           }
 
-          // Sync with backend server
-          fetch('/api/gmail/store-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken: cachedAccessToken, email: userObj.email })
-          }).catch(err => console.error("Failed to sync token with backend server:", err));
-
           if (onAuthSuccess) {
             onAuthSuccess(userObj, cachedAccessToken);
           }
@@ -253,8 +150,8 @@ export const initAuth = (
       console.error('Error handling redirect result:', error);
     });
 
-  // 7. Standard auth state change listener (De-coupled from guest logins)
-  const unsubscribeAuth = onAuthStateChanged(auth, async (user: User | null) => {
+  // 4. Standard auth state change listener (De-coupled from guest logins)
+  return onAuthStateChanged(auth, async (user: User | null) => {
     if (user && !user.isAnonymous) {
       const storedToken = localStorage.getItem('yeng_gmail_access_token');
       if (storedToken) {
@@ -264,8 +161,13 @@ export const initAuth = (
         localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
         localStorage.setItem('yeng_gmail_user', JSON.stringify(user));
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      } else if (!isSigningIn) {
+        if (onAuthFailure) onAuthFailure();
       }
     } else {
+      // Fallback: If Firebase session has switched to an Anonymous Guest or Null (e.g. during checkout or refresh),
+      // we do NOT log the admin out of the Gmail/Sheets admin interface.
+      // We keep the Admin Gmail authentication state fully alive using localStorage credentials.
       const storedToken = localStorage.getItem('yeng_gmail_access_token');
       const storedUser = localStorage.getItem('yeng_gmail_user');
       if (storedToken && storedUser) {
@@ -275,42 +177,72 @@ export const initAuth = (
           return;
         } catch (e) {}
       }
-
+      // Only trigger failure if there are absolutely no credentials at all
       const isSigningInGoogle = sessionStorage.getItem('yeng_signing_in_google') === 'true';
-      const isOAuthCallback = window.location.search.includes('code=') || window.location.search.includes('state=');
-      if (!isSigningInGoogle && !isOAuthCallback && !storedToken) {
+      if (!isSigningInGoogle && !storedToken) {
         cachedAccessToken = null;
         if (onAuthFailure) onAuthFailure();
       }
     }
   });
-
-  return () => {
-    window.removeEventListener('message', messageHandler);
-    unsubscribeAuth();
-  };
-};
-
-export const getGoogleOAuthUrl = (): string => {
-  const CLIENT_ID = '75127362215-nvh44bjb8t8jvjjrk10u1i11h9sruqe5.apps.googleusercontent.com';
-  const REDIRECT_URI = typeof window !== 'undefined' && (window.location.origin.includes('yengvn') || window.location.origin.includes('vercel'))
-    ? 'https://yengvn.vercel.app/admin'
-    : (typeof window !== 'undefined' ? `${window.location.origin}/admin` : 'https://yengvn.vercel.app/admin');
-
-  const SCOPES = [
-    'https://mail.google.com/',
-    'https://www.googleapis.com/auth/gmail.send',
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.compose'
-  ].join(' ');
-
-  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent`;
 };
 
 // Must be called from a button click or user interaction
 export const googleSignIn = async (): Promise<void> => {
-  if (typeof window !== 'undefined') {
-    window.location.href = getGoogleOAuthUrl();
+  try {
+    isSigningIn = true;
+    sessionStorage.setItem('yeng_signing_in_google', 'true');
+
+    // Check if we are running inside an iframe (like the AI Studio development environment preview)
+    const isInIframe = window.self !== window.top;
+
+    if (!isInIframe) {
+      console.log("[GoogleAuth] Detected top-level window (Vercel/Direct). Using high-stability signInWithPopup...");
+      const result = await signInWithPopup(auth, provider);
+      if (result) {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          const userObj = result.user;
+
+          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+
+          const gmailDocRef = doc(db, "gmail", "settings");
+          try {
+            const snap = await getDoc(gmailDocRef);
+            const existingData = snap.exists() ? snap.data() : {};
+            await setDoc(gmailDocRef, {
+              ...existingData,
+              accessToken: cachedAccessToken,
+              email: userObj.email || "yengcorner@gmail.com",
+              updatedAt: new Date().toISOString()
+            });
+            console.log("Successfully synchronized Google access token via popup directly to Firestore.");
+          } catch (dbErr) {
+            console.error("Failed to write token to Firestore from popup result:", dbErr);
+          }
+          // Reload the page or invoke callbacks to update UI
+          window.location.reload();
+          return;
+        }
+      }
+    } else {
+      console.log("[GoogleAuth] Detected iframe environment (AI Studio). Using signInWithRedirect...");
+      await signInWithRedirect(auth, provider);
+    }
+  } catch (error: any) {
+    console.error('Đăng nhập thất bại, đang chuyển hướng fallback:', error);
+    try {
+      console.log("[GoogleAuth] Fallback to signInWithRedirect...");
+      await signInWithRedirect(auth, provider);
+    } catch (fallbackErr) {
+      console.error('Redirect fallback failed:', fallbackErr);
+      sessionStorage.removeItem('yeng_signing_in_google');
+      throw fallbackErr;
+    }
+  } finally {
+    isSigningIn = false;
   }
 };
 
