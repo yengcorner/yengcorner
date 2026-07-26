@@ -291,76 +291,26 @@ export const initAuth = (
   };
 };
 
+export const getGoogleOAuthUrl = (): string => {
+  const CLIENT_ID = '75127362215-nvh44bjb8t8jvjjrk10u1i11h9sruqe5.apps.googleusercontent.com';
+  const REDIRECT_URI = typeof window !== 'undefined' && (window.location.origin.includes('yengvn') || window.location.origin.includes('vercel'))
+    ? 'https://yengvn.vercel.app/admin'
+    : (typeof window !== 'undefined' ? `${window.location.origin}/admin` : 'https://yengvn.vercel.app/admin');
+
+  const SCOPES = [
+    'https://mail.google.com/',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.compose'
+  ].join(' ');
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent`;
+};
+
 // Must be called from a button click or user interaction
 export const googleSignIn = async (): Promise<void> => {
-  if (isSigningIn) {
-    console.log("[GoogleAuth] Sign-in operation is already in progress.");
-    return;
-  }
-
-  try {
-    isSigningIn = true;
-    sessionStorage.setItem('yeng_signing_in_google', 'true');
-
-    const isInIframe = window.self !== window.top;
-
-    if (!isInIframe) {
-      console.log("[GoogleAuth] Top-level window detected. Trying signInWithPopup...");
-      try {
-        const result = await signInWithPopup(auth, provider);
-        if (result) {
-          const credential = GoogleAuthProvider.credentialFromResult(result);
-          if (credential?.accessToken) {
-            cachedAccessToken = credential.accessToken;
-            const userObj = result.user;
-
-            localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-            localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
-
-            const gmailDocRef = doc(db, "gmail", "settings");
-            try {
-              const snap = await getDoc(gmailDocRef);
-              const existingData = snap.exists() ? snap.data() : {};
-              await setDoc(gmailDocRef, {
-                ...existingData,
-                accessToken: cachedAccessToken,
-                email: userObj.email || "yengcorner@gmail.com",
-                updatedAt: new Date().toISOString()
-              });
-              console.log("Successfully synchronized Google access token via popup directly to Firestore.");
-            } catch (dbErr) {
-              console.error("Failed to write token to Firestore from popup result:", dbErr);
-            }
-
-            fetch('/api/gmail/store-token', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ accessToken: cachedAccessToken, email: userObj.email })
-            }).catch(e => console.error("Failed to sync popup token with backend:", e));
-
-            sessionStorage.removeItem('yeng_signing_in_google');
-            window.location.reload();
-            return;
-          }
-        }
-      } catch (popupErr: any) {
-        console.warn("[GoogleAuth] signInWithPopup encountered issue:", popupErr?.message || popupErr);
-        if (popupErr?.code === 'auth/popup-closed-by-user' || popupErr?.code === 'auth/cancelled-popup-request') {
-          sessionStorage.removeItem('yeng_signing_in_google');
-          return;
-        }
-      }
-    }
-
-    console.log("[GoogleAuth] Using signInWithRedirect for Google Auth flow...");
-    await signInWithRedirect(auth, provider);
-
-  } catch (error: any) {
-    console.error('Google Auth Sign-In Error:', error);
-    sessionStorage.removeItem('yeng_signing_in_google');
-    throw error;
-  } finally {
-    isSigningIn = false;
+  if (typeof window !== 'undefined') {
+    window.location.href = getGoogleOAuthUrl();
   }
 };
 
