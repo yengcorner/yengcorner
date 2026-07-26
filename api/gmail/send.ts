@@ -1,205 +1,27 @@
 import type { Request, Response } from "express";
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { initializeApp as initializeClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { initializeApp as initializeAdminApp, getApps as getAdminApps, getApp as getAdminApp } from "firebase-admin/app";
-import { getFirestore as getFirestoreAdmin } from "firebase-admin/firestore";
-
-function loadFirebaseConfig(): any {
-  try {
-    const p = path.join(process.cwd(), "firebase-applet-config.json");
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, "utf8"));
-    }
-  } catch (e) {}
-
-  try {
-    const filename = fileURLToPath(import.meta.url);
-    const dirname = path.dirname(filename);
-    const p = path.resolve(dirname, "../../firebase-applet-config.json");
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, "utf8"));
-    }
-  } catch (e) {}
-
-  try {
-    const p = path.resolve(__dirname, "../../firebase-applet-config.json");
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, "utf8"));
-    }
-  } catch (e) {}
-
-  try {
-    const p = path.resolve("firebase-applet-config.json");
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, "utf8"));
-    }
-  } catch (e) {}
-
-  throw new Error("Could not find firebase-applet-config.json!");
-}
-
-const firebaseConfig = loadFirebaseConfig();
-const firebaseApp = getClientApps().length === 0 ? initializeClientApp(firebaseConfig) : getClientApp();
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-const gmailDocRef = doc(db, "gmail", "settings");
-
-// Initialize Firebase Admin SDK for 100% reliable server reads
-let dbAdmin: any = null;
-
-try {
-  if (!getAdminApps().length) {
-    initializeAdminApp({
-      projectId: firebaseConfig.projectId,
-    });
-  }
-
-  dbAdmin = getFirestoreAdmin(getAdminApp(), firebaseConfig.firestoreDatabaseId);
-} catch (adminErr: any) {
-  console.warn(
-    "[Gmail Send Admin] Admin SDK initialization skipped/failed:",
-    adminErr.message
-  );
-}
-
-const TOKEN_PATH = process.env.VERCEL 
-  ? "/tmp/gmail-token.json" 
-  : path.join(process.cwd(), "gmail-token.json");
+import { 
+  fetchGmailConfigFromFirestore, 
+  getValidAccessToken, 
+  refreshAccessToken, 
+  saveGmailConfigToFirestore,
+  gmailDocRef, 
+  TOKEN_PATH,
+  db
+} from "./token-helper";
 
 // Auto-seed/update Google Sheets URL to Firestore on boot or request
 async function ensureGoogleSheetsUrlInFirestore() {
   const newUrl = "https://script.google.com/macros/s/AKfycbyLF7z0uuucqD9-EULsAYC8ot27EWkFJoJms0YrRg6eL9qAXKOLcim3PD5V8HhB61Nh/exec";
   try {
     console.log("[Seeder Send] Ensuring Google Sheets URL is set in Firestore...");
-    if (dbAdmin) {
-      const docRefAdmin = dbAdmin.collection("gmail").doc("settings");
-      const docSnap = await docRefAdmin.get();
-      const existingData = docSnap.exists ? docSnap.data() : {};
-      await docRefAdmin.set({
-        ...existingData,
-        googleSheetUrl: newUrl,
-        googleSheetsUrl: newUrl
-      }, { merge: true });
-      console.log("[Seeder Send] Successfully wrote URL to Firestore via Admin SDK!");
-    } else {
-      const docSnap = await getDoc(gmailDocRef);
-      const existingData = docSnap.exists() ? docSnap.data() : {};
-      await setDoc(gmailDocRef, {
-        ...existingData,
-        googleSheetUrl: newUrl,
-        googleSheetsUrl: newUrl
-      }, { merge: true });
-      console.log("[Seeder Send] Successfully wrote URL to Firestore via Client SDK!");
-    }
+    await saveGmailConfigToFirestore({
+      googleSheetUrl: newUrl,
+      googleSheetsUrl: newUrl
+    });
   } catch (err: any) {
     console.error("[Seeder Send] Failed to write Google Sheets URL to Firestore:", err.message);
   }
-}
-
-// Helper function to fetch Gmail & Sheets configuration from Firestore using Firebase Admin SDK with ultra-reliable REST API fallbacks
-async function fetchGmailConfigFromFirestore(): Promise<any> {
-  // 1. Query Firestore via Firebase Admin SDK (100% reliable, bypasses auth and connection limits)
-  if (dbAdmin) {
-    try {
-      console.log("[Firestore Config Helper Send] Fetching configuration via Firebase Admin SDK...");
-      const docSnap = await dbAdmin.collection("gmail").doc("settings").get();
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && (data.googleSheetsUrl || data.accessToken)) {
-          console.log("[Firestore Config Helper Send] Successfully retrieved config via Admin SDK.");
-          try {
-            fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
-          } catch (writeErr: any) {
-            console.warn("[Firestore Config Helper Send] Could not cache Admin SDK result to disk:", writeErr.message);
-          }
-          return data;
-        }
-      } else {
-        console.log("[Firestore Config Helper Send] Admin SDK completed, but document does not exist yet.");
-      }
-    } catch (err: any) {
-      console.error("[Firestore Config Helper Send] Admin SDK fetch failed, trying fallbacks:", err.message);
-    }
-  }
-
-  // 2. Query Firestore via Google REST API (secondary reliable fallback)
-  try {
-    const dbId = firebaseConfig.firestoreDatabaseId || "(default)";
-    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents/gmail/settings?key=${firebaseConfig.apiKey}`;
-    console.log(`[Firestore Config Helper Send] Fetching fresh config via REST API from: ${url}`);
-    
-    const response = await fetch(url);
-    if (response.ok) {
-      const docObj = await response.json();
-      if (docObj && docObj.fields) {
-        const result: any = {};
-        for (const key of Object.keys(docObj.fields)) {
-          const valObj = docObj.fields[key];
-          if (valObj.stringValue !== undefined) {
-            result[key] = valObj.stringValue;
-          } else if (valObj.integerValue !== undefined) {
-            result[key] = parseInt(valObj.integerValue, 10);
-          } else if (valObj.doubleValue !== undefined) {
-            result[key] = parseFloat(valObj.doubleValue);
-          } else if (valObj.booleanValue !== undefined) {
-            result[key] = valObj.booleanValue;
-          } else if (valObj.mapValue !== undefined) {
-            result[key] = valObj.mapValue;
-          } else {
-            result[key] = valObj;
-          }
-        }
-        if (result.googleSheetsUrl || result.accessToken) {
-          console.log("[Firestore Config Helper Send] Successfully restored config from Firestore via REST API.");
-          // Cache back to local disk
-          try {
-            fs.writeFileSync(TOKEN_PATH, JSON.stringify(result, null, 2));
-          } catch (writeErr: any) {
-            console.warn("[Firestore Config Helper Send] Could not cache to local disk:", writeErr.message);
-          }
-          return result;
-        }
-      }
-    } else {
-      console.warn(`[Firestore Config Helper Send] REST API returned non-OK status: ${response.status}`);
-    }
-  } catch (err: any) {
-    console.error("[Firestore Config Helper Send] Error during Firestore REST request:", err.message);
-  }
-
-  // 3. Fallback to Firebase Client SDK (might be slow or blocked in serverless)
-  try {
-    console.log("[Firestore Config Helper Send] Falling back to Firebase Client SDK...");
-    const docSnap = await getDoc(gmailDocRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      try {
-        fs.writeFileSync(TOKEN_PATH, JSON.stringify(data, null, 2));
-      } catch (writeErr: any) {
-        console.warn("[Firestore Config Helper Send] Could not cache SDK result:", writeErr.message);
-      }
-      return data;
-    }
-  } catch (err: any) {
-    console.error("[Firestore Config Helper Send] Client SDK fetch failed:", err.message);
-  }
-
-  // 4. Try reading from local file cache as absolute fallback if online databases are completely inaccessible
-  if (fs.existsSync(TOKEN_PATH)) {
-    try {
-      const cached = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf-8"));
-      if (cached && (cached.googleSheetsUrl || cached.accessToken)) {
-        console.log("[Firestore Config Helper Send] Found valid config in local disk cache (fallback).");
-        return cached;
-      }
-    } catch (err: any) {
-      console.warn("[Firestore Config Helper Send] Failed to parse local disk cache:", err.message);
-    }
-  }
-
-  return null;
 }
 
 export default async function handler(req: Request, res: Response) {
@@ -226,20 +48,34 @@ export default async function handler(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: "Thiếu thông tin người nhận, tiêu đề hoặc nội dung email." });
     }
 
-    // Fetch configuration using the ultra-reliable REST & local disk fallback helper
+    // Proactively fetch a valid, automatically refreshed access token
+    let accessToken = await getValidAccessToken();
     const tokenData = await fetchGmailConfigFromFirestore();
 
-    if (!tokenData || !tokenData.accessToken) {
+    // Fallback: Check Authorization header or req.body.accessToken if DB/Cache did not yield token
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    let fallbackToken: string | null = null;
+    if (authHeader && typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      fallbackToken = authHeader.substring(7).trim();
+    }
+    if (!fallbackToken && req.body?.accessToken) {
+      fallbackToken = req.body.accessToken;
+    }
+
+    if (!accessToken && fallbackToken) {
+      accessToken = fallbackToken;
+      console.log("[Gmail Send] Using fallback access token provided in request headers or body.");
+    }
+
+    if (!accessToken) {
       return res.status(400).json({
         success: false,
         error: "Cửa hàng chưa liên kết Gmail. Vui lòng truy cập trang Admin mục \"GMAIL CENTER\" để kết nối."
       });
     }
 
-    let accessToken = tokenData.accessToken;
-    const senderEmail = tokenData.email;
+    const senderEmail = (tokenData && tokenData.email) ? tokenData.email : "taphoayeng12@gmail.com";
 
-    // Helper to attempt sending message using the current accessToken
     const attemptSend = async (token: string): Promise<{ ok: boolean; status: number; text: string }> => {
       const subjectEncoded = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
       const rawParts = [
@@ -275,50 +111,14 @@ export default async function handler(req: Request, res: Response) {
 
     let sendResult = await attemptSend(accessToken);
 
-    // If unauthorized (401), and we have a refreshToken, attempt to renew the accessToken
+    // If unauthorized (401), attempt to force refresh and retry one more time
     if (!sendResult.ok && sendResult.status === 401 && tokenData.refreshToken) {
-      console.log("[Gmail Send] Access Token expired. Attempting to refresh using refresh_token...");
-      try {
-        const clientId = process.env.GOOGLE_CLIENT_ID || firebaseConfig.projectId;
-        const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-        if (clientId && clientSecret) {
-          const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              client_id: clientId,
-              client_secret: clientSecret,
-              refresh_token: tokenData.refreshToken,
-              grant_type: "refresh_token"
-            }).toString()
-          });
-
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json();
-            if (refreshData.access_token) {
-              accessToken = refreshData.access_token;
-              tokenData.accessToken = accessToken;
-              tokenData.updatedAt = new Date().toISOString();
-
-              // Update Firestore and Local cache with the new accessToken
-              await updateDoc(gmailDocRef, {
-                accessToken: accessToken,
-                updatedAt: new Date().toISOString()
-              });
-              try {
-                fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokenData, null, 2));
-              } catch (e) {}
-
-              console.log("[Gmail Send] Access Token renewed successfully. Retrying email send...");
-              sendResult = await attemptSend(accessToken);
-            }
-          } else {
-            console.error("[Gmail Send] Failed to refresh token:", await refreshRes.text());
-          }
-        }
-      } catch (refreshErr: any) {
-        console.error("[Gmail Send] Error renewing token:", refreshErr.message);
+      console.log("[Gmail Send] Access Token expired during request. Forcing renewal using refresh_token...");
+      const renewedToken = await refreshAccessToken(tokenData.refreshToken, tokenData);
+      if (renewedToken) {
+        accessToken = renewedToken;
+        console.log("[Gmail Send] Access Token renewed successfully. Retrying send...");
+        sendResult = await attemptSend(accessToken);
       }
     }
 
@@ -328,7 +128,7 @@ export default async function handler(req: Request, res: Response) {
       return res.status(sendResult.status || 400).json({
         success: false,
         error: isAuthError 
-          ? "Phiên kết nối Gmail đã hết hạn (1 giờ). Vui lòng vào Admin -> GMAIL CENTER để bấm kết nối lại." 
+          ? "Phiên kết nối Gmail đã hết hạn hoặc bị thu hồi. Vui lòng vào trang Admin mục GMAIL CENTER để kết nối lại." 
           : `Lỗi từ Google Gmail API: ${sendResult.text}`
       });
     }
