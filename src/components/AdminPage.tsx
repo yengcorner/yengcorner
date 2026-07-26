@@ -8,7 +8,7 @@ import {
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
 import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
-import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
+import { initAuth, googleSignIn, getGoogleOAuthUrl, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +48,48 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const [bulkTemplateType, setBulkTemplateType] = useState<string>('deposit');
 
   useEffect(() => {
+    // Check if redirected with ?code= parameter from Google OAuth2
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code');
+
+    if (codeParam) {
+      console.log("[AdminPage] Detected OAuth code in URL. Exchanging code for tokens...");
+      const redirectUri = window.location.origin.includes('yeng') || window.location.origin.includes('vercel')
+        ? 'https://yengvn.vercel.app/admin'
+        : `${window.location.origin}/admin`;
+
+      fetch(`/api/gmail/oauth-callback?code=${encodeURIComponent(codeParam)}&state=${encodeURIComponent(redirectUri)}`)
+        .then(async (res) => {
+          if (res.ok) {
+            console.log("[AdminPage] Successfully exchanged authorization code.");
+            window.history.replaceState({}, document.title, '/admin');
+            return fetch('/api/gmail/status');
+          }
+        })
+        .then(async (statusRes) => {
+          if (statusRes && statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (statusData.connected && statusData.accessToken) {
+              setGmailToken(statusData.accessToken);
+              localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
+              const userObj = {
+                email: statusData.email || "yengcorner@gmail.com",
+                displayName: "Yeng Corner Admin",
+                photoURL: null,
+                isAnonymous: false,
+                uid: "admin_gmail_uid"
+              };
+              setGmailUser(userObj);
+              localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+              fetchGmailMessages(statusData.accessToken);
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("[AdminPage] Error exchanging OAuth code:", err);
+        });
+    }
+
     const unsubscribe = initAuth(
       (user, token) => {
         setGmailUser(user);
@@ -153,22 +195,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   const handleAdminGmailLogin = async () => {
     try {
-      await googleSignIn();
+      window.location.href = getGoogleOAuthUrl();
     } catch (err: any) {
-      console.error(err);
-      const isIframe = window.self !== window.top;
-      if (isIframe || err?.code === 'auth/cancelled-popup-request' || err?.message?.includes('cancelled-popup-request')) {
-        alert(
-          "⚠️ ĐĂNG NHẬP THẤT BẠI DO HẠN CHẾ IFRAME (BẢO MẬT TRÌNH DUYỆT)\n\n" +
-          "Trình duyệt đã chặn hoặc tự động hủy yêu cầu của Firebase Auth vì ứng dụng đang chạy bên trong khung xem thử (Iframe).\n\n" +
-          "HƯỚNG DẪN KHẮC PHỤC:\n" +
-          "1. Hãy nhấn vào nút \"Mở trong tab mới\" (Open in a new tab) ở góc trên cùng bên phải màn hình xem thử để chạy ứng dụng độc lập.\n" +
-          "2. Ở tab mới đó, bạn bấm lại nút \"Kết nối Gmail\" để thực hiện kết nối.\n" +
-          "3. Đăng nhập sẽ thành công mượt mà!"
-        );
-      } else {
-        alert(`Đăng nhập Google thất bại: ${err?.message || err}`);
-      }
+      console.error("Error redirecting to Google OAuth URL:", err);
+      window.location.href = getGoogleOAuthUrl();
     }
   };
 
