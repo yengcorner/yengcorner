@@ -1,7 +1,66 @@
 import type { Request, Response } from "express";
 import fs from "fs";
-import { firebaseConfig, saveGmailConfigToFirestore, TOKEN_PATH } from "./token-helper";
-import { setDoc } from "firebase/firestore";
+import path from "path";
+import { fileURLToPath } from "url";
+
+function loadFirebaseConfig(): any {
+  try {
+    const p = path.join(process.cwd(), "firebase-applet-config.json");
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {}
+
+  try {
+    const filename = fileURLToPath(import.meta.url);
+    const dirname = path.dirname(filename);
+    const p = path.resolve(dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {}
+
+  try {
+    const p = path.resolve(__dirname, "../../firebase-applet-config.json");
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {}
+
+  try {
+    const p = path.resolve("firebase-applet-config.json");
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, "utf8"));
+  } catch (e) {}
+
+  return null;
+}
+
+const firebaseConfig = loadFirebaseConfig() || {};
+const TOKEN_PATH = process.env.VERCEL 
+  ? "/tmp/gmail-token.json" 
+  : path.join(process.cwd(), "gmail-token.json");
+
+async function saveToFirestoreRest(config: any, data: any): Promise<boolean> {
+  if (!config || !config.projectId || !config.apiKey) return false;
+  try {
+    const dbId = config.firestoreDatabaseId || "(default)";
+    const fieldsToUpdate = Object.keys(data).filter(k => data[k] !== undefined && data[k] !== null);
+    const fieldMasks = fieldsToUpdate.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+    const url = `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/${dbId}/documents/gmail/settings?${fieldMasks ? fieldMasks + "&" : ""}key=${config.apiKey}`;
+
+    const fields: any = {};
+    for (const key of fieldsToUpdate) {
+      const val = data[key];
+      if (typeof val === "string") fields[key] = { stringValue: val };
+      else if (typeof val === "boolean") fields[key] = { booleanValue: val };
+      else if (typeof val === "number") fields[key] = { doubleValue: val };
+      else if (typeof val === "object") fields[key] = { stringValue: JSON.stringify(val) };
+    }
+
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    return res.ok;
+  } catch (e) {
+    return false;
+  }
+}
 
 export default async function handler(req: Request, res: Response) {
   try {
@@ -19,7 +78,7 @@ export default async function handler(req: Request, res: Response) {
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
     if (!clientId || !clientSecret) {
-      return res.status(400).send("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not configured on the server. Please check your system Settings.");
+      return res.status(400).send("GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not configured on the server.");
     }
 
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -82,8 +141,8 @@ export default async function handler(req: Request, res: Response) {
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(newCache, null, 2));
     } catch (err) {}
 
-    // Store in Firestore settings document via safe helper
-    await saveGmailConfigToFirestore(firestoreData);
+    // Store in Firestore via REST
+    await saveToFirestoreRest(firebaseConfig, firestoreData);
 
     console.log(`[Gmail OAuth Callback] Token successfully stored for email ${email}`);
 
