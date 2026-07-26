@@ -158,16 +158,19 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       </div>
     `;
 
+    const gmailToken = localStorage.getItem('yeng_gmail_access_token') || '';
     try {
       const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(gmailToken ? { 'Authorization': `Bearer ${gmailToken}` } : {})
         },
         body: JSON.stringify({
           to: order.contact.email,
           subject,
-          bodyHtml
+          bodyHtml,
+          accessToken: gmailToken
         })
       });
 
