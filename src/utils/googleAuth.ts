@@ -121,8 +121,18 @@ export const initAuth = (
           cachedAccessToken = credential.accessToken;
           const userObj = result.user;
 
-          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-          localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+          const minimalUserInfo = {
+            uid: userObj.uid,
+            email: userObj.email,
+            displayName: userObj.displayName,
+            photoURL: userObj.photoURL
+          };
+          try {
+            localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+            localStorage.setItem('yeng_gmail_user', JSON.stringify(minimalUserInfo));
+          } catch (e) {
+            console.warn("Could not set localStorage:", e);
+          }
 
           // Save directly to Firestore for extreme session persistence across tabs and devices
           try {
@@ -158,8 +168,18 @@ export const initAuth = (
         cachedAccessToken = storedToken;
         if (onAuthSuccess) onAuthSuccess(user, storedToken);
       } else if (cachedAccessToken) {
-        localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-        localStorage.setItem('yeng_gmail_user', JSON.stringify(user));
+        const minimalUserInfo = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL
+        };
+        try {
+          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+          localStorage.setItem('yeng_gmail_user', JSON.stringify(minimalUserInfo));
+        } catch (e) {
+          console.warn("Could not set localStorage:", e);
+        }
         if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
       } else if (!isSigningIn) {
         if (onAuthFailure) onAuthFailure();
@@ -210,8 +230,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
           cachedAccessToken = credential.accessToken;
           const userObj = result.user;
 
-          localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
-          localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
+          const minimalUserInfo = {
+            uid: userObj.uid,
+            email: userObj.email,
+            displayName: userObj.displayName,
+            photoURL: userObj.photoURL
+          };
+          try {
+            localStorage.setItem('yeng_gmail_access_token', cachedAccessToken);
+            localStorage.setItem('yeng_gmail_user', JSON.stringify(minimalUserInfo));
+          } catch (e) {
+            console.warn("Could not set localStorage:", e);
+          }
 
           const gmailDocRef = doc(db, "gmail", "settings");
           try {
