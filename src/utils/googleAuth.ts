@@ -304,7 +304,7 @@ export const getGoogleOAuthUrl = (): string => {
     'https://www.googleapis.com/auth/gmail.compose'
   ].join(' ');
 
-  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=select_account%20consent`;
+  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(SCOPES)}&access_type=offline&prompt=consent`;
 };
 
 // Must be called from a button click or user interaction
