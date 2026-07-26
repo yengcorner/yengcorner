@@ -54,6 +54,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     if (codeParam) {
       console.log("[AdminPage] Detected OAuth code in URL. Exchanging code for tokens...");
+      // Xóa hoàn toàn thông tin User/Avatar cũ trong LocalStorage để hiển thị chuẩn tài khoản mới
+      localStorage.removeItem('yeng_gmail_user');
+      localStorage.removeItem('yeng_gmail_access_token');
+
       const redirectUri = window.location.origin.includes('yeng') || window.location.origin.includes('vercel')
         ? 'https://yengvn.vercel.app/admin'
         : `${window.location.origin}/admin`;
@@ -72,12 +76,26 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             if (statusData.connected && statusData.accessToken) {
               setGmailToken(statusData.accessToken);
               localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
+
+              // Lấy trực tiếp thông tin User profile & Avatar từ Google
+              let userInfo: any = null;
+              try {
+                const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                  headers: { Authorization: `Bearer ${statusData.accessToken}` }
+                });
+                if (userRes.ok) {
+                  userInfo = await userRes.json();
+                }
+              } catch (uErr) {
+                console.warn("[AdminPage] Error fetching google userinfo:", uErr);
+              }
+
               const userObj = {
-                email: statusData.email || "yengcorner@gmail.com",
-                displayName: "Yeng Corner Admin",
-                photoURL: null,
+                email: userInfo?.email || statusData.email || "yengcorner@gmail.com",
+                displayName: userInfo?.name || userInfo?.email?.split('@')[0] || "Yeng Corner Admin",
+                photoURL: userInfo?.picture || null,
                 isAnonymous: false,
-                uid: "admin_gmail_uid"
+                uid: userInfo?.id || "admin_gmail_uid"
               };
               setGmailUser(userObj);
               localStorage.setItem('yeng_gmail_user', JSON.stringify(userObj));
