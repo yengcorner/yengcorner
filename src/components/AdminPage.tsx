@@ -66,6 +66,16 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         }
       },
       () => {
+        const storedToken = localStorage.getItem('yeng_gmail_access_token');
+        const storedUser = localStorage.getItem('yeng_gmail_user');
+        if (storedToken && storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            setGmailUser(parsed);
+            setGmailToken(storedToken);
+            return;
+          } catch (e) {}
+        }
         setGmailUser(null);
         setGmailToken(null);
         setGmailMessages([]);
@@ -458,16 +468,19 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           body = generated.body;
         }
 
+        const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
         try {
           const response = await fetch('/api/gmail/send', {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
             },
             body: JSON.stringify({
               to: recipientEmail,
               subject,
-              bodyHtml: body
+              bodyHtml: body,
+              accessToken: currentToken
             })
           });
 
@@ -506,16 +519,19 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setEmailSendSuccess(null);
     setEmailSendError(null);
 
+    const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
     try {
       const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
         },
         body: JSON.stringify({
           to: emailFormTo,
           subject: emailFormSubject,
-          bodyHtml: emailFormBody
+          bodyHtml: emailFormBody,
+          accessToken: currentToken
         })
       });
 
@@ -821,13 +837,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           </div>
         `;
 
+        const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
         const response = await fetch('/api/gmail/send', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
+          },
           body: JSON.stringify({
             to: order.contact?.email ?? "",
             subject,
-            bodyHtml
+            bodyHtml,
+            accessToken: currentToken
           })
         });
 
@@ -1247,15 +1268,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       // Generate email body using 'deposit' template (the main confirmation email template)
       const { subject, body } = getEmailContentForOrder(order, 'deposit');
       
+      const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
       const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
         },
         body: JSON.stringify({
           to: order.contact?.email ?? "",
           subject,
-          bodyHtml: body
+          bodyHtml: body,
+          accessToken: currentToken
         })
       });
 
@@ -1285,15 +1309,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       showToast(`✉️ Đang chuẩn bị gửi mail vận chuyển đơn hàng #${orderId}...`, "info");
       const { subject, body } = getEmailContentForOrder(order, 'shipping');
       
+      const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
       const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
         },
         body: JSON.stringify({
           to: order.contact?.email ?? "",
           subject,
-          bodyHtml: body
+          bodyHtml: body,
+          accessToken: currentToken
         })
       });
 
@@ -1319,15 +1346,18 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       showToast(`✉️ Đang chuẩn bị gửi mail thông báo hàng về đơn hàng #${orderId}...`, "info");
       const { subject, body } = getEmailContentForOrder(order, 'arrival', currentWeightFee);
       
+      const currentToken = localStorage.getItem('yeng_gmail_access_token') || gmailToken || '';
       const response = await fetch('/api/gmail/send', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
         },
         body: JSON.stringify({
           to: order.contact?.email ?? "",
           subject,
-          bodyHtml: body
+          bodyHtml: body,
+          accessToken: currentToken
         })
       });
 
