@@ -82,7 +82,22 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       });
       
       if (listRes.status === 401) {
-        console.warn("Gmail token is expired. Setting empty messages list.");
+        console.warn("Gmail token is expired. Attempting server token auto-refresh...");
+        try {
+          const statusRes = await fetch('/api/gmail/status');
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            if (statusData.connected && statusData.accessToken && statusData.accessToken !== token) {
+              console.log("[AdminPage] Successfully refreshed Gmail token via server. Retrying message fetch...");
+              setGmailToken(statusData.accessToken);
+              localStorage.setItem('yeng_gmail_access_token', statusData.accessToken);
+              return fetchGmailMessages(statusData.accessToken);
+            }
+          }
+        } catch (refreshErr) {
+          console.error("Failed to auto-refresh token on 401:", refreshErr);
+        }
+
         setGmailMessages([]);
         showToast("⚠️ Phiên kết nối Gmail đã hết hạn. Vui lòng nhấn nút 'Kết nối Gmail' để làm mới.", "info");
         return;
