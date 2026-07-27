@@ -1,53 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Safety Net - default deny catch-all
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    match /gmail/{document} {
-      allow read, create: if true;
-      allow update: if request.resource.data.refreshToken != null || resource.data.refreshToken == null;
-    }
-  }
-}
-
-    // 2. Gmail config collection - secure lookup via unguessable ID or settings ID
-    match /gmail/{configId} {
-      allow get: if configId == "config_YengCornerSecret_3bf8d79a29e4" || configId == "settings";
-      allow write: if configId == "config_YengCornerSecret_3bf8d79a29e4" || configId == "settings";
-      allow list: if false;
-    }
-
-    // 3. Subscriber emails collection - allow public registration and reading
-    match /subscriber_emails/{emailId} {
-      allow read, write: if true;
-    }
-
-    match /subscribers/{emailId} {
-      allow read, write: if true;
-    }
-
-    // 4. Subscription groups config
-    match /config/{configId} {
-      allow read, write: if configId == "subscription_groups";
-      allow list: if false;
-    }
-
-    // 5. Products collection
-    match /products/{productId} {
-      allow get, list: if true;
-      allow create, update, delete: if true;
-    }
-
-    // 6. Coupons collection
-    match /coupons/{couponId} {
-      allow read, write: if true;
-    }
-
-    // 7. Orders collection
-    match /orders/{orderId} {
       allow read, write: if true;
     }
   }
