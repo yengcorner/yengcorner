@@ -425,18 +425,30 @@ export async function updateOrderStatusAndPaidAmount(orderId: string, status: st
   }
 }
 
-export async function updateOrderTrackingCode(orderId: string, trackingCode: string): Promise<OrderPayload[]> {
+export async function updateOrderTrackingCode(orderId: string, trackingCode: string, newStatus?: string): Promise<OrderPayload[]> {
   try {
     const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { trackingCode });
+    const updateData: any = { trackingCode };
+    if (newStatus !== undefined) {
+      updateData.status = newStatus;
+    } else if (trackingCode && trackingCode.trim() !== '') {
+      updateData.status = "Đã có mã vận đơn";
+    }
+    await updateDoc(docRef, updateData);
     return await getOrders();
   } catch (e) {
     console.error("Lỗi cập nhật mã vận đơn trên Firestore:", e);
     try {
       const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, trackingCode } : ord
-      );
+      const updated = currentOrders.map(ord => {
+        if (ord.id === orderId) {
+          const finalStatus = newStatus !== undefined 
+            ? newStatus 
+            : ((trackingCode && trackingCode.trim() !== '') ? "Đã có mã vận đơn" : ord.status);
+          return { ...ord, trackingCode, status: finalStatus };
+        }
+        return ord;
+      });
       saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
