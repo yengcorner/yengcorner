@@ -790,7 +790,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     const updates = parsedImports.map(item => ({
       orderId: item.orderId,
-      trackingCode: item.trackingCode
+      trackingCode: item.trackingCode,
+      status: (item.trackingCode && item.trackingCode.trim() !== '') ? "Đã có mã vận đơn" : undefined
     }));
 
     // 🔄 Thêm chữ await và đợi Firebase xử lý xong rồi lấy data mới set vào giao diện
@@ -805,6 +806,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const candidates = orders.filter(o => 
       o.trackingCode && 
       o.trackingCode.trim() !== '' && 
+      o.status !== "Đã vận chuyển" &&
       o.status !== "Đã giao cho đơn vị vận chuyển" &&
       o.status !== "Đã hủy" &&
       o.status !== "Đã hoàn thành"
@@ -815,7 +817,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       return;
     }
 
-    if (!window.confirm(`📦 Xác nhận cập nhật trạng thái của ${candidates.length} đơn hàng thành "Đã giao cho đơn vị vận chuyển" và gửi email thông báo hàng loạt?`)) {
+    if (!window.confirm(`📦 Xác nhận gửi email thông báo vận chuyển và cập nhật trạng thái của ${candidates.length} đơn hàng thành "Đã vận chuyển"?`)) {
       return;
     }
 
@@ -827,9 +829,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
     for (let i = 0; i < candidates.length; i++) {
       const order = candidates[i];
-      
-      const updated = await updateOrderStatus(order.id, "Đã giao cho đơn vị vận chuyển");
-      setOrders(updated);
 
       try {
         const subject = `ĐƠN HÀNG ${order.id} CỦA BẠN ĐÃ ĐƯỢC GIAO CHO ĐVVC!`;
@@ -890,6 +889,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         });
 
         if (response.ok) {
+          const updated = await updateOrderStatus(order.id, "Đã vận chuyển");
+          setOrders(updated);
           successCount++;
         } else {
           failCount++;
@@ -1365,6 +1366,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         const data = await response.json();
         throw new Error(data.error || `Gmail API returned status ${response.status}`);
       }
+
+      // Tự động chuyển trạng thái đơn hàng thành "Đã vận chuyển" sau khi gửi mail thành công
+      const updated = await updateOrderStatus(orderId, "Đã vận chuyển");
+      setOrders(updated);
 
       showToast(`✉️ Đã gửi email thông báo vận chuyển tới ${order.contact?.email ?? ""} thành công!`, "success");
     } catch (err: any) {
@@ -2167,7 +2172,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       (ord.contact?.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       ord.items.some(it => it.product && it.product.name && it.product.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    const matchesStatus = statusFilter === 'All' || ord.status === statusFilter;
+    let matchesStatus = true;
+    if (statusFilter === 'Đã có mã vận đơn') {
+      matchesStatus = Boolean(ord.trackingCode && ord.trackingCode.trim() !== '');
+    } else if (statusFilter !== 'All') {
+      matchesStatus = ord.status === statusFilter;
+    }
     const matchesPayment = paymentFilter === 'All' || (ord.payment?.method || '').includes(paymentFilter);
 
     return matchesSearch && matchesStatus && matchesPayment;
@@ -2773,12 +2783,8 @@ function getColumnLetter(colIndex) {
                 <option value="All">Tất cả các trạng thái</option>
                 <option value="Chờ xác nhận">Chờ xác nhận</option>
                 <option value="Đã xác nhận">Đã xác nhận</option>
-                <option value="Đang gom hàng">Đang gom hàng</option>
-                <option value="Đã bay kho Hàn">Đã bay kho Hàn</option>
-                <option value="Đã về Sài Gòn">Đã về Sài Gòn</option>
-                <option value="Đã giao cho đơn vị vận chuyển">Đã giao cho đơn vị vận chuyển</option>
-                <option value="Đã hoàn thành">Đã hoàn thành</option>
-                <option value="Đã hủy">Đã hủy</option>
+                <option value="Đã vận chuyển">Đã vận chuyển</option>
+                <option value="Đã có mã vận đơn">Đã có mã vận đơn</option>
               </select>
             </div>
 
@@ -2878,6 +2884,7 @@ function getColumnLetter(colIndex) {
       const statusColors: Record<string, string> = {
         "Chờ xác nhận": "bg-yellow-50 text-yellow-700 border-yellow-200",
         "Đã xác nhận": "bg-emerald-50 text-emerald-700 border-emerald-200",
+        "Đã có mã vận đơn": "bg-sky-50 text-sky-700 border-sky-200",
         "Đã vận chuyển": "bg-blue-50 text-blue-700 border-blue-200",
         "Đang gom hàng": "bg-blue-50 text-blue-700 border-blue-200 animate-pulse", // Đã sửa màu bg-blue-55 lỗi thành bg-blue-50
         "Đã bay kho Hàn": "bg-indigo-50 text-indigo-700 border-indigo-200",
@@ -2996,10 +3003,16 @@ function getColumnLetter(colIndex) {
                                 value={ord.trackingCode || ''}
                                 onChange={async (e) => {
                                   const newVal = e.target.value;
+                                  const hasTrackingCode = Boolean(newVal && newVal.trim() !== '');
+                                  const targetStatus = hasTrackingCode ? "Đã có mã vận đơn" : ord.status;
                                   // 1. Cập nhật UI cục bộ ngay lập tức để gõ phím mượt mà không bị giật
-                                  setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, trackingCode: newVal } : o));
+                                  setOrders(prev => prev.map(o => o.id === ord.id ? { 
+                                    ...o, 
+                                    trackingCode: newVal,
+                                    status: hasTrackingCode ? "Đã có mã vận đơn" : o.status
+                                  } : o));
                                   // 2. Lưu bất đồng bộ lên Firestore ngầm mà không gán Promise vào state
-                                  await updateOrderTrackingCode(ord.id, newVal);
+                                  await updateOrderTrackingCode(ord.id, newVal, targetStatus);
                                 }}
                                 className="w-full px-2.5 py-1.5 border border-neutral-300 rounded-lg text-xs bg-neutral-50 placeholder-neutral-400 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500 text-neutral-800"
                               />
@@ -3179,8 +3192,9 @@ function getColumnLetter(colIndex) {
                             >
                               <option value="Chờ xác nhận">Chờ xác nhận</option>
                               <option value="Đã xác nhận">Đã xác nhận</option>
+                              <option value="Đã có mã vận đơn">Đã có mã vận đơn</option>
                               <option value="Đã vận chuyển">Đã vận chuyển</option>
-                              {ord.status !== "Chờ xác nhận" && ord.status !== "Đã xác nhận" && ord.status !== "Đã vận chuyển" && (
+                              {ord.status !== "Chờ xác nhận" && ord.status !== "Đã xác nhận" && ord.status !== "Đã có mã vận đơn" && ord.status !== "Đã vận chuyển" && (
                                 <option value={ord.status}>{ord.status}</option>
                               )}
                             </select>
