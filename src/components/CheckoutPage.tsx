@@ -331,7 +331,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       return;
     }
     if (!formData.address.trim()) {
-      alert("⚠️ Vui lòng điền Địa chỉ nhận hàng chi tiết đầy đủ (Trước sáp nhập).");
+      alert("⚠️ Vui lòng điền Địa chỉ nhận hàng chi tiết đầy đủ (Sau sáp nhập).");
       return;
     }
     if (!previewImage) {
@@ -913,7 +913,7 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
 
               <div className="space-y-1">
                 <label className="block text-xs font-mono font-bold text-neutral-700 uppercase">
-                  ĐỊA CHỈ NHẬN HÀNG CHI TIẾT ĐẦY ĐỦ (TRƯỚC XÁP NHẬP) *
+                  ĐỊA CHỈ NHẬN HÀNG CHI TIẾT ĐẦY ĐỦ (SAU SÁP NHẬP) *
                 </label>
                 <input 
                   required 
