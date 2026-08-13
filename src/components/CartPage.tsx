@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Trash2, ArrowRight, ArrowLeft, Ticket, ShieldCheck, Tag, X, AlertTriangle } from 'lucide-react';
 import { CartItem, Coupon } from '../types';
 import { getProductStockForVersion, getProducts, fetchProductsFromServer, isProductSoldOut } from '../utils/products';
+import { getCoupons } from '../utils/orders';
 
 interface CartPageProps {
   cart: CartItem[];
@@ -77,7 +78,7 @@ export default function CartPage({
     setCurrentPage('checkout');
   };
 
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     setCouponError(null);
     setCouponSuccess(null);
     
@@ -87,19 +88,7 @@ export default function CartPage({
     }
 
     try {
-      const savedCoupons = localStorage.getItem('yeng_coupons');
-      const couponsList: Coupon[] = savedCoupons ? JSON.parse(savedCoupons) : [
-        {
-          code: "YENGNEW",
-          expiryDate: "2026-12-31",
-          applicableProducts: "All",
-          maxUsage: 100,
-          discountType: 'percentage',
-          discountValue: 10,
-          usedCount: 0
-        }
-      ];
-
+      const couponsList = await getCoupons();
       const matched = couponsList.find(c => c.code.trim().toUpperCase() === couponCodeInput.trim().toUpperCase());
       
       if (!matched) {
