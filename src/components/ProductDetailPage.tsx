@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer, convertToSlug } from '../utils/products';
+import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
 
 interface ProductDetailPageProps {
-  id: number | string | null;
+  id: number | null;
   addToCart: (product: Product, quantity?: number, version?: string) => void;
   setCurrentPage: (page: string) => void;
 }
@@ -12,135 +12,18 @@ interface ProductDetailPageProps {
 export default function ProductDetailPage({ id, addToCart, setCurrentPage }: ProductDetailPageProps) {
   const [productsList, setProductsList] = useState<Product[]>(() => getProducts());
 
-  // Helper to find product by numeric ID, string ID, or converted slug
-  const findMatchingProduct = (list: Product[], targetId: number | string | null): Product | null => {
-    if (targetId === null || targetId === undefined || targetId === "") return null;
-    const strId = String(targetId).trim();
-    const numId = Number(targetId);
-
-    // 1. First check converted slug match
-    const matchSlug = list.find(p => convertToSlug(p.name) === strId);
-    if (matchSlug) return matchSlug;
-
-    // 2. Check numeric ID match
-    if (!isNaN(numId)) {
-      const matchNum = list.find(p => Number(p.id) === numId);
-      if (matchNum) return matchNum;
-    }
-
-    // 3. Check string ID match
-    const matchStr = list.find(p => String(p.id) === strId);
-    if (matchStr) return matchStr;
-
-    return null;
-  };
-
-  const initialMatch = findMatchingProduct(getProducts(), id);
-  const [loading, setLoading] = useState<boolean>(!initialMatch);
-
   useEffect(() => {
-    let isMounted = true;
-
-    // Check current local products
-    const currentMatch = findMatchingProduct(productsList, id);
-    if (currentMatch) {
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-
-    // Fallback fetch: Force query/fetch products from Firestore
-    fetchProductsFromServer().then((freshList) => {
-      if (isMounted) {
-        if (freshList && freshList.length > 0) {
-          setProductsList(freshList);
-        }
-        setLoading(false);
-      }
-    }).catch((err) => {
-      console.warn("Fallback fetch failed in ProductDetailPage:", err);
-      if (isMounted) setLoading(false);
-    });
+    // Force call cache-busting fetch from DB server on page mount
+    fetchProductsFromServer();
 
     const unsubscribe = subscribeProducts((list) => {
-      if (isMounted) {
-        setProductsList(list);
-        setLoading(false);
-      }
+      setProductsList(list);
     });
+    return unsubscribe;
+  }, []);
 
-    return () => {
-      isMounted = false;
-      unsubscribe();
-    };
-  }, [id]);
-
-  const product = findMatchingProduct(productsList, id);
-
-  // Render Skeleton Loading while waiting for product data
-  if (loading && !product) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="animate-pulse space-y-8">
-          {/* Breadcrumb Skeleton */}
-          <div className="flex items-center space-x-3 text-xs text-neutral-300">
-            <div className="h-4 w-16 bg-neutral-200 rounded-md"></div>
-            <span>/</span>
-            <div className="h-4 w-24 bg-neutral-200 rounded-md"></div>
-            <span>/</span>
-            <div className="h-4 w-36 bg-neutral-200 rounded-md"></div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14">
-            {/* Gallery Skeleton */}
-            <div className="space-y-4">
-              <div className="w-full aspect-square bg-neutral-200 rounded-2xl shadow-inner"></div>
-              <div className="grid grid-cols-4 gap-3">
-                <div className="aspect-square bg-neutral-200 rounded-xl"></div>
-                <div className="aspect-square bg-neutral-200 rounded-xl"></div>
-                <div className="aspect-square bg-neutral-200 rounded-xl"></div>
-                <div className="aspect-square bg-neutral-200 rounded-xl"></div>
-              </div>
-            </div>
-
-            {/* Product Info Skeleton */}
-            <div className="space-y-6 flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="h-4 w-28 bg-neutral-200 rounded-full"></div>
-                <div className="h-8 w-5/6 bg-neutral-200 rounded-lg"></div>
-                <div className="h-6 w-1/3 bg-neutral-200 rounded-md"></div>
-                <div className="h-10 w-1/2 bg-neutral-200 rounded-xl"></div>
-                <div className="h-24 w-full bg-neutral-100 rounded-2xl border border-neutral-200"></div>
-              </div>
-
-              <div className="space-y-3 pt-6 border-t border-neutral-200">
-                <div className="h-12 w-full bg-neutral-300 rounded-xl"></div>
-                <div className="h-10 w-full bg-neutral-200 rounded-xl"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!product) {
-    return (
-      <div className="min-h-[400px] flex flex-col items-center justify-center space-y-4 py-20 text-center">
-        <div className="w-16 h-16 bg-neutral-100 text-neutral-400 rounded-full flex items-center justify-center">
-          <Info className="w-8 h-8" />
-        </div>
-        <h2 className="text-lg font-bold text-neutral-900 uppercase tracking-wider">Không tìm thấy sản phẩm</h2>
-        <p className="text-sm text-neutral-500 max-w-md">Sản phẩm này không tồn tại hoặc đã bị gỡ bỏ.</p>
-        <button 
-          onClick={() => setCurrentPage('home')}
-          className="px-6 py-2.5 bg-blue-900 text-white text-xs font-bold rounded-xl uppercase tracking-wider hover:bg-blue-800 transition-colors shadow-sm"
-        >
-          Quay lại trang chủ
-        </button>
-      </div>
-    );
-  }
+  // Gracefully fallback if ID is missing or invalid
+  const product = productsList.find(p => p.id === id) || productsList[0];
   
   // States of current variants selector
   const hasMultiTier = !!(product?.attribute1Name && Array.isArray(product?.attribute1Options) && product.attribute1Options.length > 0);
