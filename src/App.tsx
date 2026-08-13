@@ -17,7 +17,7 @@ import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedProductId, setSelectedProductId] = useState<number | string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [rulesAnchor, setRulesAnchor] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
@@ -63,28 +63,12 @@ export default function App() {
     }
   }, [cart]);
 
-  // Real-time synchronization of cart items and product detail route with latest Firestore product stock and status
+  // Real-time synchronization of cart items with latest Firestore product stock and status
   useEffect(() => {
-    const handleProductsUpdate = (latestProducts: Product[]) => {
+    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products:", err));
+
+    const unsubscribe = subscribeProducts((latestProducts) => {
       if (!latestProducts || latestProducts.length === 0) return;
-
-      // Automatically trigger finding product if selectedProductId is a slug or string
-      setSelectedProductId((currentSelectedId) => {
-        if (currentSelectedId !== null && currentSelectedId !== undefined) {
-          const strVal = String(currentSelectedId);
-          const numVal = Number(currentSelectedId);
-          const found = latestProducts.find((p) => 
-            convertToSlug(p.name) === strVal ||
-            String(p.id) === strVal ||
-            (!isNaN(numVal) && Number(p.id) === numVal)
-          );
-          if (found) {
-            return found.id;
-          }
-        }
-        return currentSelectedId;
-      });
-
       setCart((prevCart) => {
         let hasChanges = false;
         const updatedCart = prevCart.map((item) => {
@@ -99,16 +83,6 @@ export default function App() {
         });
         return hasChanges ? updatedCart : prevCart;
       });
-    };
-
-    fetchProductsFromServer().then((latest) => {
-      if (latest && latest.length > 0) {
-        handleProductsUpdate(latest);
-      }
-    }).catch(err => console.warn("Failed to fetch fresh products:", err));
-
-    const unsubscribe = subscribeProducts((latestProducts) => {
-      handleProductsUpdate(latestProducts);
     });
 
     return () => unsubscribe();
@@ -151,47 +125,36 @@ export default function App() {
       setCurrentPage('admin-yeng');
     } else if (pathname.startsWith('/product/')) {
       const parts = pathname.split('/');
-      const slugOrId = decodeURIComponent(parts[parts.length - 1] || '');
-
-      if (!slugOrId) {
-        setCurrentPage('home');
-        return;
-      }
-
-      const productsList = getProducts();
-      const numId = parseInt(slugOrId, 10);
-
-      const foundProduct = productsList.find((p) => 
-        convertToSlug(p.name) === slugOrId || 
-        String(p.id) === slugOrId || 
-        (!isNaN(numId) && Number(p.id) === numId)
-      );
-
-      if (foundProduct) {
-        setSelectedProductId(foundProduct.id);
-      } else if (!isNaN(numId) && String(numId) === slugOrId) {
-        setSelectedProductId(numId);
+      const slugOrId = parts[parts.length - 1];
+      const id = parseInt(slugOrId, 10);
+      if (!isNaN(id)) {
+        setSelectedProductId(id);
+        setCurrentPage('product-detail');
       } else {
-        setSelectedProductId(slugOrId);
+        const productsList = getProducts();
+        const foundProduct = productsList.find((p) => convertToSlug(p.name) === slugOrId);
+        if (foundProduct) {
+          setSelectedProductId(foundProduct.id);
+          setCurrentPage('product-detail');
+        } else {
+          setCurrentPage('home');
+        }
       }
-      setCurrentPage('product-detail');
     } else if (prodIdParam) {
-      const numId = parseInt(prodIdParam, 10);
-      const productsList = getProducts();
-      const foundProduct = productsList.find((p) => 
-        convertToSlug(p.name) === prodIdParam || 
-        String(p.id) === prodIdParam || 
-        (!isNaN(numId) && Number(p.id) === numId)
-      );
-
-      if (foundProduct) {
-        setSelectedProductId(foundProduct.id);
-      } else if (!isNaN(numId)) {
-        setSelectedProductId(numId);
+      const id = parseInt(prodIdParam, 10);
+      if (!isNaN(id)) {
+        setSelectedProductId(id);
+        setCurrentPage('product-detail');
       } else {
-        setSelectedProductId(prodIdParam);
+        const productsList = getProducts();
+        const foundProduct = productsList.find((p) => convertToSlug(p.name) === prodIdParam);
+        if (foundProduct) {
+          setSelectedProductId(foundProduct.id);
+          setCurrentPage('product-detail');
+        } else {
+          setCurrentPage('home');
+        }
       }
-      setCurrentPage('product-detail');
     } else if (pathname === '/shop') {
       setCurrentPage('shop');
     } else if (pathname === '/wishlist') {
@@ -238,15 +201,9 @@ export default function App() {
     const getTargetURL = () => {
       if (currentPage === 'admin-yeng') {
         return '/admin';
-      } else if (currentPage === 'product-detail' && selectedProductId !== null && selectedProductId !== undefined) {
+      } else if (currentPage === 'product-detail' && selectedProductId !== null) {
         const productsList = getProducts();
-        const strVal = String(selectedProductId);
-        const numVal = Number(selectedProductId);
-        const currentProd = productsList.find((p) => 
-          Number(p.id) === numVal || 
-          String(p.id) === strVal || 
-          convertToSlug(p.name) === strVal
-        );
+        const currentProd = productsList.find((p) => p.id === selectedProductId);
         if (currentProd) {
           return `/product/${convertToSlug(currentProd.name)}`;
         }
@@ -374,26 +331,9 @@ export default function App() {
     setCart([]);
   };
 
-  const navigateToProduct = (id: number | string) => {
-    const productsList = getProducts();
-    const strVal = String(id);
-    const numVal = Number(id);
-
-    const foundProd = productsList.find((p) => 
-      Number(p.id) === numVal || 
-      String(p.id) === strVal || 
-      convertToSlug(p.name) === strVal
-    );
-
-    const targetId = foundProd ? foundProd.id : id;
-    setSelectedProductId(targetId);
+  const navigateToProduct = (id: number) => {
+    setSelectedProductId(id);
     setCurrentPage('product-detail');
-
-    const targetSlug = foundProd ? convertToSlug(foundProd.name) : id;
-    const targetPath = `/product/${targetSlug}`;
-    if (window.location.pathname !== targetPath) {
-      window.history.pushState({}, '', targetPath);
-    }
   };
 
   return (
