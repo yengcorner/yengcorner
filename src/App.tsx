@@ -63,12 +63,28 @@ export default function App() {
     }
   }, [cart]);
 
-  // Real-time synchronization of cart items with latest Firestore product stock and status
+  // Real-time synchronization of cart items and product detail route with latest Firestore product stock and status
   useEffect(() => {
-    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products:", err));
-
-    const unsubscribe = subscribeProducts((latestProducts) => {
+    const handleProductsUpdate = (latestProducts: Product[]) => {
       if (!latestProducts || latestProducts.length === 0) return;
+
+      // Automatically trigger finding product if selectedProductId is a slug or string
+      setSelectedProductId((currentSelectedId) => {
+        if (currentSelectedId !== null && currentSelectedId !== undefined) {
+          const strVal = String(currentSelectedId);
+          const numVal = Number(currentSelectedId);
+          const found = latestProducts.find((p) => 
+            convertToSlug(p.name) === strVal ||
+            String(p.id) === strVal ||
+            (!isNaN(numVal) && Number(p.id) === numVal)
+          );
+          if (found) {
+            return found.id;
+          }
+        }
+        return currentSelectedId;
+      });
+
       setCart((prevCart) => {
         let hasChanges = false;
         const updatedCart = prevCart.map((item) => {
@@ -83,6 +99,16 @@ export default function App() {
         });
         return hasChanges ? updatedCart : prevCart;
       });
+    };
+
+    fetchProductsFromServer().then((latest) => {
+      if (latest && latest.length > 0) {
+        handleProductsUpdate(latest);
+      }
+    }).catch(err => console.warn("Failed to fetch fresh products:", err));
+
+    const unsubscribe = subscribeProducts((latestProducts) => {
+      handleProductsUpdate(latestProducts);
     });
 
     return () => unsubscribe();
