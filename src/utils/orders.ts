@@ -590,7 +590,6 @@ export async function saveCoupon(coupon: Coupon): Promise<void> {
     } catch (e) {}
   } catch (e) {
     console.error("Lỗi lưu coupon lên Firestore:", e);
-    // Lưu tạm vào local cache làm cứu cánh
     try {
       const saved = localStorage.getItem('yeng_coupons');
       let list: Coupon[] = saved ? JSON.parse(saved) : [];
@@ -600,4 +599,57 @@ export async function saveCoupon(coupon: Coupon): Promise<void> {
     } catch (err) {}
   }
 }
+
+export async function deleteCoupon(code: string): Promise<void> {
+  try {
+    const docRef = doc(db, 'coupons', code.toUpperCase());
+    await deleteDoc(docRef);
+    
+    // Đồng bộ local cache
+    try {
+      const saved = localStorage.getItem('yeng_coupons');
+      let list: Coupon[] = saved ? JSON.parse(saved) : [];
+      list = list.filter(c => c.code.toUpperCase() !== code.toUpperCase());
+      localStorage.setItem('yeng_coupons', JSON.stringify(list));
+    } catch (e) {}
+  } catch (e) {
+    console.error("Lỗi xóa coupon trên Firestore:", e);
+    try {
+      const saved = localStorage.getItem('yeng_coupons');
+      let list: Coupon[] = saved ? JSON.parse(saved) : [];
+      list = list.filter(c => c.code.toUpperCase() !== code.toUpperCase());
+      localStorage.setItem('yeng_coupons', JSON.stringify(list));
+    } catch (err) {}
+  }
+}
+
+export async function saveAllCoupons(couponsList: Coupon[]): Promise<void> {
+  try {
+    const q = collection(db, 'coupons');
+    const querySnapshot = await getDocs(q);
+    const existingCodes = new Set<string>();
+    querySnapshot.forEach((docSnap) => {
+      existingCodes.add(docSnap.id.toUpperCase());
+    });
+
+    const currentCodes = new Set(couponsList.map(c => c.code.toUpperCase()));
+
+    for (const oldCode of existingCodes) {
+      if (!currentCodes.has(oldCode)) {
+        await deleteDoc(doc(db, 'coupons', oldCode));
+      }
+    }
+
+    for (const coupon of couponsList) {
+      const docRef = doc(db, 'coupons', coupon.code.toUpperCase());
+      await setDoc(docRef, coupon);
+    }
+
+    localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+  } catch (e) {
+    console.error("Lỗi lưu toàn bộ coupons lên Firestore:", e);
+    localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+  }
+}
+
 
