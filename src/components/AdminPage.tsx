@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
-import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, listenToOrders } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, deleteCoupon, saveAllCoupons, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -593,14 +593,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setEmailFormBody(content.body);
   };
 
-// Coupons state - Ban đầu để mảng rỗng, dữ liệu sẽ được tải từ Firebase về sau
+  // Coupons state
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [isSavingCoupons, setIsSavingCoupons] = useState(false);
 
-  // 🔄 Tự động tải danh sách Coupon từ Firebase khi mở trang Admin (Gộp chung vào useEffect có sẵn của bồ)
+  // 🔄 Tự động tải danh sách Coupon từ Firebase khi mở trang Admin hoặc chuyển sang tab coupons
   useEffect(() => {
     if (isAuthenticated) {
       getCoupons().then((data) => {
-        // Nếu trên Firebase chưa có coupon nào, nạp mã mặc định YENGNEW cho bồ luôn
         if (data.length === 0) {
           const defaultCoupon: Coupon = {
             code: 'YENGNEW',
@@ -617,7 +617,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         }
       });
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeTab]);
 
   const [isCouponModalOpen, setIsCouponModalOpen] = useState(false);
   const [couponForm, setCouponForm] = useState({
@@ -629,20 +629,39 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     discountValue: 10
   });
 
+  // 💾 Hàm xử lý Lưu tất cả thay đổi Coupons lên Firestore
+  const handleSaveAllCoupons = async () => {
+    setIsSavingCoupons(true);
+    try {
+      await saveAllCoupons(coupons);
+      const freshData = await getCoupons();
+      if (freshData && freshData.length > 0) {
+        setCoupons(freshData);
+      }
+      showToast('Đã lưu thay đổi mã giảm giá thành công!', 'success');
+    } catch (e) {
+      console.error("Lỗi khi lưu mã giảm giá:", e);
+      showToast('❌ Lưu thay đổi thất bại!', 'error');
+    } finally {
+      setIsSavingCoupons(false);
+    }
+  };
+
   // ➕ Hàm xử lý Thêm Coupon mới lên Firebase
-  const handleAddCoupon = async (e: React.FormEvent) => { // 👈 Đã thêm async
+  const handleAddCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!couponForm.code.trim()) {
       showToast('❌ Vui lòng nhập mã giảm giá!', 'error');
       return;
     }
-    const dup = coupons.find(c => c.code.toUpperCase() === couponForm.code.toUpperCase());
+    const formattedCode = couponForm.code.toUpperCase().replace(/\s+/g, '');
+    const dup = coupons.find(c => c.code.toUpperCase() === formattedCode);
     if (dup) {
       showToast('❌ Mã giảm giá này đã tồn tại!', 'error');
       return;
     }
     const newCoupon: Coupon = {
-      code: couponForm.code.toUpperCase().replace(/\s+/g, ''),
+      code: formattedCode,
       expiryDate: couponForm.expiryDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       applicableProducts: couponForm.applicableProducts,
       maxUsage: Number(couponForm.maxUsage) || 100,
@@ -651,35 +670,37 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       usedCount: 0
     };
 
-    // Lưu thẳng lên mạng Firebase Firestore và đợi xong
-    await saveCoupon(newCoupon); 
-    
-    // Tải lại danh sách mới từ Firebase để cập nhật giao diện
-    const freshCoupons = await getCoupons();
-    setCoupons(freshCoupons);
+    try {
+      // Lưu thẳng lên Firebase Firestore
+      await saveCoupon(newCoupon); 
+      
+      // Tải lại danh sách mới từ Firebase để cập nhật giao diện
+      const freshCoupons = await getCoupons();
+      setCoupons(freshCoupons);
 
-    setIsCouponModalOpen(false);
-    setCouponForm({
-      code: '',
-      expiryDate: '',
-      applicableProducts: 'Tất cả danh mục',
-      maxUsage: 100,
-      discountType: 'percentage',
-      discountValue: 10
-    });
-    showToast('🎉 Thêm mã giảm giá thành công!', 'success');
+      setIsCouponModalOpen(false);
+      setCouponForm({
+        code: '',
+        expiryDate: '',
+        applicableProducts: 'Tất cả danh mục',
+        maxUsage: 100,
+        discountType: 'percentage',
+        discountValue: 10
+      });
+      showToast('🎉 Thêm mã giảm giá thành công!', 'success');
+    } catch (err) {
+      console.error("Lỗi khi thêm mã giảm giá:", err);
+      showToast('❌ Thêm mã giảm giá thất bại!', 'error');
+    }
   };
 
-  // 🗑️ Hàm xử lý Xóa Coupon khỏi Firebase
-  const handleDeleteCoupon = async (code: string) => { // 👈 Đã thêm async
+  // 🗑️ Hàm xử lý Xóa Coupon khỏi Firebase & State
+  const handleDeleteCoupon = async (code: string) => {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn xóa mã giảm giá ${code}?`)) {
       try {
-        // Gọi thẳng lệnh xóa tài liệu trên Firebase Firestore
-        const { deleteDoc, doc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'coupons', code.toUpperCase()));
-        
-        // Cập nhật lại giao diện ngay lập tức
-        setCoupons(coupons.filter(c => c.code !== code));
+        await deleteCoupon(code);
+        const updatedCoupons = coupons.filter(c => c.code.toUpperCase() !== code.toUpperCase());
+        setCoupons(updatedCoupons);
         showToast('🗑️ Đã xóa mã giảm giá!', 'info');
       } catch (e) {
         console.error("Lỗi khi xóa coupon:", e);
@@ -3416,15 +3437,25 @@ function getColumnLetter(colIndex) {
           <div className="bg-white p-4 rounded-xl border border-neutral-200/80 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
               <h3 className="text-sm font-display font-bold text-blue-900 uppercase">Quản lý mã giảm giá (Coupons)</h3>
-              <p className="text-[11px] text-neutral-400 mt-0.5">Thêm hoặc xóa các mã giảm giá áp dụng khi khách hàng thanh toán.</p>
+              <p className="text-[11px] text-neutral-400 mt-0.5">Thêm, xóa hoặc lưu đồng bộ các mã giảm giá áp dụng khi khách hàng thanh toán.</p>
             </div>
-            <button
-              onClick={() => setIsCouponModalOpen(true)}
-              className="w-full sm:w-auto px-5 py-2.5 bg-blue-900 text-white font-display font-bold text-xs uppercase tracking-wide rounded-xl shadow-md hover:bg-blue-950 transition-all flex items-center justify-center space-x-1.5"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Thêm mã giảm giá mới</span>
-            </button>
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-2">
+              <button
+                onClick={handleSaveAllCoupons}
+                disabled={isSavingCoupons}
+                className="w-full sm:w-auto px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-display font-bold text-xs uppercase tracking-wide rounded-xl shadow-md transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50"
+              >
+                {isSavingCoupons ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>💾 LƯU THAY ĐỔI</span>
+              </button>
+              <button
+                onClick={() => setIsCouponModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-blue-900 text-white font-display font-bold text-xs uppercase tracking-wide rounded-xl shadow-md hover:bg-blue-950 transition-all flex items-center justify-center space-x-1.5"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>+ THÊM MÃ GIẢM GIÁ MỚI</span>
+              </button>
+            </div>
           </div>
 
           {/* Table display list of Coupons */}
@@ -3484,7 +3515,7 @@ function getColumnLetter(colIndex) {
               </table>
             </div>
             <div className="bg-neutral-50 p-4 border-t text-[11px] text-neutral-400">
-              * Mã giảm giá hoạt động theo thời gian thực và được lưu trữ trên LocalStorage của hệ thống.
+              * Mã giảm giá hoạt động theo thời gian thực và được lưu trữ trực tiếp trên Firestore (Firebase) của hệ thống.
             </div>
           </div>
         </>
