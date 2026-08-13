@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer, convertToSlug } from '../utils/products';
 
 interface ProductDetailPageProps {
-  id: number | null;
+  id: number | string | null;
   addToCart: (product: Product, quantity?: number, version?: string) => void;
   setCurrentPage: (page: string) => void;
 }
@@ -14,7 +14,11 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
 
   useEffect(() => {
     // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
+    fetchProductsFromServer().then((list) => {
+      if (list && list.length > 0) {
+        setProductsList(list);
+      }
+    });
 
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list);
@@ -22,8 +26,50 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
     return unsubscribe;
   }, []);
 
-  // Gracefully fallback if ID is missing or invalid
-  const product = productsList.find(p => p.id === id) || productsList[0];
+  // Helper to find product by numeric ID, string ID, or converted slug
+  const findMatchingProduct = (list: Product[], targetId: number | string | null): Product | null => {
+    if (targetId === null || targetId === undefined || targetId === "") return null;
+    const strId = String(targetId).trim();
+    const numId = Number(targetId);
+
+    if (!isNaN(numId) && String(numId) === strId) {
+      const match = list.find(p => Number(p.id) === numId);
+      if (match) return match;
+    }
+
+    const matchStr = list.find(p => String(p.id) === strId);
+    if (matchStr) return matchStr;
+
+    const matchSlug = list.find(p => convertToSlug(p.name) === strId);
+    if (matchSlug) return matchSlug;
+
+    if (!isNaN(numId)) {
+      const matchNum = list.find(p => Number(p.id) === numId);
+      if (matchNum) return matchNum;
+    }
+
+    return null;
+  };
+
+  const product = findMatchingProduct(productsList, id);
+
+  if (!product) {
+    return (
+      <div className="min-h-[400px] flex flex-col items-center justify-center space-y-4 py-20 text-center">
+        <div className="w-16 h-16 bg-neutral-100 text-neutral-400 rounded-full flex items-center justify-center">
+          <Info className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-bold text-neutral-900 uppercase tracking-wider">Không tìm thấy sản phẩm</h2>
+        <p className="text-sm text-neutral-500 max-w-md">Sản phẩm này không tồn tại hoặc đã bị gỡ bỏ.</p>
+        <button 
+          onClick={() => setCurrentPage('shop')}
+          className="px-6 py-2.5 bg-blue-900 text-white text-xs font-bold rounded-xl uppercase tracking-wider hover:bg-blue-800 transition-colors"
+        >
+          Quay lại cửa hàng
+        </button>
+      </div>
+    );
+  }
   
   // States of current variants selector
   const hasMultiTier = !!(product?.attribute1Name && Array.isArray(product?.attribute1Options) && product.attribute1Options.length > 0);
