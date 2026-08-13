@@ -17,7 +17,7 @@ import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<number | string | null>(null);
   const [rulesAnchor, setRulesAnchor] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
@@ -125,36 +125,47 @@ export default function App() {
       setCurrentPage('admin-yeng');
     } else if (pathname.startsWith('/product/')) {
       const parts = pathname.split('/');
-      const slugOrId = parts[parts.length - 1];
-      const id = parseInt(slugOrId, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
-      } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === slugOrId);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
+      const slugOrId = decodeURIComponent(parts[parts.length - 1] || '');
+
+      if (!slugOrId) {
+        setCurrentPage('home');
+        return;
       }
+
+      const productsList = getProducts();
+      const numId = parseInt(slugOrId, 10);
+
+      const foundProduct = productsList.find((p) => 
+        convertToSlug(p.name) === slugOrId || 
+        String(p.id) === slugOrId || 
+        (!isNaN(numId) && Number(p.id) === numId)
+      );
+
+      if (foundProduct) {
+        setSelectedProductId(foundProduct.id);
+      } else if (!isNaN(numId) && String(numId) === slugOrId) {
+        setSelectedProductId(numId);
+      } else {
+        setSelectedProductId(slugOrId);
+      }
+      setCurrentPage('product-detail');
     } else if (prodIdParam) {
-      const id = parseInt(prodIdParam, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
+      const numId = parseInt(prodIdParam, 10);
+      const productsList = getProducts();
+      const foundProduct = productsList.find((p) => 
+        convertToSlug(p.name) === prodIdParam || 
+        String(p.id) === prodIdParam || 
+        (!isNaN(numId) && Number(p.id) === numId)
+      );
+
+      if (foundProduct) {
+        setSelectedProductId(foundProduct.id);
+      } else if (!isNaN(numId)) {
+        setSelectedProductId(numId);
       } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === prodIdParam);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
+        setSelectedProductId(prodIdParam);
       }
+      setCurrentPage('product-detail');
     } else if (pathname === '/shop') {
       setCurrentPage('shop');
     } else if (pathname === '/wishlist') {
@@ -201,9 +212,15 @@ export default function App() {
     const getTargetURL = () => {
       if (currentPage === 'admin-yeng') {
         return '/admin';
-      } else if (currentPage === 'product-detail' && selectedProductId !== null) {
+      } else if (currentPage === 'product-detail' && selectedProductId !== null && selectedProductId !== undefined) {
         const productsList = getProducts();
-        const currentProd = productsList.find((p) => p.id === selectedProductId);
+        const strVal = String(selectedProductId);
+        const numVal = Number(selectedProductId);
+        const currentProd = productsList.find((p) => 
+          Number(p.id) === numVal || 
+          String(p.id) === strVal || 
+          convertToSlug(p.name) === strVal
+        );
         if (currentProd) {
           return `/product/${convertToSlug(currentProd.name)}`;
         }
@@ -331,9 +348,26 @@ export default function App() {
     setCart([]);
   };
 
-  const navigateToProduct = (id: number) => {
-    setSelectedProductId(id);
+  const navigateToProduct = (id: number | string) => {
+    const productsList = getProducts();
+    const strVal = String(id);
+    const numVal = Number(id);
+
+    const foundProd = productsList.find((p) => 
+      Number(p.id) === numVal || 
+      String(p.id) === strVal || 
+      convertToSlug(p.name) === strVal
+    );
+
+    const targetId = foundProd ? foundProd.id : id;
+    setSelectedProductId(targetId);
     setCurrentPage('product-detail');
+
+    const targetSlug = foundProd ? convertToSlug(foundProd.name) : id;
+    const targetPath = `/product/${targetSlug}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({}, '', targetPath);
+    }
   };
 
   return (
