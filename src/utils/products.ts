@@ -71,35 +71,41 @@ export function convertToSlug(text: string): string {
     .replace(/-+/g, "-"); // remove double hyphens
 }
 
-// Memory cache of products
+// Memory & Session cache of products
 let cachedProducts: Product[] = [];
+let isProductsInitialLoaded = false;
 
-export const PRODUCTS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
-
-export const isProductsCacheExpired = (): boolean => {
-  try {
-    const storedTime = localStorage.getItem('yeng_products_timestamp');
-    if (!storedTime) return true;
-    return Date.now() - Number(storedTime) > PRODUCTS_CACHE_MAX_AGE;
-  } catch (e) {
-    return true;
-  }
+export const isProductsLoaded = (): boolean => {
+  return isProductsInitialLoaded || cachedProducts.length > 0;
 };
 
-export const saveProductsToLocalStorage = (list: Product[]) => {
+export const saveProductsToCache = (list: Product[]) => {
   try {
+    cachedProducts = list;
+    isProductsInitialLoaded = true;
     localStorage.setItem('yeng_products', JSON.stringify(list));
     localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+    sessionStorage.setItem('yeng_products_session', JSON.stringify(list));
   } catch (e) {
-    console.error("Error setting products to localStorage:", e);
+    console.error("Error setting products to cache:", e);
   }
 };
 
-// Load cached products initially from localStorage if available as a synchronous fallback
+export const saveProductsToLocalStorage = saveProductsToCache;
+
+// Load cached products initially from sessionStorage or localStorage as a synchronous fallback
 try {
-  const saved = localStorage.getItem('yeng_products');
+  const sessionSaved = sessionStorage.getItem('yeng_products_session');
+  const localSaved = localStorage.getItem('yeng_products');
+  const saved = sessionSaved || localSaved;
   if (saved) {
-    cachedProducts = JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cachedProducts = parsed;
+      isProductsInitialLoaded = true;
+    } else {
+      cachedProducts = INITIAL_PRODUCTS;
+    }
   } else {
     cachedProducts = INITIAL_PRODUCTS;
   }
@@ -111,7 +117,7 @@ try {
 // Map to keep track of product.id -> Firestore document ID
 const productIdToDocIdMap = new Map<number, string>();
 
-// Set up real-time listener to keep cachedProducts and localStorage in sync with Firestore
+// Set up real-time listener to keep cachedProducts and cache in sync with Firestore
 onSnapshot(collection(db, "products"), (snapshot) => {
   const list: Product[] = [];
   snapshot.forEach((docSnap) => {
@@ -136,13 +142,17 @@ onSnapshot(collection(db, "products"), (snapshot) => {
       list.push(data as Product);
     }
   });
-  // Sort products by id descending
-  list.sort((a, b) => Number(b.id) - Number(a.id));
-  cachedProducts = list;
-  saveProductsToLocalStorage(list);
+  
+  if (list.length > 0) {
+    // Sort products by id descending
+    list.sort((a, b) => Number(b.id) - Number(a.id));
+    saveProductsToCache(list);
+  } else if (!isProductsInitialLoaded) {
+    isProductsInitialLoaded = true;
+  }
   
   // Dispatch an update event so that any active React components can reactively update
-  const event = new CustomEvent('yeng_products_updated', { detail: list });
+  const event = new CustomEvent('yeng_products_updated', { detail: { products: cachedProducts, isLoaded: true } });
   window.dispatchEvent(event);
 }, (err) => {
   console.error("Error listening to products collection:", err);
@@ -150,17 +160,18 @@ onSnapshot(collection(db, "products"), (snapshot) => {
 });
 
 export const getProducts = (): Product[] => {
-  if (isProductsCacheExpired()) {
-    console.log("[getProducts] Products cache expired, triggering background revalidation from DB server...");
-    fetchProductsFromServer().catch(err => console.warn("Background revalidation of products failed:", err));
-  }
   return cachedProducts;
 };
 
 // Fetch fresh products directly from server bypassing any cache (Cache-Busting)
-export const fetchProductsFromServer = async (): Promise<Product[]> => {
+export const fetchProductsFromServer = async (force = false): Promise<Product[]> => {
+  // If already loaded in memory/cache and not forced, return cached products immediately
+  if (!force && isProductsInitialLoaded && cachedProducts.length > 0) {
+    return cachedProducts;
+  }
+
   try {
-    console.log("[fetchProductsFromServer] Fetching fresh products directly from Firestore client-side...");
+    console.log("[fetchProductsFromServer] Fetching fresh products from Firestore...");
     const snapshot = await getDocs(collection(db, "products"));
     const list: Product[] = [];
     snapshot.forEach((docSnap) => {
@@ -186,15 +197,12 @@ export const fetchProductsFromServer = async (): Promise<Product[]> => {
     });
 
     if (list.length > 0) {
-      // Sort products by id descending
       list.sort((a, b) => Number(b.id) - Number(a.id));
-      cachedProducts = list;
-      saveProductsToLocalStorage(list);
+      saveProductsToCache(list);
 
-      // Dispatch update event
-      const event = new CustomEvent('yeng_products_updated', { detail: list });
+      const event = new CustomEvent('yeng_products_updated', { detail: { products: list, isLoaded: true } });
       window.dispatchEvent(event);
-      console.log("[fetchProductsFromServer] Successfully updated products directly from Firestore client-side:", list.length);
+      console.log("[fetchProductsFromServer] Successfully loaded products from Firestore:", list.length);
       return list;
     }
   } catch (err) {
@@ -215,61 +223,47 @@ export const fetchProductsFromServer = async (): Promise<Product[]> => {
     if (response.ok) {
       const list = await response.json();
       if (Array.isArray(list) && list.length > 0) {
-        cachedProducts = list;
-        saveProductsToLocalStorage(list);
+        saveProductsToCache(list);
         
-        // Sync ID Map
         list.forEach((p: Product) => {
           if (p.id) {
             productIdToDocIdMap.set(Number(p.id), p.id.toString());
           }
         });
 
-        // Dispatch update event
-        const event = new CustomEvent('yeng_products_updated', { detail: list });
+        const event = new CustomEvent('yeng_products_updated', { detail: { products: list, isLoaded: true } });
         window.dispatchEvent(event);
-        console.log("[fetchProductsFromServer] Fallback successful. Updated products list from server API:", list.length);
+        console.log("[fetchProductsFromServer] Fallback successful. Loaded products list from server API:", list.length);
         return list;
       }
-    } else {
-      console.warn("[fetchProductsFromServer] Fallback server API returned error status:", response.status);
     }
   } catch (err) {
     console.error("[fetchProductsFromServer] Fallback server API also failed:", err);
   }
+
+  isProductsInitialLoaded = true;
   return cachedProducts;
 };
 
-// Auto background-revalidation on page focus or tab visibility change (SWR pattern)
-if (typeof window !== 'undefined') {
-  const triggerProductsRevalidation = () => {
-    if (isProductsCacheExpired()) {
-      console.log("[Products Revalidation] Window focused/visible and cache is stale. Fetching fresh products in background...");
-      fetchProductsFromServer().catch(err => console.warn("Focus revalidation failed:", err));
-    }
-  };
-
-  window.addEventListener('focus', triggerProductsRevalidation);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      triggerProductsRevalidation();
-    }
-  });
+// Trigger an initial fetch from the server on boot if needed
+if (!isProductsInitialLoaded || cachedProducts.length === 0) {
+  try {
+    fetchProductsFromServer();
+  } catch (e) {
+    console.error("Error doing initial boot fetch:", e);
+  }
 }
 
-// Trigger an initial fetch from the server on boot
-try {
-  fetchProductsFromServer();
-} catch (e) {
-  console.error("Error doing initial boot fetch:", e);
-}
-
-export const subscribeProducts = (callback: (products: Product[]) => void) => {
+export const subscribeProducts = (callback: (products: Product[], isLoaded?: boolean) => void) => {
   // Call immediately with current cache
-  callback(cachedProducts);
+  callback(cachedProducts, isProductsInitialLoaded);
   
   const handleUpdate = (e: any) => {
-    callback(e.detail);
+    if (e.detail && Array.isArray(e.detail.products)) {
+      callback(e.detail.products, e.detail.isLoaded ?? true);
+    } else if (Array.isArray(e.detail)) {
+      callback(e.detail, true);
+    }
   };
   
   window.addEventListener('yeng_products_updated', handleUpdate);
