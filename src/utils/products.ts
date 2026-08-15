@@ -79,16 +79,93 @@ export const isProductsLoaded = (): boolean => {
   return isProductsInitialLoaded || cachedProducts.length > 0;
 };
 
+// Helper to sanitize product payload for lightweight storage caching (avoids QuotaExceededError)
+const sanitizeProductForStorage = (p: Product): any => {
+  const sanitizeImg = (imgStr?: string) => {
+    if (!imgStr) return '';
+    // If an image is a massive Base64 string (>3000 chars), omit or truncate to protect storage quota
+    if (imgStr.startsWith('data:') && imgStr.length > 3000) {
+      return '';
+    }
+    return imgStr;
+  };
+
+  const images = Array.isArray(p.images)
+    ? p.images.slice(0, 3).map(img => sanitizeImg(img)).filter(Boolean)
+    : [];
+
+  return {
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    image: sanitizeImg(p.image) || (images[0] || ''),
+    images: images.length > 0 ? images : undefined,
+    category: p.category,
+    artist: p.artist,
+    status: p.status,
+    stock: p.stock,
+    tag: p.tag,
+    info: p.info,
+    detailedDesc: p.detailedDesc ? p.detailedDesc.slice(0, 500) : '',
+    releaseDate: p.releaseDate,
+    orderDeadline: p.orderDeadline,
+    weight: p.weight,
+    preorderGift: p.preorderGift,
+    versions: p.versions,
+    variations: p.variations,
+    variationName: p.variationName,
+    attribute1Name: p.attribute1Name,
+    attribute1Options: p.attribute1Options,
+    attribute2Name: p.attribute2Name,
+    attribute2Options: p.attribute2Options,
+    variantMatrix: p.variantMatrix,
+    hasInsurance: p.hasInsurance,
+    shippingFeeIncluded: p.shippingFeeIncluded,
+  };
+};
+
 export const saveProductsToCache = (list: Product[]) => {
+  if (!Array.isArray(list)) return;
+  
+  // 1. ALWAYS update in-memory RAM cache with 100% of products and full fidelity
+  cachedProducts = list;
+  isProductsInitialLoaded = true;
+  syncDocIdMap(list);
+
+  // 2. Safely attempt saving lightweight subset to localStorage & sessionStorage
   try {
-    if (!Array.isArray(list)) return;
-    cachedProducts = list;
-    isProductsInitialLoaded = true;
-    localStorage.setItem('yeng_products', JSON.stringify(list));
-    localStorage.setItem('yeng_products_timestamp', Date.now().toString());
-    sessionStorage.setItem('yeng_products_session', JSON.stringify(list));
+    const lightweightList = list.slice(0, 40).map(sanitizeProductForStorage);
+    const jsonStr = JSON.stringify(lightweightList);
+
+    try {
+      localStorage.setItem('yeng_products', jsonStr);
+      localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+    } catch (e: any) {
+      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014 || (e?.message && e.message.includes('quota'))) {
+        console.warn("[Storage] LocalStorage quota exceeded. Cleaning storage and falling back to memory cache.");
+        try {
+          localStorage.removeItem('yeng_products');
+          localStorage.removeItem('yeng_products_session');
+          // Try with smaller subset (15 items)
+          const miniList = list.slice(0, 15).map(sanitizeProductForStorage);
+          localStorage.setItem('yeng_products', JSON.stringify(miniList));
+        } catch {
+          // Gracefully fallback to in-memory array
+        }
+      }
+    }
+
+    try {
+      sessionStorage.setItem('yeng_products_session', jsonStr);
+    } catch (e: any) {
+      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014 || (e?.message && e.message.includes('quota'))) {
+        try {
+          sessionStorage.removeItem('yeng_products_session');
+        } catch {}
+      }
+    }
   } catch (e) {
-    console.error("Error setting products to cache:", e);
+    console.warn("Storage caching notice (in-memory cache is fully active):", e);
   }
 };
 
@@ -112,7 +189,7 @@ try {
     cachedProducts = INITIAL_PRODUCTS;
   }
 } catch (e) {
-  console.error("Error loading products cache on boot:", e);
+  console.warn("Notice loading products cache on boot:", e);
   cachedProducts = INITIAL_PRODUCTS;
 }
 
