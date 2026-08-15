@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, ArrowRight, ShoppingBag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, isProductsLoaded } from '../utils/products';
 
 interface WishlistPageProps {
   wishlist: number[];
@@ -20,13 +20,12 @@ export default function WishlistPage({
 }: WishlistPageProps) {
   // Read all current products in real-time
   const [allProducts, setAllProducts] = useState<Product[]>(() => getProducts());
+  const [isLoading, setIsLoading] = useState<boolean>(() => !isProductsLoaded() && allProducts.length === 0);
 
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
       setAllProducts(list);
+      setIsLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -56,7 +55,17 @@ export default function WishlistPage({
       </div>
 
       {/* Main Core Showcase list */}
-      {likedProducts.length === 0 ? (
+      {isLoading && wishlist.length > 0 && likedProducts.length === 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          {wishlist.slice(0, 4).map((id) => (
+            <div key={id} className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-3 animate-pulse">
+              <div className="aspect-square bg-neutral-200 rounded-xl" />
+              <div className="h-4 bg-neutral-200 rounded w-3/4" />
+              <div className="h-4 bg-neutral-200 rounded w-1/2" />
+            </div>
+          ))}
+        </div>
+      ) : likedProducts.length === 0 ? (
         <div className="text-center py-20 bg-white border border-dashed border-neutral-300 rounded-2xl max-w-lg mx-auto p-6 space-y-4">
           <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
             <Heart className="w-8 h-8" />
@@ -93,6 +102,7 @@ export default function WishlistPage({
                   alt={product.name} 
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 {product.tag && product.tag.trim() !== "" && (
                   <div className="absolute top-3 left-3 z-10">
