@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, HelpCircle, Heart, Tag } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, isProductSoldOut, isProductsLoaded } from '../utils/products';
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
@@ -22,13 +22,12 @@ export default function ShopAllPage({
   const [productsList, setProductsList] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop')
   );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !isProductsLoaded() && productsList.length === 0);
 
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop'));
+      setIsLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -233,14 +232,36 @@ export default function ShopAllPage({
       </div>
 
       {/* Grid List Products */}
-      {products.length === 0 ? (
+      {isLoading && productsList.length === 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div
+              key={i}
+              className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col animate-pulse"
+            >
+              <div className="aspect-square bg-neutral-200" />
+              <div className="p-3 sm:p-4 md:p-5 flex flex-col flex-1 space-y-3">
+                <div className="space-y-1.5">
+                  <div className="h-4 bg-neutral-200 rounded w-4/5" />
+                  <div className="h-3 bg-neutral-200 rounded w-1/2" />
+                </div>
+                <div className="h-10 bg-neutral-100 rounded-lg w-full" />
+                <div className="pt-2 flex items-baseline justify-between">
+                  <div className="h-3 bg-neutral-200 rounded w-8" />
+                  <div className="h-5 bg-neutral-200 rounded w-20" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : products.length === 0 ? (
         <div className="text-center py-20 bg-white border border-dashed border-neutral-300 rounded-2xl">
           <HelpCircle className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
           <h3 className="text-lg font-display font-medium text-neutral-800">Không tìm thấy sản phẩm</h3>
           <p className="text-sm text-neutral-500 mt-1">Xin lỗi, không có mặt hàng nào phù hợp với từ khóa tìm kiếm của bạn.</p>
           <button 
             onClick={() => { setFilter('All'); setArtistFilter('All'); setSearchQuery(''); setSortBy('default'); }}
-            className="mt-4 px-5 py-2 bg-[#e8f0ff] text-blue-900 text-xs font-bold rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors"
+            className="mt-4 px-5 py-2 bg-[#e8f0ff] text-blue-900 text-xs font-bold rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
           >
             Reset bộ lọc
           </button>
