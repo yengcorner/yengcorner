@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, Firestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -8,10 +8,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Initialize Firestore with custom settings (force/auto-detect long polling to prevent WebChannel Listen 404 error)
+// Initialize Firestore with forced HTTP Long Polling & memory cache to prevent WebChannel Listen 404 stream errors
 const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
+  experimentalForceLongPolling: true,
+  localCache: memoryLocalCache(),
 }, firestoreDbId);
 
 // Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
