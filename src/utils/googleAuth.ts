@@ -8,10 +8,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Initialize Firestore with standard getFirestore using the custom DB ID.
-// This is more reliable inside iframes where third-party IndexedDB/persistent cache access may be restricted by sandbox policies.
+// Initialize Firestore with custom settings (force/auto-detect long polling to prevent WebChannel Listen 404 error)
 const firestoreDbId = (firebaseConfig as any).firestoreDatabaseId;
-export const db = getFirestore(app, firestoreDbId);
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+}, firestoreDbId);
 
 // Passive Guest/Anonymous sign-in to guarantee every visitor has a valid Auth ID for Firestore safety
 onAuthStateChanged(auth, async (user) => {
