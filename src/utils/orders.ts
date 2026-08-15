@@ -1,7 +1,7 @@
 import { OrderPayload, CartItem, Product, Coupon } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, compressImage, sanitizeProductForOrder } from './googleAuth';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 // Helper to generate some high-fidelity mock orders for first-time administration view
 const getInitialMockOrders = (): OrderPayload[] => {
@@ -247,39 +247,30 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
 }
 
 export function listenToOrders(callback: (orders: OrderPayload[]) => void): () => void {
-  const q = collection(db, 'orders');
-  
-  return onSnapshot(q, (querySnapshot) => {
-    const list: OrderPayload[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data() as OrderPayload;
-      if (data) {
-        list.push({
-          ...data,
-          id: data.id || doc.id
-        });
-      }
-    });
-    
-    // Sắp xếp đơn hàng giảm dần theo thời gian (mới nhất lên đầu)
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Đồng bộ vào localStorage cache để đồng bộ mượt mà
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-    } catch (e) {
-      console.warn("Lỗi lưu cache localStorage:", e);
+  let isMounted = true;
+
+  // Run initial fetch
+  getOrders().then(list => {
+    if (isMounted) {
+      callback(list);
     }
-    
-    callback(list);
-  }, (error) => {
-    console.error("Lỗi listenToOrders từ Firestore:", error);
-    // Fallback to local storage if listener fails or is unauthorized
-    getOrdersLocalFallback().then(localList => {
-      localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      callback(localList);
-    });
+  }).catch(err => {
+    console.warn("listenToOrders initial load fallback:", err);
   });
+
+  // Poll orders periodically without WebChannel connection
+  const intervalId = setInterval(() => {
+    getOrders().then(list => {
+      if (isMounted) {
+        callback(list);
+      }
+    }).catch(() => {});
+  }, 10000);
+
+  return () => {
+    isMounted = false;
+    clearInterval(intervalId);
+  };
 }
 
 // Helper to recursively remove all undefined values from an object/array for Firestore safety
