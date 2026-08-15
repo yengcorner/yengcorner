@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn, HelpCircle } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, isProductsLoaded } from '../utils/products';
 
 interface ProductDetailPageProps {
   id: number | null;
@@ -11,19 +11,18 @@ interface ProductDetailPageProps {
 
 export default function ProductDetailPage({ id, addToCart, setCurrentPage }: ProductDetailPageProps) {
   const [productsList, setProductsList] = useState<Product[]>(() => getProducts());
+  const [isLoading, setIsLoading] = useState<boolean>(() => !isProductsLoaded() && productsList.length === 0);
 
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
       setProductsList(list);
+      setIsLoading(false);
     });
     return unsubscribe;
   }, []);
 
-  // Gracefully fallback if ID is missing or invalid
-  const product = productsList.find(p => p.id === id) || productsList[0];
+  // Gracefully find product by ID or fallback to first if no ID passed
+  const product = productsList.find(p => Number(p.id) === Number(id)) || (id === null ? productsList[0] : undefined);
   
   // States of current variants selector
   const hasMultiTier = !!(product?.attribute1Name && Array.isArray(product?.attribute1Options) && product.attribute1Options.length > 0);
@@ -218,12 +217,41 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   };
 
   if (!product) {
-    return (
-      <div className="py-20 text-center space-y-4">
-        <div className="animate-spin inline-block w-8 h-8 border-[3px] border-current border-t-transparent text-blue-600 rounded-full" role="status">
-          <span className="sr-only">Đang tải...</span>
+    if (isLoading) {
+      return (
+        <div className="space-y-10">
+          <div>
+            <div className="h-4 w-32 bg-neutral-200 animate-pulse rounded" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            <div className="aspect-square bg-white border border-neutral-200 rounded-2xl p-3 animate-pulse">
+              <div className="w-full h-full bg-neutral-200 rounded-xl" />
+            </div>
+            <div className="space-y-6 animate-pulse">
+              <div className="h-5 bg-neutral-200 rounded w-1/4" />
+              <div className="h-8 bg-neutral-200 rounded w-4/5" />
+              <div className="h-6 bg-neutral-200 rounded w-1/3" />
+              <div className="h-24 bg-neutral-100 rounded-xl w-full" />
+              <div className="h-12 bg-neutral-200 rounded-xl w-full" />
+            </div>
+          </div>
         </div>
-        <p className="text-neutral-500 font-mono text-sm">Đang tải chi tiết sản phẩm hoặc không tìm thấy sản phẩm...</p>
+      );
+    }
+
+    return (
+      <div className="py-20 text-center space-y-4 max-w-md mx-auto">
+        <HelpCircle className="w-12 h-12 text-neutral-400 mx-auto" />
+        <h2 className="text-xl font-display font-bold text-neutral-800">Không tìm thấy sản phẩm</h2>
+        <p className="text-neutral-500 text-sm">
+          Sản phẩm bạn đang tìm kiếm không tồn tại hoặc đã ngừng kinh doanh.
+        </p>
+        <button
+          onClick={() => setCurrentPage('shop')}
+          className="mt-4 px-6 py-2.5 bg-neutral-900 text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
+        >
+          Quay lại cửa hàng
+        </button>
       </div>
     );
   }
