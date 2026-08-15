@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Trash2, ArrowRight, ArrowLeft, Ticket, ShieldCheck, Tag, X, AlertTriangle } from 'lucide-react';
 import { CartItem, Coupon } from '../types';
-import { getProductStockForVersion, getProducts, fetchProductsFromServer, isProductSoldOut } from '../utils/products';
+import { getProductStockForVersion, getProducts, subscribeProducts, isProductSoldOut } from '../utils/products';
 import { getCoupons } from '../utils/orders';
 
 interface CartPageProps {
@@ -24,9 +24,13 @@ export default function CartPage({
   const [couponCodeInput, setCouponCodeInput] = useState(appliedCoupon ? appliedCoupon.code : '');
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(appliedCoupon ? `Đang áp dụng mã giảm giá "${appliedCoupon.code}"` : null);
+  const [, setProductVersion] = useState<number>(0);
 
   useEffect(() => {
-    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products in CartPage:", err));
+    const unsubscribe = subscribeProducts(() => {
+      setProductVersion(v => v + 1);
+    });
+    return unsubscribe;
   }, []);
 
   const freshProducts = getProducts();
