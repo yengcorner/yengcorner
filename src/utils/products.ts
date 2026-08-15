@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, addDoc, getDoc, updateDoc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -128,50 +128,6 @@ const syncDocIdMap = (list: Product[]) => {
   });
 };
 syncDocIdMap(cachedProducts);
-
-// 2. REALTIME LISTENER WITH QUERY LIMIT: Listen for real-time updates smoothly in the background
-try {
-  const qRealtime = query(collection(db, "products"), limit(80));
-  onSnapshot(qRealtime, (snapshot) => {
-    const list: Product[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data();
-      if (data) {
-        let numericId = Number(data.id);
-        if (isNaN(numericId) || !numericId) {
-          numericId = Number(docSnap.id);
-        }
-        if (isNaN(numericId) || !numericId) {
-          let hash = 0;
-          const str = docSnap.id;
-          for (let i = 0; i < str.length; i++) {
-            hash = (hash << 5) - hash + str.charCodeAt(i);
-            hash |= 0;
-          }
-          numericId = Math.abs(hash);
-        }
-        data.id = numericId;
-        productIdToDocIdMap.set(numericId, docSnap.id);
-        list.push(data as Product);
-      }
-    });
-    
-    if (list.length > 0) {
-      list.sort((a, b) => Number(b.id) - Number(a.id));
-      saveProductsToCache(list);
-    } else if (!isProductsInitialLoaded) {
-      isProductsInitialLoaded = true;
-    }
-    
-    // Dispatch an update event so active React components update seamlessly
-    const event = new CustomEvent('yeng_products_updated', { detail: { products: cachedProducts, isLoaded: true } });
-    window.dispatchEvent(event);
-  }, (err) => {
-    console.warn("[onSnapshot Products] Real-time listener notice:", err?.message || err);
-  });
-} catch (e) {
-  console.warn("[onSnapshot Products] Error attaching listener:", e);
-}
 
 export const getProducts = (): Product[] => {
   return cachedProducts;
