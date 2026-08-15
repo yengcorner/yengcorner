@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, isProductsLoaded } from '../utils/products';
 
 interface HomePageProps {
   navigateToProduct: (id: number) => void;
@@ -25,6 +25,7 @@ export default function HomePage({
   const [allProducts, setAllProducts] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p))
   );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !isProductsLoaded() && allProducts.length === 0);
 
   const handleGoToShop = (category: string = 'All') => {
     if (navigateToShop) {
@@ -50,12 +51,10 @@ export default function HomePage({
   };
 
   useEffect(() => {
-    // Force call cache-busting fetch from DB server on page mount
-    fetchProductsFromServer();
-
     const unsubscribe = subscribeProducts((list) => {
       const filtered = list.filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p));
       setAllProducts(filtered);
+      setIsLoading(false);
     });
     return unsubscribe;
   }, []);
@@ -65,7 +64,33 @@ export default function HomePage({
   const merchProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'merch');
   const kStyleProducts = allProducts.filter(p => normalizeCategory(p.category || "") === 'k-style');
 
+  const renderSliderSkeleton = (title: string) => (
+    <section className="space-y-6">
+      <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+        <div className="h-6 w-36 sm:w-48 bg-neutral-200 animate-pulse rounded-md"></div>
+        <div className="h-4 w-16 bg-neutral-200 animate-pulse rounded-md"></div>
+      </div>
+      <div className="flex overflow-x-hidden gap-4 pb-4 -mx-4 px-4 sm:mx-0 sm:px-0">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="shrink-0 w-[165px] sm:w-[185px] md:w-[220px] bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col animate-pulse">
+            <div className="aspect-square bg-neutral-200"></div>
+            <div className="p-3 sm:p-4 space-y-3">
+              <div className="h-4 bg-neutral-200 rounded w-3/4"></div>
+              <div className="h-3 bg-neutral-200 rounded w-1/2"></div>
+              <div className="h-5 bg-neutral-200 rounded w-1/3 pt-1"></div>
+              <div className="h-8 bg-neutral-200 rounded-lg w-full mt-2"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
   const renderProductSlider = (title: string, products: Product[], targetCategory: string) => {
+    if (isLoading && allProducts.length === 0) {
+      return renderSliderSkeleton(title);
+    }
+
     return (
       <section className="space-y-6">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
