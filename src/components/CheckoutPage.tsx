@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw, AlertTriangle } from 'lucide-react';
 import { CartItem, OrderPayload, Coupon } from '../types';
 import { saveOrder } from '../utils/orders';
-import { deductProductStock, getProducts, getProductStockForVersion, isProductSoldOut, fetchProductsFromServer } from '../utils/products';
+import { deductProductStock, getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut } from '../utils/products';
 import { initAuth, googleSignIn, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
 interface CheckoutPageProps {
@@ -233,9 +233,13 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
   const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [generatedOrder, setGeneratedOrder] = useState<OrderPayload | null>(null);
   const [isQrZoomed, setIsQrZoomed] = useState(false);
+  const [, setProductVersion] = useState(0);
 
   useEffect(() => {
-    fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products in CheckoutPage:", err));
+    const unsubscribe = subscribeProducts(() => {
+      setProductVersion(v => v + 1);
+    });
+    return unsubscribe;
   }, []);
 
   const freshProducts = getProducts();
