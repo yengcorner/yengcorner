@@ -28,7 +28,7 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
     setLoading(true);
     
     try {
-      const allOrders = await getOrders();
+      const allOrders = await getOrders(true);
       const filtered = allOrders.filter(o => {
         const orderPhone = (o.shipping?.phone || '').trim().replace(/[^0-9]/g, '');
         if (!orderPhone) return false;
@@ -67,19 +67,24 @@ export default function TrackOrderPage({ setCurrentPage }: TrackOrderPageProps) 
     switch (status) {
       case 'Chờ xác nhận':
         return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'Đã xác nhận':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'Đã về HCM':
+      case 'Đã về Sài Gòn':
+        return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'Đã vận chuyển':
+      case 'Đã giao khách':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'Đang gom hàng':
         return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'Đã bay kho Hàn':
         return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-      case 'Đã về Sài Gòn':
-        return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'Đã giao khách':
       case 'Hoàn thành':
         return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       case 'Đã hủy':
         return 'bg-rose-100 text-rose-800 border-rose-200';
       default:
-        return 'bg-neutral-150 text-neutral-800 border-neutral-250';
+        return 'bg-neutral-100 text-neutral-800 border-neutral-200';
     }
   };
 
