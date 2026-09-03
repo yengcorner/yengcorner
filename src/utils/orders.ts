@@ -1,7 +1,16 @@
-import { OrderPayload, CartItem, Product, Coupon } from '../types';
+import { OrderPayload, CartItem, Product, Coupon, ORDER_STATUSES, OrderStatus } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, compressImage, sanitizeProductForOrder } from './googleAuth';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+
+// Tự động chuẩn hóa và chuyển đổi trạng thái cũ (ví dụ "Đã có mã vận đơn") thành "Đã về HCM"
+export function normalizeOrderStatus(status?: string): string {
+  if (!status) return "Chờ xác nhận";
+  if (status === "Đã có mã vận đơn" || status === "Đã về Sài Gòn") {
+    return "Đã về HCM";
+  }
+  return status;
+}
 
 // Helper to generate some high-fidelity mock orders for first-time administration view
 const getInitialMockOrders = (): OrderPayload[] => {
@@ -13,7 +22,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
   return [
     {
       id: "YENG8431",
-      status: "Đang gom hàng",
+      status: "Đã xác nhận",
       items: [
         {
           product: pNct,
@@ -41,7 +50,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
     },
     {
       id: "YENG1940",
-      status: "Đã bay kho Hàn",
+      status: "Đã xác nhận",
       items: [
         {
           product: pJacket,
@@ -69,7 +78,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
     },
     {
       id: "YENG4712",
-      status: "Đã về Sài Gòn",
+      status: "Đã về HCM",
       items: [
         {
           product: pAespa,
@@ -174,7 +183,11 @@ export function syncAllProductSpecificOrders(): void {
 async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    const parsed: OrderPayload[] = saved ? JSON.parse(saved) : [];
+    return parsed.map(ord => ({
+      ...ord,
+      status: normalizeOrderStatus(ord.status)
+    }));
   } catch (e) {
     return [];
   }
@@ -201,7 +214,8 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
       if (data) {
         list.push({
           ...data,
-          id: data.id || doc.id
+          id: data.id || doc.id,
+          status: normalizeOrderStatus(data.status)
         });
       }
     });
@@ -231,9 +245,13 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
     if (response.ok) {
       const list = await response.json();
       if (Array.isArray(list)) {
-        list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        saveOrdersToLocalStorage(list);
-        return list;
+        const normalizedList = list.map((ord: OrderPayload) => ({
+          ...ord,
+          status: normalizeOrderStatus(ord.status)
+        }));
+        normalizedList.sort((a: OrderPayload, b: OrderPayload) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        saveOrdersToLocalStorage(normalizedList);
+        return normalizedList;
       }
     }
   } catch (err) {
@@ -377,16 +395,17 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
 }
 
 export async function updateOrderStatus(orderId: string, status: string): Promise<OrderPayload[]> {
+  const normalizedStatus = normalizeOrderStatus(status);
   try {
     const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { status });
+    await updateDoc(docRef, { status: normalizedStatus });
     return await getOrders();
   } catch (e) {
     console.error("Lỗi cập nhật trạng thái đơn hàng trên Firestore:", e);
     try {
       const currentOrders = await getOrdersLocalFallback();
       const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, status } : ord
+        ord.id === orderId ? { ...ord, status: normalizedStatus } : ord
       );
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       syncAllProductSpecificOrders();
@@ -397,16 +416,17 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
 }
 
 export async function updateOrderStatusAndPaidAmount(orderId: string, status: string, paidAmount: number): Promise<OrderPayload[]> {
+  const normalizedStatus = normalizeOrderStatus(status);
   try {
     const docRef = doc(db, 'orders', orderId);
-    await updateDoc(docRef, { status, paidAmount });
+    await updateDoc(docRef, { status: normalizedStatus, paidAmount });
     return await getOrders();
   } catch (e) {
     console.error("Lỗi cập nhật trạng thái và số tiền đã thanh toán trên Firestore:", e);
     try {
       const currentOrders = await getOrdersLocalFallback();
       const updated = currentOrders.map(ord => 
-        ord.id === orderId ? { ...ord, status, paidAmount } : ord
+        ord.id === orderId ? { ...ord, status: normalizedStatus, paidAmount } : ord
       );
       saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
@@ -421,9 +441,7 @@ export async function updateOrderTrackingCode(orderId: string, trackingCode: str
     const docRef = doc(db, 'orders', orderId);
     const updateData: any = { trackingCode };
     if (newStatus !== undefined) {
-      updateData.status = newStatus;
-    } else if (trackingCode && trackingCode.trim() !== '') {
-      updateData.status = "Đã có mã vận đơn";
+      updateData.status = normalizeOrderStatus(newStatus);
     }
     await updateDoc(docRef, updateData);
     return await getOrders();
@@ -434,8 +452,8 @@ export async function updateOrderTrackingCode(orderId: string, trackingCode: str
       const updated = currentOrders.map(ord => {
         if (ord.id === orderId) {
           const finalStatus = newStatus !== undefined 
-            ? newStatus 
-            : ((trackingCode && trackingCode.trim() !== '') ? "Đã có mã vận đơn" : ord.status);
+            ? normalizeOrderStatus(newStatus) 
+            : normalizeOrderStatus(ord.status);
           return { ...ord, trackingCode, status: finalStatus };
         }
         return ord;
@@ -474,7 +492,7 @@ export async function updateBulkOrdersTracking(updates: { orderId: string; track
       const docRef = doc(db, 'orders', u.orderId);
       const dataToUpdate: any = { trackingCode: u.trackingCode };
       if (u.status !== undefined) {
-        dataToUpdate.status = u.status;
+        dataToUpdate.status = normalizeOrderStatus(u.status);
       }
       return updateDoc(docRef, dataToUpdate);
     });
@@ -490,7 +508,7 @@ export async function updateBulkOrdersTracking(updates: { orderId: string; track
           return { 
             ...ord, 
             trackingCode: match.trackingCode,
-            status: match.status !== undefined ? match.status : ord.status 
+            status: match.status !== undefined ? normalizeOrderStatus(match.status) : normalizeOrderStatus(ord.status) 
           };
         }
         return ord;
