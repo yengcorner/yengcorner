@@ -56,9 +56,12 @@ export interface OrderShipping {
   method: string;
 }
 
+export type OrderStatus = 'Chờ xác nhận' | 'Đã xác nhận' | 'Đã về HCM' | 'Đã vận chuyển';
+export const ORDER_STATUSES: OrderStatus[] = ['Chờ xác nhận', 'Đã xác nhận', 'Đã về HCM', 'Đã vận chuyển'];
+
 export interface OrderPayload {
   id: string;
-  status: string; // e.g. "Chờ xác nhận", "Đang gom hàng", "Đã bay kho Hàn", "Đã về Sài Gòn", "Đã giao khách", etc.
+  status: string; // "Chờ xác nhận" | "Đã xác nhận" | "Đã về HCM" | "Đã vận chuyển"
   items: CartItem[];
   subtotal: number;
   contact: OrderContact;
