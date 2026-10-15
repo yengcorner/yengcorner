@@ -332,6 +332,10 @@ export const saveProduct = async (product: Product): Promise<void> => {
     // Find existing product in cache to merge unedited fields (e.g. stock, status, rating, etc.)
     const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
     const mergedProduct = { ...existingInCache, ...product };
+    if (!product.attribute2Name) {
+      delete (mergedProduct as any).attribute2Name;
+      delete (mergedProduct as any).attribute2Options;
+    }
     
     // Update memory cache and localStorage safely and immediately FIRST
     const idx = cachedProducts.findIndex(p => Number(p.id) === Number(product.id));
