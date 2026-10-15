@@ -1030,8 +1030,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     snsLink: '',
     address: '',
     note: '',
+    isCustomProduct: false,
     productId: 1,
-    productVersion: 'Standard Version',
+    productName: '',
+    productVersion: '',
+    unitPrice: 0,
     quantity: 1,
     paymentMethod: 'Cọc 50%',
     shippingMethod: 'SPX',
@@ -1472,20 +1475,69 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Add a manual custom order
   const handleAddManualOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    const product = products.find(p => p.id === Number(newOrderForm.productId)) || products[0];
-    if (!product) return;
-    
+
+    const isCustom = newOrderForm.isCustomProduct || !newOrderForm.productId || newOrderForm.productId === 0;
+    const selectedCatalogProduct = products.find(p => p.id === Number(newOrderForm.productId));
+
+    const finalUnitCost = Number(newOrderForm.unitPrice) || 0;
+    const finalQuantity = Math.max(1, Number(newOrderForm.quantity) || 1);
+    const finalSubtotal = finalUnitCost * finalQuantity;
+    const finalVersion = (newOrderForm.productVersion || "").trim() || "Bản chuẩn";
+    const finalProductName = (newOrderForm.productName || "").trim() || (selectedCatalogProduct?.name || "Sản phẩm đặt offline");
+
+    let orderProduct: Product;
+    if (isCustom || !selectedCatalogProduct) {
+      orderProduct = {
+        id: Date.now(),
+        name: finalProductName,
+        price: finalUnitCost,
+        category: "Offline / Tùy chỉnh",
+        image: "https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&q=80",
+        versions: [finalVersion],
+        stock: 999
+      };
+    } else {
+      let updatedMatrix = selectedCatalogProduct.variantMatrix;
+      if (updatedMatrix && updatedMatrix.length > 0) {
+        updatedMatrix = updatedMatrix.map(vm => {
+          const vName = vm.option2 ? `${vm.option1} - ${vm.option2}` : vm.option1;
+          if (vName.toLowerCase().trim() === finalVersion.toLowerCase().trim()) {
+            return { ...vm, price: finalUnitCost };
+          }
+          return vm;
+        });
+      }
+
+      let updatedVariations = selectedCatalogProduct.variations;
+      if (updatedVariations && updatedVariations.length > 0) {
+        updatedVariations = updatedVariations.map(vr => {
+          if (vr.name.toLowerCase().trim() === finalVersion.toLowerCase().trim()) {
+            return { ...vr, price: finalUnitCost };
+          }
+          return vr;
+        });
+      }
+
+      orderProduct = {
+        ...selectedCatalogProduct,
+        name: finalProductName,
+        price: finalUnitCost,
+        variantMatrix: updatedMatrix,
+        variations: updatedVariations
+      };
+    }
+
     const manualOrder: OrderPayload = {
       id: "YENG-OFF-" + Math.floor(1000 + Math.random() * 9000),
-      status: newOrderForm.status,
+      status: newOrderForm.status || "Chờ xác nhận",
       items: [
         {
-          product: product,
-          quantity: Number(newOrderForm.quantity),
-          version: newOrderForm.productVersion
+          product: orderProduct,
+          quantity: finalQuantity,
+          version: finalVersion
         }
       ],
-      subtotal: product.price * Number(newOrderForm.quantity),
+      subtotal: finalSubtotal,
       contact: {
         email: newOrderForm.email || "offline-sales@yengcorner.vn",
         snsLink: newOrderForm.snsLink || "Không có"
@@ -1504,26 +1556,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       timestamp: new Date().toISOString()
     };
 
-    await saveOrder(manualOrder);
-    getOrders().then((data) => {
-      setOrders(data);
-    });
-    setIsCreateModalOpen(false);
-    // Reset manual form
-    setNewOrderForm({
-      customerName: '',
-      phone: '',
-      email: '',
-      snsLink: '',
-      address: '',
-      note: '',
-      productId: products[0]?.id || 1,
-      productVersion: products[0]?.versions && products[0].versions.length > 0 ? products[0].versions[0] : '',
-      quantity: 1,
-      paymentMethod: 'Cọc 50%',
-      shippingMethod: 'SPX',
-      status: 'Chờ xác nhận'
-    });
+    try {
+      await saveOrder(manualOrder);
+      const updatedOrders = await getOrders();
+      setOrders(updatedOrders);
+      showToast(`✅ Đã khởi tạo đơn hàng offline ${manualOrder.id} thành công!`, "success");
+      setIsCreateModalOpen(false);
+    } catch (err: any) {
+      showToast(`⚠️ Lỗi khi lưu đơn hàng offline: ${err.message || err}`, "error");
+    }
   };
 
   // Synchronize a specific order to Google Sheets
@@ -1779,14 +1820,144 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     document.body.removeChild(link);
   };
 
+  // Helper to extract all variants with exact prices for a product
+  const getProductVariants = (prod?: Product | null): { name: string; price: number; stock?: number; pob?: string }[] => {
+    if (!prod) return [];
+    // 1. Multi-tier variantMatrix
+    if (prod.attribute1Name && prod.variantMatrix && Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0) {
+      return prod.variantMatrix.map(v => ({
+        name: v.option2 ? `${v.option1} - ${v.option2}` : v.option1,
+        price: typeof v.price === 'number' && !isNaN(v.price) ? v.price : (prod.price || 0),
+        stock: v.stock,
+        pob: v.pob
+      }));
+    }
+    // 2. Variations
+    if (prod.variations && Array.isArray(prod.variations) && prod.variations.length > 0) {
+      return prod.variations.map(v => ({
+        name: v.name,
+        price: typeof v.price === 'number' && !isNaN(v.price) ? v.price : (prod.price || 0),
+        stock: v.stock,
+        pob: v.description
+      }));
+    }
+    // 3. Simple versions
+    if (prod.versions && Array.isArray(prod.versions) && prod.versions.length > 0) {
+      return prod.versions.map(ver => ({
+        name: ver,
+        price: prod.price || 0
+      }));
+    }
+    return [{
+      name: 'Bản chuẩn',
+      price: prod.price || 0
+    }];
+  };
+
   // Safe product selection in manual order creation
-  const handleProductChange = (productId: number) => {
-    const selected = products.find(p => p.id === productId);
+  const handleSelectProduct = (productIdVal: string) => {
+    if (productIdVal === "custom" || productIdVal === "0") {
+      setNewOrderForm(prev => ({
+        ...prev,
+        productId: 0,
+        isCustomProduct: true,
+        productName: prev.isCustomProduct ? prev.productName : '',
+        productVersion: '',
+        unitPrice: prev.isCustomProduct ? prev.unitPrice : 0
+      }));
+      return;
+    }
+
+    const prodIdNum = Number(productIdVal);
+    const selected = products.find(p => p.id === prodIdNum);
+    if (!selected) return;
+
+    const variants = getProductVariants(selected);
+    const firstVar = variants.length > 0 ? variants[0] : null;
+
+    setNewOrderForm(prev => ({
+      ...prev,
+      productId: prodIdNum,
+      isCustomProduct: false,
+      productName: selected.name,
+      // Tự động hiển thị chính xác mức giá của lựa chọn đang được chọn (không lấy giá chung của sản phẩm)
+      productVersion: firstVar ? firstVar.name : '',
+      unitPrice: firstVar ? firstVar.price : (selected.price || 0)
+    }));
+  };
+
+  // Safe variant selection in manual order creation
+  const handleSelectVariant = (variantName: string) => {
+    if (!variantName) return;
+    const selected = products.find(p => p.id === Number(newOrderForm.productId));
+    if (!selected) {
+      setNewOrderForm(prev => ({ ...prev, productVersion: variantName }));
+      return;
+    }
+
+    const variants = getProductVariants(selected);
+    const matched = variants.find(v => v.name.toLowerCase().trim() === variantName.toLowerCase().trim());
+
+    if (matched) {
+      // Tự động hiển thị chính xác mức giá của lựa chọn đang được chọn
+      setNewOrderForm(prev => ({
+        ...prev,
+        productVersion: matched.name,
+        unitPrice: matched.price
+      }));
+    } else {
+      setNewOrderForm(prev => ({
+        ...prev,
+        productVersion: variantName
+      }));
+    }
+  };
+
+  // Free-form version typing handler
+  const handleCustomVersionChange = (val: string) => {
+    const selected = products.find(p => p.id === Number(newOrderForm.productId));
+    if (selected) {
+      const variants = getProductVariants(selected);
+      const matched = variants.find(v => v.name.toLowerCase().trim() === val.toLowerCase().trim());
+      if (matched) {
+        setNewOrderForm(prev => ({
+          ...prev,
+          productVersion: val,
+          unitPrice: matched.price
+        }));
+        return;
+      }
+    }
+    setNewOrderForm(prev => ({
+      ...prev,
+      productVersion: val
+    }));
+  };
+
+  // Open modal with fresh defaults
+  const handleOpenCreateModal = () => {
+    const defaultProd = products && products.length > 0 ? products[0] : null;
+    const defaultVariants = defaultProd ? getProductVariants(defaultProd) : [];
+    const firstVar = defaultVariants.length > 0 ? defaultVariants[0] : null;
+
     setNewOrderForm({
-      ...newOrderForm,
-      productId: productId,
-      productVersion: selected?.versions && selected.versions.length > 0 ? selected.versions[0] : ''
+      customerName: '',
+      phone: '',
+      email: '',
+      snsLink: '',
+      address: '',
+      note: '',
+      isCustomProduct: false,
+      productId: defaultProd ? defaultProd.id : 0,
+      productName: defaultProd ? defaultProd.name : '',
+      productVersion: firstVar ? firstVar.name : '',
+      unitPrice: firstVar ? firstVar.price : (defaultProd?.price || 0),
+      quantity: 1,
+      paymentMethod: 'Cọc 50%',
+      shippingMethod: 'SPX',
+      status: 'Chờ xác nhận'
     });
+    setIsCreateModalOpen(true);
   };
 
   const handleOpenAddProduct = () => {
@@ -2847,7 +3018,7 @@ function getColumnLetter(colIndex) {
               })()}
             </div>
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={handleOpenCreateModal}
               className="px-4 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-display font-bold tracking-wider uppercase rounded-xl flex items-center space-x-1.5 transition-colors shadow-sm self-end sm:self-auto"
             >
               <PlusCircle className="w-4 h-4" />
@@ -3936,196 +4107,384 @@ function getColumnLetter(colIndex) {
       )}
 
       {/* MODAL: Offline Manual order creation form pop-up */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 overflow-y-auto animate-fade-in">
-          <div className="relative bg-white max-w-xl w-full rounded-2xl overflow-hidden shadow-2xl border border-neutral-300 my-8">
-            <div className="p-4 sm:p-5 border-b flex justify-between items-center bg-blue-50">
-              <div className="flex items-center space-x-2">
-                <PlusCircle className="w-5 h-5 text-blue-900" />
-                <h3 className="text-sm font-display font-bold text-blue-900 uppercase">KHỞI TẠO ĐƠN HÀNG OFFLINE THỦ CÔNG</h3>
-              </div>
-              <button 
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1 hover:bg-blue-100 text-blue-900 rounded-full transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {isCreateModalOpen && (() => {
+        const selectedProd = !newOrderForm.isCustomProduct && newOrderForm.productId !== 0
+          ? products.find(p => p.id === Number(newOrderForm.productId))
+          : null;
+        const availableVariants = selectedProd ? getProductVariants(selectedProd) : [];
+        const unitPriceVal = Number(newOrderForm.unitPrice) || 0;
+        const qtyVal = Math.max(1, Number(newOrderForm.quantity) || 1);
+        const subtotalVal = unitPriceVal * qtyVal;
+        const isDeposit50 = (newOrderForm.paymentMethod || '').includes('50%');
+        const depositRequired = isDeposit50 ? Math.round(subtotalVal * 0.5) : subtotalVal;
 
-            <form onSubmit={handleAddManualOrder} className="p-5 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto font-sans text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Tên người nhận (Khách):</label>
-                  <input
-                    type="text"
-                    required
-                    value={newOrderForm.customerName}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, customerName: e.target.value})}
-                    placeholder="Ví dụ: Nguyễn Văn A"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-neutral-50"
-                  />
+        // Check if currently selected version matches one of available variants
+        const activeVariantMatch = availableVariants.find(
+          v => v.name.toLowerCase().trim() === (newOrderForm.productVersion || '').toLowerCase().trim()
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 overflow-y-auto animate-fade-in">
+            <div className="relative bg-white max-w-2xl w-full rounded-2xl overflow-hidden shadow-2xl border border-neutral-300 my-6">
+              {/* Header */}
+              <div className="p-4 sm:p-5 border-b flex justify-between items-center bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 text-white">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center border border-white/20">
+                    <PlusCircle className="w-5 h-5 text-blue-200" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-display font-bold uppercase tracking-wider">KHỞI TẠO ĐƠN HÀNG OFFLINE THỦ CÔNG</h3>
+                    <p className="text-[11px] text-blue-200">Hiển thị giá chuẩn theo phân loại & linh hoạt nhập tên sản phẩm, phiên bản tự do</p>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Số điện thoại:</label>
-                  <input
-                    type="text"
-                    required
-                    value={newOrderForm.phone}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, phone: e.target.value})}
-                    placeholder="Ví dụ: 09xxxxxxxx"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-neutral-50 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Email:</label>
-                  <input
-                    type="email"
-                    value={newOrderForm.email}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, email: e.target.value})}
-                    placeholder="Ví dụ: khachhang@gmail.com"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-neutral-50"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">SNS Link (Facebook / Ins...):</label>
-                  <input
-                    type="text"
-                    value={newOrderForm.snsLink}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, snsLink: e.target.value})}
-                    placeholder="Ví dụ: fb.com/idolsfan"
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-neutral-50"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Địa chỉ nhận hàng:</label>
-                <input
-                  type="text"
-                  required
-                  value={newOrderForm.address}
-                  onChange={(e) => setNewOrderForm({...newOrderForm, address: e.target.value})}
-                  placeholder="Ví dụ: Số 12 Ba Đình, Hà Nội"
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 bg-neutral-50"
-                />
-              </div>
-
-              <div className="border-t border-neutral-100 pt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Sản phẩm khách đặt:</label>
-                  <select
-                    value={newOrderForm.productId}
-                    onChange={(e) => handleProductChange(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
-                  >
-                    {(products || []).map(p => (
-                      <option key={p?.id} value={p?.id}>{(p?.name || "").substring(0, 32)}...</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Phiên bản / Size:</label>
-                  <select
-                    value={newOrderForm.productVersion}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, productVersion: e.target.value})}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
-                  >
-                    {(((products || []).find(p => p?.id === Number(newOrderForm.productId))?.versions || [""])).map((ver, i) => (
-                      <option key={i} value={ver}>{ver || "—"}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Số lượng đặt:</label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={newOrderForm.quantity}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, quantity: Math.max(1, Number(e.target.value))})}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-neutral-50 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Hãng bưu phẩm gửi nội địa:</label>
-                  <select
-                    value={newOrderForm.shippingMethod}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, shippingMethod: e.target.value})}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
-                  >
-                    <option value="SPX">SPX Express</option>
-                    <option value="GHTK">Giaohangtietkiem</option>
-                    <option value="Viettel Post">Viettel Post</option>
-                    <option value="Nhận trực tiếp">Nhận tại Sài Gòn (Q2)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Thanh toán cọc:</label>
-                  <select
-                    value={newOrderForm.paymentMethod}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, paymentMethod: e.target.value})}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800"
-                  >
-                    <option value="Cọc 50%">Cọc 50%</option>
-                    <option value="Thanh toán 100%">Thanh toán 100%</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Trạng thái đặt đầu:</label>
-                  <select
-                    value={newOrderForm.status}
-                    onChange={(e) => setNewOrderForm({...newOrderForm, status: e.target.value})}
-                    className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-800 font-bold"
-                  >
-                    <option value="Chờ xác nhận">Chờ xác nhận</option>
-                    <option value="Đã xác nhận">Đã xác nhận</option>
-                    <option value="Đã về HCM">Đã về HCM</option>
-                    <option value="Đã vận chuyển">Đã vận chuyển</option>
-                    <option value="Đã hủy">Đã hủy</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10.5px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Ghi chú riêng của đơn:</label>
-                <textarea
-                  value={newOrderForm.note}
-                  onChange={(e) => setNewOrderForm({...newOrderForm, note: e.target.value})}
-                  placeholder="Ví dụ: Khách dặn lấy poster cuộn, hoặc hàng dễ vỡ..."
-                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-neutral-50 text-neutral-900 resize-none leading-relaxed"
-                  rows={2}
-                />
-              </div>
-
-              <div className="pt-4 border-t flex justify-end space-x-2">
-                <button
+                <button 
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-300 text-neutral-700 bg-white hover:bg-neutral-50 rounded-xl font-semibold transition-colors"
+                  className="p-1.5 hover:bg-white/10 text-white/80 hover:text-white rounded-full transition-colors"
                 >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 bg-blue-600 text-white font-display font-bold tracking-wider uppercase rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  Khởi Tạo Đơn Hàng
+                  <X className="w-5 h-5" />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleAddManualOrder} className="p-5 sm:p-6 space-y-4 max-h-[82vh] overflow-y-auto font-sans text-xs">
+                {/* 1. THÔNG TIN KHÁCH HÀNG */}
+                <div className="space-y-3 bg-neutral-50/70 p-3.5 rounded-xl border border-neutral-200">
+                  <h4 className="text-[11px] font-mono font-bold text-neutral-600 uppercase flex items-center space-x-1.5 tracking-wider">
+                    <User className="w-3.5 h-3.5 text-blue-600" />
+                    <span>1. Thông tin người nhận hàng</span>
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Tên khách hàng: <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newOrderForm.customerName}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, customerName: e.target.value})}
+                        placeholder="Ví dụ: Nguyễn Văn A"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Số điện thoại: <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newOrderForm.phone}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, phone: e.target.value})}
+                        placeholder="Ví dụ: 09xxxxxxxx"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white font-mono text-neutral-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Email:
+                      </label>
+                      <input
+                        type="email"
+                        value={newOrderForm.email}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, email: e.target.value})}
+                        placeholder="Ví dụ: khachhang@gmail.com"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        SNS Link (Facebook / Instagram / Zalo):
+                      </label>
+                      <input
+                        type="text"
+                        value={newOrderForm.snsLink}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, snsLink: e.target.value})}
+                        placeholder="Ví dụ: fb.com/khachhang"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                      Địa chỉ nhận hàng: <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newOrderForm.address}
+                      onChange={(e) => setNewOrderForm({...newOrderForm, address: e.target.value})}
+                      placeholder="Ví dụ: Số 12 Ba Đình, Hà Nội (hoặc 'Nhận tại shop Q2')"
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. THÔNG TIN SẢN PHẨM & ĐƠN GIÁ (Theo Variant / Tự do) */}
+                <div className="space-y-3.5 bg-blue-50/50 p-4 rounded-xl border border-blue-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pb-2 border-b border-blue-200/80">
+                    <h4 className="text-[11px] font-mono font-bold text-blue-900 uppercase flex items-center space-x-1.5 tracking-wider">
+                      <Package className="w-3.5 h-3.5 text-blue-700" />
+                      <span>2. Sản phẩm, Phiên bản & Đơn giá (Tự do / Variant)</span>
+                    </h4>
+                    <span className="text-[10px] text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-medium">
+                      {newOrderForm.isCustomProduct ? "Chế độ: Tự nhập sản phẩm ngoài web" : "Chế độ: Chọn từ danh mục web"}
+                    </span>
+                  </div>
+
+                  {/* Nguồn sản phẩm: Dropdown chọn nhanh từ web HOẶC tự nhập */}
+                  <div>
+                    <label className="text-[10.5px] font-mono font-bold text-neutral-700 block mb-1 uppercase">
+                      Nguồn sản phẩm:
+                    </label>
+                    <select
+                      value={newOrderForm.isCustomProduct ? "custom" : String(newOrderForm.productId)}
+                      onChange={(e) => handleSelectProduct(e.target.value)}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg bg-white text-neutral-900 font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="custom">✍️ [Tự do] Tự nhập sản phẩm ngoài web / thủ công</option>
+                      <optgroup label="Sản phẩm có sẵn trên Web (Chọn để điền nhanh)">
+                        {(products || []).map(p => (
+                          <option key={p?.id} value={p?.id}>
+                            [#{p?.id}] {p?.name} — {p?.price ? `${Number(p.price).toLocaleString('vi-VN')} đ` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Ô nhập tên sản phẩm tự do */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-700 uppercase">
+                        Tên sản phẩm khách đặt: <span className="text-red-500">*</span>
+                      </label>
+                      <span className="text-[10px] text-blue-700 italic">Có thể gõ tự do tên sản phẩm tùy ý</span>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={newOrderForm.productName}
+                      onChange={(e) => setNewOrderForm({...newOrderForm, productName: e.target.value})}
+                      placeholder="Ví dụ: Album SEVENTEEN 17 IS RIGHT HERE, Card BoA xách tay..."
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white font-medium text-neutral-900"
+                    />
+                  </div>
+
+                  {/* Phần Phiên bản / Phân loại & Đơn giá & Số lượng */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-1">
+                    {/* Phiên bản: Không bắt buộc, cho phép chọn nhanh hoặc gõ tự do */}
+                    <div className="md:col-span-6 space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10.5px] font-mono font-bold text-neutral-700 uppercase">
+                          Phiên bản / Size: <span className="text-neutral-400 font-normal lowercase">(không bắt buộc)</span>
+                        </label>
+                        {availableVariants.length > 0 && (
+                          <span className="text-[10px] text-blue-700 font-semibold">
+                            {availableVariants.length} lựa chọn có sẵn
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Dropdown gợi ý nhanh variant nếu sản phẩm có sẵn các lựa chọn */}
+                      {availableVariants.length > 0 && (
+                        <select
+                          value={activeVariantMatch ? activeVariantMatch.name : ""}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleSelectVariant(e.target.value);
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 border border-blue-300 rounded-lg bg-blue-50 text-neutral-800 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        >
+                          <option value="">-- Chọn nhanh lựa chọn có sẵn từ web --</option>
+                          {availableVariants.map((v, i) => (
+                            <option key={i} value={v.name}>
+                              {v.name} — {v.price.toLocaleString('vi-VN')} đ {v.stock !== undefined ? `(Còn: ${v.stock})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {/* Ô nhập tự do phiên bản */}
+                      <input
+                        type="text"
+                        value={newOrderForm.productVersion}
+                        onChange={(e) => handleCustomVersionChange(e.target.value)}
+                        placeholder="Tự do điền phiên bản (VD: Ver A, Size L, POB...) hoặc để trống"
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900"
+                      />
+                    </div>
+
+                    {/* Đơn giá sản phẩm: Tự động nhảy theo variant được chọn, tuyệt đối không lấy giá chung phía trên */}
+                    <div className="md:col-span-3 space-y-1">
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-700 block uppercase">
+                        Đơn giá (VNĐ): <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1000}
+                        required
+                        value={newOrderForm.unitPrice}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, unitPrice: Math.max(0, Number(e.target.value))})}
+                        className="w-full px-3 py-2 border border-emerald-400 focus:border-emerald-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-emerald-50 font-mono font-bold text-emerald-900 text-xs"
+                      />
+                      <span className="text-[10px] text-emerald-700 block font-medium">
+                        {activeVariantMatch 
+                          ? `✓ Giá chuẩn: ${activeVariantMatch.price.toLocaleString('vi-VN')} đ`
+                          : `Đơn giá tự do cho đơn offline`}
+                      </span>
+                    </div>
+
+                    {/* Số lượng */}
+                    <div className="md:col-span-3 space-y-1">
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-700 block uppercase">
+                        Số lượng: <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        required
+                        value={newOrderForm.quantity}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, quantity: Math.max(1, Number(e.target.value))})}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white font-mono font-bold text-neutral-900 text-xs text-center"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bảng tính tổng tiền & Tiền cọc thời gian thực */}
+                  <div className="mt-2 p-3 bg-white rounded-xl border border-blue-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="space-y-0.5">
+                      <div className="text-[11px] text-neutral-600">
+                        <span className="font-semibold text-neutral-800">{newOrderForm.productName || "Sản phẩm"}</span>
+                        {newOrderForm.productVersion && (
+                          <span className="ml-1.5 px-1.5 py-0.5 bg-neutral-100 rounded text-[10px] font-mono text-neutral-700 border">
+                            {newOrderForm.productVersion}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono text-neutral-500">
+                        Đơn giá: <strong className="text-neutral-800">{unitPriceVal.toLocaleString('vi-VN')} đ</strong> × {qtyVal} món
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 text-right">
+                      <div>
+                        <div className="text-[10px] font-mono font-bold text-neutral-400 uppercase">TỔNG TIỀN (SUBTOTAL)</div>
+                        <div className="text-sm font-mono font-extrabold text-blue-900">
+                          {subtotalVal.toLocaleString('vi-VN')} đ
+                        </div>
+                      </div>
+                      <div className="pl-3 border-l border-neutral-200">
+                        <div className="text-[10px] font-mono font-bold text-emerald-600 uppercase">
+                          {isDeposit50 ? "CẦN CỌC 50%" : "THANH TOÁN 100%"}
+                        </div>
+                        <div className="text-sm font-mono font-extrabold text-emerald-700">
+                          {depositRequired.toLocaleString('vi-VN')} đ
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. GIAO HÀNG & THANH TOÁN */}
+                <div className="space-y-3 bg-neutral-50/70 p-3.5 rounded-xl border border-neutral-200">
+                  <h4 className="text-[11px] font-mono font-bold text-neutral-600 uppercase flex items-center space-x-1.5 tracking-wider">
+                    <Truck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>3. Vận chuyển, Thanh toán & Trạng thái</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Hãng bưu phẩm:
+                      </label>
+                      <select
+                        value={newOrderForm.shippingMethod}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, shippingMethod: e.target.value})}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-white text-neutral-800 font-medium"
+                      >
+                        <option value="SPX">SPX Express</option>
+                        <option value="GHTK">Giaohangtietkiem</option>
+                        <option value="Viettel Post">Viettel Post</option>
+                        <option value="Nhận trực tiếp">Nhận tại Sài Gòn (Q2)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Hình thức cọc:
+                      </label>
+                      <select
+                        value={newOrderForm.paymentMethod}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, paymentMethod: e.target.value})}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-white text-neutral-800 font-medium"
+                      >
+                        <option value="Cọc 50%">Cọc 50%</option>
+                        <option value="Thanh toán 100%">Thanh toán 100%</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                        Trạng thái ban đầu:
+                      </label>
+                      <select
+                        value={newOrderForm.status}
+                        onChange={(e) => setNewOrderForm({...newOrderForm, status: e.target.value})}
+                        className="w-full px-3 py-2 border border-neutral-300 rounded-lg bg-white text-neutral-800 font-bold"
+                      >
+                        <option value="Chờ xác nhận">Chờ xác nhận</option>
+                        <option value="Đã xác nhận">Đã xác nhận</option>
+                        <option value="Đã về HCM">Đã về HCM</option>
+                        <option value="Đã vận chuyển">Đã vận chuyển</option>
+                        <option value="Đã hủy">Đã hủy</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">
+                      Ghi chú riêng của đơn:
+                    </label>
+                    <textarea
+                      value={newOrderForm.note}
+                      onChange={(e) => setNewOrderForm({...newOrderForm, note: e.target.value})}
+                      placeholder="Ví dụ: Khách dặn lấy poster cuộn, hoặc hàng dễ vỡ, bọc xốp kỹ..."
+                      className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white text-neutral-900 resize-none leading-relaxed"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="pt-3 border-t flex justify-end items-center space-x-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="px-4 py-2 border border-neutral-300 text-neutral-700 bg-white hover:bg-neutral-50 rounded-xl font-semibold transition-colors"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-display font-bold tracking-wider uppercase rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md flex items-center space-x-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Khởi Tạo Đơn Hàng</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* MODAL: Send Arrival Notification Email */}
       {isArrivalModalOpen && arrivalOrder && (() => {
