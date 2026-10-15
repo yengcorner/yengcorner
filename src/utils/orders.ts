@@ -291,11 +291,19 @@ async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
     if (existing.length > 0) {
       return existing;
     }
+    // Nếu đã từng khởi tạo thì tôn trọng danh sách rỗng (người dùng đã xóa hết đơn), không tự ý hồi sinh mock data
+    const isInitialized = typeof window !== 'undefined' && localStorage.getItem('yeng_orders_initialized') === 'true';
+    if (isInitialized) {
+      return [];
+    }
     const mock = getInitialMockOrders();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('yeng_orders_initialized', 'true');
+    }
     saveOrdersToLocalStorage(mock);
     return mock;
   } catch (e) {
-    return getInitialMockOrders();
+    return [];
   }
 }
 
@@ -669,21 +677,34 @@ export async function updateBulkOrdersTracking(updates: { orderId: string; track
 }
 
 export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
+  const cleanId = (orderId || '').trim();
+  if (!cleanId) return getOrdersFromLocalSync();
+
+  // 1. Cập nhật và đồng bộ ngay lập tức vào localStorage cache trước để tránh bị getOrders() hợp nhất lại
+  let updatedOrders: OrderPayload[] = [];
   try {
-    const docRef = doc(db, 'orders', orderId);
-    await deleteDoc(docRef);
-    return await getOrders();
-  } catch (e) {
-    console.error("Lỗi xóa đơn hàng trên Firestore:", e);
-    try {
-      const currentOrders = await getOrdersLocalFallback();
-      const updated = currentOrders.filter(ord => ord.id !== orderId);
-      saveOrdersToLocalStorage(updated);
-      syncAllProductSpecificOrders();
-      return updated;
-    } catch (err) {}
-    return [];
+    const currentOrders = getOrdersFromLocalSyncRaw();
+    updatedOrders = currentOrders.filter(
+      ord => ord && ord.id && ord.id.trim().toUpperCase() !== cleanId.toUpperCase()
+    );
+    saveOrdersToLocalStorage(updatedOrders, true);
+    syncAllProductSpecificOrders();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('yeng_orders_initialized', 'true');
+    }
+  } catch (err) {
+    console.warn("Lỗi đồng bộ local cache trong deleteOrder:", err);
   }
+
+  // 2. Xóa tài liệu đơn hàng trên Firestore
+  try {
+    const docRef = doc(db, 'orders', cleanId);
+    await deleteDoc(docRef);
+  } catch (e) {
+    console.warn("Lỗi xóa đơn hàng trên Firestore (đã lưu trữ cục bộ thành công):", e);
+  }
+
+  return updatedOrders;
 }
 
 export async function resetOrdersToDefault(): Promise<OrderPayload[]> {
