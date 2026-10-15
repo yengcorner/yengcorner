@@ -1546,10 +1546,16 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
-  // Delete order action handler - Cập nhật tức thì state hiển thị và localStorage
-  const handleDeleteOrder = async (id: string) => {
+  // Delete order action handler - Cập nhật tức thì state hiển thị và localStorage với xác nhận an toàn
+  const handleDeleteOrder = async (id: string, skipConfirm: boolean = false) => {
     const targetId = (id || '').trim();
     if (!targetId) return;
+
+    if (!skipConfirm) {
+      if (!window.confirm("Bạn có chắc chắn muốn xóa đơn hàng này không? Thao tác này không thể hoàn tác.")) {
+        return;
+      }
+    }
 
     // 1. CẬP NHẬT LẠI STATE HIỂN THỊ TỨC THÌ (Re-render ngay lập tức để dòng đơn hàng biến mất khỏi bảng)
     const updatedOrders = orders.filter(
@@ -3470,7 +3476,9 @@ function getColumnLetter(colIndex) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteOrder(ord.id);
+                            if (window.confirm("Bạn có chắc chắn muốn xóa đơn hàng này không? Thao tác này không thể hoàn tác.")) {
+                              handleDeleteOrder(ord.id, true);
+                            }
                           }}
                           className="px-2.5 py-1 text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 active:scale-95 rounded-lg transition-all flex items-center space-x-1.5 border border-red-200 font-sans font-bold cursor-pointer"
                           title="Xóa vĩnh viễn đơn hàng này"
@@ -3754,7 +3762,11 @@ function getColumnLetter(colIndex) {
                           <div className="flex justify-between items-center gap-2 pt-1 border-t border-neutral-100">
                             <div className="flex items-center space-x-2">
                               <button
-                                onClick={() => handleUpdateStatus(ord.id, "Đã hủy")}
+                                onClick={() => {
+                                  if (window.confirm("Bạn có chắc chắn muốn hủy đơn hàng này không? Thao tác này sẽ chuyển trạng thái đơn sang 'Đã hủy'.")) {
+                                    handleUpdateStatus(ord.id, "Đã hủy");
+                                  }
+                                }}
                                 className="text-[10px] font-display text-neutral-400 hover:text-red-700 font-semibold mr-2"
                                 title="Hủy đơn hàng này"
                               >
@@ -3776,7 +3788,9 @@ function getColumnLetter(colIndex) {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDeleteOrder(ord.id);
+                                if (window.confirm("Bạn có chắc chắn muốn xóa đơn hàng này không? Thao tác này không thể hoàn tác.")) {
+                                  handleDeleteOrder(ord.id, true);
+                                }
                               }}
                               className="text-[10px] font-display text-neutral-400 hover:text-red-700 flex items-center space-x-0.5 hover:underline cursor-pointer active:scale-95 transition-transform"
                               title="Xóa vĩnh viễn"
