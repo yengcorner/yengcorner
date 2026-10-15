@@ -25,6 +25,9 @@ export interface Product {
   images?: string[];
   variationName?: string;
   variations?: { name: string; price: number; description?: string; stock?: number }[];
+  variants?: any[];
+  options?: any;
+  groups?: any[];
   stock?: number;
   status?: string;
   hasInsurance?: boolean;
