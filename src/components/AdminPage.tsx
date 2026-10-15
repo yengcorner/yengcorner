@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon } from '../types';
 import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, deleteCoupon, saveAllCoupons, listenToOrders } from '../utils/orders';
-import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts } from '../utils/products';
+import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts, saveProductsToLocalStorage } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
 export const dynamic = 'force-dynamic';
@@ -1103,28 +1103,57 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         const prevArray = Array.isArray(prev) ? prev : [];
         const origMatrix = editingProduct?.variantMatrix || [];
         const newMatrix: any[] = [];
-        keys1.forEach(k1 => {
-          keys2.forEach(k2 => {
-            const existing = prevArray.find(v => v && v.option1 === k1 && v.option2 === k2);
-            const origInProduct = origMatrix.find(v => v && v.option1 === k1 && v.option2 === k2);
+        
+        if (keys1.length > 0 && keys2.length > 0) {
+          keys1.forEach(k1 => {
+            keys2.forEach(k2 => {
+              const existing = prevArray.find(v => v && v.option1 === k1 && v.option2 === k2);
+              const origInProduct = origMatrix.find(v => v && v.option1 === k1 && v.option2 === k2);
 
-            const stockVal = existing && existing.stock !== undefined 
-              ? existing.stock 
-              : (origInProduct && origInProduct.stock !== undefined 
-                ? origInProduct.stock 
-                : (editingProduct && editingProduct.stock !== undefined && editingProduct.stock > 0
-                  ? editingProduct.stock 
-                  : (productForm.stock !== undefined && productForm.stock > 0 ? productForm.stock : 100)));
+              const stockVal = existing && existing.stock !== undefined && existing.stock !== null && !isNaN(Number(existing.stock))
+                ? Number(existing.stock)
+                : (origInProduct && origInProduct.stock !== undefined && origInProduct.stock !== null && !isNaN(Number(origInProduct.stock))
+                  ? Number(origInProduct.stock)
+                  : 100);
 
+              const priceVal = existing && existing.price !== undefined && !isNaN(Number(existing.price))
+                ? Number(existing.price)
+                : (origInProduct && origInProduct.price !== undefined && !isNaN(Number(origInProduct.price))
+                  ? Number(origInProduct.price)
+                  : basePrice);
+
+              newMatrix.push({
+                option1: k1,
+                option2: k2,
+                price: priceVal,
+                pob: existing ? (existing.pob || '') : (origInProduct?.pob || ''),
+                stock: stockVal
+              });
+            });
+          });
+        } else if (keys1.length > 0 && keys2.length === 0) {
+          keys1.forEach(k1 => {
+            const existing = prevArray.find(v => v && v.option1 === k1);
+            const origInProduct = origMatrix.find(v => v && v.option1 === k1);
+            const stockVal = existing && existing.stock !== undefined && existing.stock !== null && !isNaN(Number(existing.stock))
+              ? Number(existing.stock)
+              : (origInProduct && origInProduct.stock !== undefined && origInProduct.stock !== null && !isNaN(Number(origInProduct.stock))
+                ? Number(origInProduct.stock)
+                : 100);
+            const priceVal = existing && existing.price !== undefined && !isNaN(Number(existing.price))
+              ? Number(existing.price)
+              : (origInProduct && origInProduct.price !== undefined && !isNaN(Number(origInProduct.price))
+                ? Number(origInProduct.price)
+                : basePrice);
             newMatrix.push({
               option1: k1,
-              option2: k2,
-              price: existing ? (Number(existing.price) || basePrice) : (origInProduct ? (Number(origInProduct.price) || basePrice) : basePrice),
+              option2: '',
+              price: priceVal,
               pob: existing ? (existing.pob || '') : (origInProduct?.pob || ''),
               stock: stockVal
             });
           });
-        });
+        }
         return newMatrix;
       });
     } else {
@@ -1136,17 +1165,21 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           const existing = prevArray.find(v => v && v.name === key);
           const origInProduct = origVars.find(v => v && v.name === key);
 
-          const stockVal = existing && existing.stock !== undefined 
-            ? existing.stock 
-            : (origInProduct && origInProduct.stock !== undefined 
-              ? origInProduct.stock 
-              : (editingProduct && editingProduct.stock !== undefined && editingProduct.stock > 0
-                ? editingProduct.stock 
-                : (productForm.stock !== undefined && productForm.stock > 0 ? productForm.stock : 100)));
+          const stockVal = existing && existing.stock !== undefined && existing.stock !== null && !isNaN(Number(existing.stock))
+            ? Number(existing.stock)
+            : (origInProduct && origInProduct.stock !== undefined && origInProduct.stock !== null && !isNaN(Number(origInProduct.stock))
+              ? Number(origInProduct.stock)
+              : 100);
+
+          const priceVal = existing && existing.price !== undefined && !isNaN(Number(existing.price))
+            ? Number(existing.price)
+            : (origInProduct && origInProduct.price !== undefined && !isNaN(Number(origInProduct.price))
+              ? Number(origInProduct.price)
+              : basePrice);
 
           return {
             name: key,
-            price: existing ? (Number(existing.price) || basePrice) : (origInProduct ? (Number(origInProduct.price) || basePrice) : basePrice),
+            price: priceVal,
             description: existing ? (existing.description || '') : (origInProduct?.description || ''),
             stock: stockVal
           };
@@ -1158,7 +1191,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     showSecondAttribute,
     productForm.versionsText,
     productForm.attribute2OptionsText,
-    productForm.stock,
     editingProduct
   ]);
 
@@ -1991,6 +2023,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setFormVariations([]);
     setVariantMatrix([]);
     setAdditionalImages([]);
+    setShowSecondAttribute(false);
     setProductForm({
       id: 0,
       name: '',
@@ -2007,11 +2040,12 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       preorderGift: '',
       artist: '',
       variationName: 'VERSION',
-      attribute1Name: '',
+      attribute1Name: 'VERSION',
       attribute1OptionsText: '',
       attribute2Name: '',
       attribute2OptionsText: '',
-      stock: 0
+      stock: 0,
+      shippingFeeIncluded: ''
     });
     setNotifySubscribers(false);
     setIsProductModalOpen(true);
@@ -2023,17 +2057,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setNotifySubscribers(false);
     setAdditionalImages(Array.isArray(prod.images) ? [...prod.images] : []);
     
-    const isMulti = !!(prod.attribute1Name && Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0);
-    const has2Tiers = !!prod.attribute2Name;
+    // Check if product has 2 tiers of classification
+    const has2Tiers = !!(
+      (prod.attribute2Name && prod.attribute2Name.trim().length > 0) ||
+      (Array.isArray(prod.attribute2Options) && prod.attribute2Options.length > 0) ||
+      (Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0 && prod.variantMatrix.some(v => v && v.option2 && v.option2.trim().length > 0))
+    );
 
     setShowSecondAttribute(has2Tiers);
 
-    if (isMulti) {
+    if (has2Tiers) {
       setFormVariations([]);
       const boundMatrix = Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0
         ? prod.variantMatrix.map(v => ({
-            ...v,
-            stock: v && v.stock !== undefined && v.stock !== null ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100)
+            option1: v?.option1 || '',
+            option2: v?.option2 || '',
+            price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+            stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+            pob: v?.pob || ''
           }))
         : [];
       setVariantMatrix(boundMatrix);
@@ -2045,6 +2086,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const matrixPrices = boundMatrix.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestMatrixPrice = matrixPrices.length > 0 ? Math.min(...matrixPrices) : (Number(prod.price) || 0);
 
+      const opts1Text = Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0
+        ? prod.attribute1Options.join(', ')
+        : (Array.isArray(prod.versions) ? prod.versions.join(', ') : '');
+      const opts2Text = Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '';
+
+      const attr1Title = prod.attribute1Name || prod.variationName || 'SIZE';
+      const attr2Title = prod.attribute2Name || 'MÀU SẮC';
+
       setProductForm({
         id: prod.id || 0,
         name: prod.name || '',
@@ -2054,26 +2103,42 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         tag: prod.tag ?? '',
         info: prod.info || '',
         detailedDesc: prod.detailedDesc ?? '',
-        versionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
+        versionsText: opts1Text,
         weight: prod.weight ?? '0.50 kg',
         orderDeadline: prod.orderDeadline ?? '',
         releaseDate: prod.releaseDate ?? '',
         preorderGift: prod.preorderGift ?? '',
         artist: prod.artist ?? '',
-        variationName: prod.attribute1Name ?? '',
-        attribute1Name: prod.attribute1Name ?? '',
-        attribute1OptionsText: Array.isArray(prod.attribute1Options) ? prod.attribute1Options.join(', ') : '',
-        attribute2Name: prod.attribute2Name ?? '',
-        attribute2OptionsText: Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '',
+        variationName: attr1Title,
+        attribute1Name: attr1Title,
+        attribute1OptionsText: opts1Text,
+        attribute2Name: attr2Title,
+        attribute2OptionsText: opts2Text,
         stock: masterStockVal,
         shippingFeeIncluded: prod.shippingFeeIncluded || ''
       });
     } else {
-      let boundVariations: any[] = [];
+      let boundVariations: { name: string; price: number; description?: string; stock?: number }[] = [];
       if (Array.isArray(prod.variations) && prod.variations.length > 0) {
         boundVariations = prod.variations.map(v => ({
-          ...v,
-          stock: v && v.stock !== undefined && v.stock !== null ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100)
+          name: typeof v === 'object' ? (v?.name || '') : String(v),
+          price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+          stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+          description: v && typeof v === 'object' ? (v?.description || '') : ''
+        }));
+      } else if (Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0) {
+        boundVariations = prod.variantMatrix.map(v => ({
+          name: v.option1 || '',
+          price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+          stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+          description: v.pob || ''
+        }));
+      } else if (Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0) {
+        boundVariations = prod.attribute1Options.map(opt => ({
+          name: opt,
+          price: Number(prod.price) || 0,
+          description: '',
+          stock: prod.stock !== undefined ? Number(prod.stock) : 100
         }));
       } else if (Array.isArray(prod.versions) && prod.versions.length > 0) {
         boundVariations = prod.versions.map(vName => ({
@@ -2087,8 +2152,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       setFormVariations(boundVariations);
       setVariantMatrix([]);
       
-      const versionsStr = Array.isArray(prod.variations) && prod.variations.length > 0
-        ? prod.variations.map(v => v && typeof v === 'object' ? (v.name || '') : String(v)).filter(Boolean).join(', ') 
+      const versionsStr = boundVariations.length > 0
+        ? boundVariations.map(v => v.name).join(', ')
         : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''));
 
       const varsStockSum = boundVariations.reduce((sum, v) => sum + Number(v.stock || 0), 0);
@@ -2097,6 +2162,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       // Auto set default unit price to lowest variation price if options exist
       const varPrices = boundVariations.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestVarPrice = varPrices.length > 0 ? Math.min(...varPrices) : (Number(prod.price) || 0);
+
+      const varTitle = prod.variationName || prod.attribute1Name || (boundVariations.length > 0 ? 'VERSION' : '');
 
       setProductForm({
         id: prod.id || 0,
@@ -2113,9 +2180,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         releaseDate: prod.releaseDate ?? '',
         preorderGift: prod.preorderGift ?? '',
         artist: prod.artist ?? '',
-        variationName: prod.variationName ?? '',
-        attribute1Name: '',
-        attribute1OptionsText: '',
+        variationName: varTitle,
+        attribute1Name: varTitle,
+        attribute1OptionsText: versionsStr,
         attribute2Name: '',
         attribute2OptionsText: '',
         stock: masterStockVal,
@@ -2167,14 +2234,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         .map(v => v.trim())
         .filter(v => v.length > 0);
 
-      const cleanedMatrix = (variantMatrix || []).map(v => {
+      // Rebuild matrix if variantMatrix is empty or missing combinations
+      let matrixSource = [...(variantMatrix || [])];
+      if (opts1.length > 0 && opts2.length > 0) {
+        opts1.forEach(k1 => {
+          opts2.forEach(k2 => {
+            const existsInMatrix = matrixSource.some(v => v && v.option1 === k1 && v.option2 === k2);
+            if (!existsInMatrix) {
+              matrixSource.push({
+                option1: k1,
+                option2: k2,
+                price: Number(productForm.price) || 0,
+                stock: productForm.stock !== undefined ? Number(productForm.stock) : 100,
+                pob: ''
+              });
+            }
+          });
+        });
+      }
+
+      const cleanedMatrix = matrixSource.map(v => {
         const itemStock = v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock))
           ? Number(v.stock)
           : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0);
         return {
-          ...v,
+          option1: v.option1 || '',
+          option2: v.option2 || '',
+          price: v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(productForm.price) || 0),
           stock: itemStock,
-          price: Number(v.price) || Number(productForm.price) || 0
+          pob: v.pob || ''
         };
       });
 
@@ -2188,6 +2276,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const matrixPrices = cleanedMatrix.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestMatrixPrice = matrixPrices.length > 0 ? Math.min(...matrixPrices) : Number(productForm.price);
 
+      const attr1Title = productForm.variationName || productForm.attribute1Name || "PHÂN LOẠI 1";
+      const attr2Title = productForm.attribute2Name || "PHÂN LOẠI 2";
+
       productPayload = {
         ...baseObject,
         id: targetId,
@@ -2200,15 +2291,16 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
-        versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
+        versions: generatedVersions.length > 0 ? generatedVersions : (baseObject.versions || []),
         weight: productForm.weight || baseObject.weight || "0.45 kg",
         orderDeadline: productForm.orderDeadline,
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
         artist: productForm.artist,
-        attribute1Name: productForm.variationName || "SIZE",
+        variationName: attr1Title,
+        attribute1Name: attr1Title,
         attribute1Options: opts1,
-        attribute2Name: productForm.attribute2Name || "COLOR",
+        attribute2Name: attr2Title,
         attribute2Options: opts2,
         variantMatrix: cleanedMatrix,
         variations: undefined,
@@ -2221,16 +2313,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
          .map(v => v.trim())
          .filter(v => v.length > 0);
       
-      const cleanedVariations = (formVariations || []).map(v => {
-        const itemStock = v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock))
-          ? Number(v.stock)
-          : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0);
-        return {
-          ...v,
-          stock: itemStock,
-          price: Number(v.price) || Number(productForm.price) || 0
-        };
-      });
+      let variationsSource = [...(formVariations || [])];
+      if (parsedVersions.length > 0) {
+        variationsSource = parsedVersions.map(pName => {
+          const found = (formVariations || []).find(v => v && v.name === pName);
+          if (found) {
+            return {
+              name: pName,
+              price: found.price !== undefined && !isNaN(Number(found.price)) ? Number(found.price) : (Number(productForm.price) || 0),
+              stock: found.stock !== undefined && found.stock !== null && found.stock !== '' && !isNaN(Number(found.stock))
+                ? Number(found.stock)
+                : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0),
+              description: found.description || ''
+            };
+          }
+          return {
+            name: pName,
+            price: Number(productForm.price) || 0,
+            stock: productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 100,
+            description: ''
+          };
+        });
+      }
+
+      const cleanedVariations = variationsSource.map(v => ({
+        name: v.name,
+        price: v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(productForm.price) || 0),
+        stock: v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock)) ? Number(v.stock) : 0,
+        description: v.description || ''
+      }));
 
       let masterStock = 0;
       if (cleanedVariations.length > 0) {
@@ -2250,6 +2361,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const varPrices = cleanedVariations.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestVarPrice = varPrices.length > 0 ? Math.min(...varPrices) : Number(productForm.price);
 
+      const varTitle = productForm.variationName || productForm.attribute1Name || "VERSION";
+
       productPayload = {
         ...baseObject,
         id: targetId,
@@ -2262,47 +2375,62 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
         detailedDesc: productForm.detailedDesc,
-        versions: generatedVersions.length > 0 ? generatedVersions : baseObject.versions,
+        versions: generatedVersions.length > 0 ? generatedVersions : (baseObject.versions || []),
         weight: productForm.weight || baseObject.weight || "0.45 kg",
         orderDeadline: productForm.orderDeadline,
         releaseDate: productForm.releaseDate,
         preorderGift: productForm.preorderGift,
         artist: productForm.artist,
-        variationName: productForm.variationName || "VERSION",
-        variations: cleanedVariations.length > 0 ? cleanedVariations : (baseObject.variations || undefined),
+        variationName: varTitle,
+        attribute1Name: varTitle,
+        attribute1Options: parsedVersions,
+        variations: cleanedVariations.length > 0 ? cleanedVariations : undefined,
         stock: masterStock,
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
 
-      if (baseObject.attribute2Name && !showSecondAttribute) {
-        delete productPayload.attribute2Name;
-        delete productPayload.attribute2Options;
-        delete productPayload.variantMatrix;
-      }
+      delete productPayload.attribute2Name;
+      delete productPayload.attribute2Options;
+      delete productPayload.variantMatrix;
     }
 
     // Save locally and track change
     try {
-      setProducts((prev) => {
-        const exists = prev.some(p => Number(p.id) === Number(targetId));
-        if (exists) {
-          return (prev || []).map(p => Number(p?.id) === Number(targetId) ? productPayload : p);
-        } else {
-          return [productPayload, ...prev];
-        }
-      });
-
-      if (editingProduct) {
-        trackEdit(Number(targetId));
+      const exists = products.some(p => Number(p.id) === Number(targetId));
+      let nextProductsList: Product[];
+      if (exists) {
+        nextProductsList = products.map(p => Number(p?.id) === Number(targetId) ? productPayload : p);
       } else {
-        trackNew(Number(targetId));
+        nextProductsList = [productPayload, ...products];
       }
 
-      setHasUnsavedCatalogChanges(true);
+      // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state
+      setProducts(nextProductsList);
+
+      // 1. Đồng thời lưu đè (localStorage.setItem) để dữ liệu được ghi nhận vĩnh viễn
+      try {
+        localStorage.setItem('yeng_products', JSON.stringify(nextProductsList));
+        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+      } catch (storageErr) {
+        console.warn("Lưu localStorage trực tiếp thông báo:", storageErr);
+      }
+      saveProductsToLocalStorage(nextProductsList);
+
+      // 2. Kích hoạt state reload / UI refresh để bảng hiển thị đúng giá trị mới sửa mà không cần F5
+      clearTracking();
+      setHasUnsavedCatalogChanges(false);
       setIsProductModalOpen(false);
-      showToast(`✨ Đã thêm/chỉnh sửa sản phẩm "${productForm.name}" vào danh sách tạm thời. Vui lòng bấm nút "Lưu thay đổi" bên ngoài để đồng bộ vĩnh viễn lên cơ sở dữ liệu!`, "info");
+      window.dispatchEvent(new CustomEvent('yeng_products_updated', { detail: { products: nextProductsList, isLoaded: true } }));
+
+      // 3. Hiện thông báo Toast
+      showToast("Đã lưu thay đổi sản phẩm thành công!", "success");
+
+      // Đồng bộ ngầm lên Firestore để bảo lưu trên đám mây
+      saveAdminProduct(productPayload).catch(err => {
+        console.warn("Lỗi đồng bộ ngầm Firestore:", err);
+      });
     } catch (err: any) {
-      console.error("Error preparing product changes:", err);
+      console.error("Error saving product changes:", err);
       showToast(`⚠️ Lỗi khi cập nhật sản phẩm: ${err.message}`, "error");
     }
   };
@@ -2310,6 +2438,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Delete product action handler
   const handleDeleteProduct = (productId: number, productName: string) => {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA SẢN PHẨM "${productName}" không?`)) {
+      const remainingProducts = products.filter(p => Number(p.id) !== Number(productId));
+      setProducts(remainingProducts);
+      try {
+        localStorage.setItem('yeng_products', JSON.stringify(remainingProducts));
+        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+      } catch (storageErr) {
+        console.warn("Lưu localStorage khi xóa sản phẩm:", storageErr);
+      }
+      saveProductsToLocalStorage(remainingProducts);
+      window.dispatchEvent(new CustomEvent('yeng_products_updated', { detail: { products: remainingProducts, isLoaded: true } }));
+
       deleteAdminProduct(productId).catch(err => {
         console.error("Error deleting product from Firestore:", err);
         showToast(`⚠️ Lỗi đồng bộ xóa sản phẩm lên cơ sở dữ liệu: ${err.message}`, "error");
@@ -2321,74 +2460,43 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Save changes immediately & sync catalog to Firestore
   const handlePersistCatalogChanges = async () => {
-    const productsToSave = products.filter(p => 
-      editedProductIds.has(Number(p.id)) || newProductIds.has(Number(p.id))
-    );
-
-    if (productsToSave.length === 0) {
-      showToast("ℹ️ Không có sản phẩm nào thay đổi hoặc thêm mới để lưu.", "info");
-      return;
-    }
-
     try {
-      // 3. Clear existing list from the UI before rendering updated database data to avoid duplication
-      setProducts([]);
-
-      // 1 & 2. Perform updates for edited products or additions for new ones
-      for (const p of productsToSave) {
-        const isNew = newProductIds.has(Number(p.id));
-        await saveAdminProduct(p);
-
-        // Trigger email notification for new products if notifySubscribers was selected
-        if (notifySubscribers && isNew) {
-          try {
-            let subscriberEmails: string[] = [];
-            const snap = await getDocs(collection(db, "subscriber_emails"));
-            snap.forEach((docSnap) => {
-              const data = docSnap.data();
-              if (data && data.email) {
-                subscriberEmails.push(data.email);
-              }
-            });
-
-            if (subscriberEmails.length > 0) {
-              const res = await fetch("/api/subscribers/notify-new-product", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ product: p, emails: subscriberEmails }),
-              });
-              const data = await res.json();
-              if (data.success && data.sentCount > 0) {
-                showToast(`📢 Đã gửi email thông báo sản phẩm mới "${p.name}" tới ${data.sentCount} khách hàng đăng ký!`, "success");
-              }
-            }
-          } catch (err: any) {
-            console.error("Lỗi gửi email thông báo sản phẩm mới:", err);
-          }
-        }
+      // 1. ĐỒNG BỘ VÀ LƯU XUỐNG LOCALSTORAGE
+      try {
+        localStorage.setItem('yeng_products', JSON.stringify(products));
+        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
+      } catch (storageErr) {
+        console.warn("Lưu localStorage trực tiếp thông báo:", storageErr);
       }
+      saveProductsToLocalStorage(products);
 
-      // Clear tracking states
+      // 2. CẬP NHẬT LẠI GIAO DIỆN (UI REFRESH)
+      setProducts([...products]);
       clearTracking();
       setHasUnsavedCatalogChanges(false);
       setNotifySubscribers(false);
+      window.dispatchEvent(new CustomEvent('yeng_products_updated', { detail: { products: [...products], isLoaded: true } }));
 
-      // Re-render fresh list cleanly from database cache
-      setTimeout(() => {
-        const refreshedList = getProducts();
-        setProducts(refreshedList);
-        showToast("✨ Cập nhật và đồng bộ sản phẩm lên Firestore thành công!", "success");
-      }, 400);
+      // 3. HIỂN THỊ THÔNG BÁO
+      showToast("Đã lưu thay đổi sản phẩm thành công!", "success");
 
+      // 4. Đồng bộ nền lên Firestore
+      const productsToSave = products.filter(p => 
+        editedProductIds.has(Number(p.id)) || newProductIds.has(Number(p.id))
+      );
+      const toSync = productsToSave.length > 0 ? productsToSave : products;
+      for (const p of toSync) {
+        saveAdminProduct(p).catch(err => console.warn("Firestore sync product notice:", err));
+      }
     } catch (e: any) {
-      console.error("Lỗi đồng bộ sản phẩm:", e);
-      showToast(`⚠️ Đã có lỗi xảy ra khi lưu sản phẩm: ${e.message}`, "error");
-      // Restore products list from local cache if database update failed
-      setProducts(getProducts());
+      console.error("Lỗi khi lưu sản phẩm:", e);
+      showToast(`⚠️ Lỗi khi lưu thay đổi sản phẩm: ${e.message}`, "error");
     }
   };
+
+  // Backward compatibility aliases
+  const handleUpdateProduct = handleSaveProductSubmit;
+  const handleSave = handlePersistCatalogChanges;
 
   // Reset products list
   const handleResetProducts = () => {
@@ -3592,10 +3700,10 @@ function getColumnLetter(colIndex) {
                         </td>
                         <td className="p-4">
                           <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase border ${
-                            p.tag?.toLowerCase() === 'sẵn hàng' ? 'bg-emerald-50 text-emerald-700 border-emerald-250' :
+                            p.tag?.toLowerCase() === 'sẵn hàng' || p.tag?.toLowerCase() === 'có sẵn' ? 'bg-emerald-50 text-emerald-700 border-emerald-250' :
                             p.tag?.toLowerCase() === 'pre-order' ? 'bg-blue-50 text-blue-700 border-blue-250' : 'bg-amber-50 text-amber-700 border-amber-250'
                           }`}>
-                            {p.tag}
+                            {p.tag || 'Chưa đặt'}
                           </span>
                         </td>
                         <td className="p-4 text-right font-mono font-bold text-neutral-900">
@@ -5063,15 +5171,21 @@ function getColumnLetter(colIndex) {
                     <span className="text-sm">🧬</span>
                     <span>Phần III: Logic Phân loại thông minh & Biến thể</span>
                   </div>
-                  {!showSecondAttribute && (
+                  {!showSecondAttribute ? (
                     <button
                       type="button"
-                      onClick={() => setShowSecondAttribute(true)}
+                      onClick={() => {
+                        setShowSecondAttribute(true);
+                        setProductForm(prev => ({
+                          ...prev,
+                          attribute2Name: prev.attribute2Name || 'MÀU SẮC'
+                        }));
+                      }}
                       className="px-2.5 py-1 text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                     >
                       ➕ Thêm nhóm phân loại khác
                     </button>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* NHÓM PHÂN LOẠI 1 */}
@@ -5089,9 +5203,9 @@ function getColumnLetter(colIndex) {
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === "custom") {
-                            setProductForm({...productForm, variationName: 'Khác'});
+                            setProductForm(prev => ({ ...prev, variationName: 'Khác', attribute1Name: 'Khác' }));
                           } else {
-                            setProductForm({...productForm, variationName: val});
+                            setProductForm(prev => ({ ...prev, variationName: val, attribute1Name: val }));
                           }
                         }}
                         className="border border-neutral-300 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 focus:outline-none cursor-pointer flex-1"
@@ -5107,8 +5221,11 @@ function getColumnLetter(colIndex) {
                         <input
                           type="text"
                           value={productForm.variationName || ''}
-                          onChange={(e) => setProductForm({...productForm, variationName: e.target.value})}
-                          placeholder="Nhập tên phân loại tự chọn..."
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setProductForm(prev => ({ ...prev, variationName: val, attribute1Name: val }));
+                          }}
+                          placeholder="Nhập tên phân loại 1 (ví dụ: SIZE, MẪU)..."
                           className="flex-1 px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-xs font-medium"
                         />
                       )}
@@ -5116,20 +5233,19 @@ function getColumnLetter(colIndex) {
                   </div>
 
                   {/* CÁC TÙY CHỌN PHÂN LOẠI 1 */}
-                  {productForm.variationName && (
-                    <div>
-                      <label className="text-[10px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Các tùy chọn phân loại nhóm 1 (phân tách bằng dấu phẩy):</label>
-                      <textarea
-                        rows={2}
-                        value={productForm.versionsText}
-                        onChange={(e) => {
-                          setProductForm({...productForm, versionsText: e.target.value});
-                        }}
-                        placeholder="Ví dụ: S, M, L hoặc Ver A, Ver B"
-                        className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900 resize-none leading-relaxed text-xs"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="text-[10px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Các tùy chọn phân loại nhóm 1 (phân tách bằng dấu phẩy):</label>
+                    <textarea
+                      rows={2}
+                      value={productForm.versionsText || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setProductForm(prev => ({ ...prev, versionsText: val, attribute1OptionsText: val }));
+                      }}
+                      placeholder="Ví dụ: S, M, L hoặc Ver A, Ver B (phân tách bằng dấu phẩy)"
+                      className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900 resize-none leading-relaxed text-xs"
+                    />
+                  </div>
                 </div>
 
                 {/* NHÓM PHÂN LOẠI 2 */}
@@ -5141,11 +5257,11 @@ function getColumnLetter(colIndex) {
                         type="button"
                         onClick={() => {
                           setShowSecondAttribute(false);
-                          setProductForm({
-                            ...productForm,
+                          setProductForm(prev => ({
+                            ...prev,
                             attribute2Name: '',
                             attribute2OptionsText: ''
-                          });
+                          }));
                         }}
                         className="text-[9.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded hover:bg-rose-100 transition-colors"
                       >
@@ -5162,9 +5278,9 @@ function getColumnLetter(colIndex) {
                           onChange={(e) => {
                             const val = e.target.value;
                             if (val === "custom") {
-                              setProductForm({...productForm, attribute2Name: 'Khác'});
+                              setProductForm(prev => ({ ...prev, attribute2Name: 'Khác' }));
                             } else {
-                              setProductForm({...productForm, attribute2Name: val});
+                              setProductForm(prev => ({ ...prev, attribute2Name: val }));
                             }
                           }}
                           className="border border-neutral-300 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-neutral-800 focus:outline-none cursor-pointer flex-1"
@@ -5180,8 +5296,11 @@ function getColumnLetter(colIndex) {
                           <input
                             type="text"
                             value={productForm.attribute2Name || ''}
-                            onChange={(e) => setProductForm({...productForm, attribute2Name: e.target.value})}
-                            placeholder="Nhập tên phân loại tự chọn..."
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setProductForm(prev => ({ ...prev, attribute2Name: val }));
+                            }}
+                            placeholder="Nhập tên phân loại 2 (ví dụ: MÀU SẮC, ĐỊNH DẠNG)..."
                             className="flex-1 px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-xs font-medium"
                           />
                         )}
@@ -5189,25 +5308,24 @@ function getColumnLetter(colIndex) {
                     </div>
 
                     {/* CÁC TÙY CHỌN PHÂN LOẠI 2 */}
-                    {productForm.attribute2Name && (
-                      <div>
-                        <label className="text-[10px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Các tùy chọn phân loại nhóm 2 (phân tách bằng dấu phẩy):</label>
-                        <textarea
-                          rows={2}
-                          value={productForm.attribute2OptionsText}
-                          onChange={(e) => {
-                            setProductForm({...productForm, attribute2OptionsText: e.target.value});
-                          }}
-                          placeholder="Ví dụ: Đỏ, Xanh, Trắng hoặc S, M, L"
-                          className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900 resize-none leading-relaxed text-xs"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-[10px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Các tùy chọn phân loại nhóm 2 (phân tách bằng dấu phẩy):</label>
+                      <textarea
+                        rows={2}
+                        value={productForm.attribute2OptionsText || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setProductForm(prev => ({ ...prev, attribute2OptionsText: val }));
+                        }}
+                        placeholder="Ví dụ: Đỏ, Xanh, Trắng hoặc Standard, Limited (phân tách bằng dấu phẩy)"
+                        className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900 resize-none leading-relaxed text-xs"
+                      />
+                    </div>
                   </div>
                 )}
 
                 {/* DANH SÁCH NHẬN DIỆN */}
-                {productForm.variationName && (!showSecondAttribute ? (
+                {!showSecondAttribute ? (
                   formVariations.length > 0 && (
                     <div className="p-3 bg-emerald-50/20 rounded-xl border border-emerald-100 space-y-1.5 animate-fade-in">
                       <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase block">
@@ -5232,18 +5350,18 @@ function getColumnLetter(colIndex) {
                         {(variantMatrix || []).map((v, i) => (
                           <span key={i} className="px-2.5 py-1 bg-white border border-emerald-200 text-emerald-900 text-[11px] font-semibold rounded-lg shadow-sm flex items-center space-x-1">
                             <span className="font-mono text-[9px] text-emerald-500 mr-0.5">#{i + 1}</span>
-                            <span>{v.option1} - {v.option2}</span>
+                            <span>{v.option1}{v.option2 ? ` - ${v.option2}` : ''}</span>
                           </span>
                         ))}
                       </div>
                     </div>
                   )
-                ))}
+                )}
               </div>
 
               {/* PHẦN IV: CẤU HÌNH CHI TIẾT CHO TỪNG PHÂN LOẠI */}
               {!showSecondAttribute ? (
-                productForm.variationName && formVariations.length > 0 && (
+                formVariations.length > 0 && (
                   <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/5 space-y-4">
                     <div className="font-display font-bold text-blue-900 text-xs border-b pb-1.5 uppercase flex items-center space-x-1.5">
                       <span className="text-sm">⚙️</span>
@@ -5255,7 +5373,7 @@ function getColumnLetter(colIndex) {
                         <div key={idx} className="bg-white p-3.5 rounded-xl border border-neutral-200 shadow-sm space-y-2 hover:border-blue-300 transition-colors">
                           <div className="flex justify-between items-center bg-neutral-50 px-2.5 py-1.5 rounded-lg border border-neutral-200">
                             <span className="font-bold text-neutral-800 text-xs font-mono uppercase tracking-wide">
-                              📌 {productForm.variationName}: {v.name}
+                              📌 {productForm.variationName || 'Phân loại'}: {v.name}
                             </span>
                             <span className="text-[10px] text-blue-600 font-semibold uppercase">Tùy chọn #{idx + 1}</span>
                           </div>
@@ -5266,11 +5384,14 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 required
-                                value={v.price}
+                                value={v.price ?? 0}
                                 onChange={(e) => {
-                                  const updated = [...formVariations];
-                                  updated[idx].price = Number(e.target.value) || 0;
-                                  setFormVariations(updated);
+                                  const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                  setFormVariations(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], price: val };
+                                    return updated;
+                                  });
                                 }}
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono font-bold text-neutral-900 text-xs"
                                 placeholder="Giá VND..."
@@ -5282,11 +5403,14 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : (productForm.stock !== undefined ? productForm.stock : 0)}
+                                value={v.stock !== undefined && v.stock !== null ? v.stock : 0}
                                 onChange={(e) => {
-                                  const updated = [...formVariations];
-                                  updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
-                                  setFormVariations(updated);
+                                  const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                  setFormVariations(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], stock: val };
+                                    return updated;
+                                  });
                                 }}
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono text-neutral-800 text-xs"
                                 placeholder="Tồn kho (0 là hết hàng)..."
@@ -5299,9 +5423,12 @@ function getColumnLetter(colIndex) {
                                 type="text"
                                 value={v.description || ''}
                                 onChange={(e) => {
-                                  const updated = [...formVariations];
-                                  updated[idx].description = e.target.value;
-                                  setFormVariations(updated);
+                                  const val = e.target.value;
+                                  setFormVariations(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], description: val };
+                                    return updated;
+                                  });
                                 }}
                                 placeholder="Mô tả defect, phụ kiện đi kèm..."
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-medium text-neutral-800 text-xs"
@@ -5314,7 +5441,7 @@ function getColumnLetter(colIndex) {
                   </div>
                 )
               ) : (
-                productForm.variationName && variantMatrix.length > 0 && (
+                variantMatrix.length > 0 && (
                   <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/5 space-y-4">
                     <div className="font-display font-bold text-blue-900 text-xs border-b pb-1.5 uppercase flex items-center space-x-1.5">
                       <span className="text-sm">⚙️</span>
@@ -5326,7 +5453,7 @@ function getColumnLetter(colIndex) {
                         <div key={idx} className="bg-white p-3.5 rounded-xl border border-neutral-200 shadow-sm space-y-2 hover:border-blue-300 transition-colors animate-fade-in">
                           <div className="flex justify-between items-center bg-neutral-50 px-2.5 py-1.5 rounded-lg border border-neutral-200">
                             <span className="font-bold text-blue-900 text-xs font-mono uppercase tracking-wide">
-                              📌 {v.option1} - {v.option2}
+                              📌 {v.option1}{v.option2 ? ` - ${v.option2}` : ''}
                             </span>
                             <span className="text-[10px] text-blue-600 font-semibold uppercase">Dòng #{idx + 1}</span>
                           </div>
@@ -5337,11 +5464,14 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 required
-                                value={v.price}
+                                value={v.price ?? 0}
                                 onChange={(e) => {
-                                  const updated = [...variantMatrix];
-                                  updated[idx].price = Number(e.target.value) || 0;
-                                  setVariantMatrix(updated);
+                                  const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                  setVariantMatrix(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], price: val };
+                                    return updated;
+                                  });
                                 }}
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono font-bold text-neutral-900 text-xs"
                                 placeholder="Giá VND..."
@@ -5353,11 +5483,14 @@ function getColumnLetter(colIndex) {
                               <input
                                 type="number"
                                 min={0}
-                                value={v.stock !== undefined ? v.stock : (productForm.stock !== undefined ? productForm.stock : 0)}
+                                value={v.stock !== undefined && v.stock !== null ? v.stock : 0}
                                 onChange={(e) => {
-                                  const updated = [...variantMatrix];
-                                  updated[idx].stock = e.target.value === '' ? undefined : Number(e.target.value);
-                                  setVariantMatrix(updated);
+                                  const val = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                  setVariantMatrix(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], stock: val };
+                                    return updated;
+                                  });
                                 }}
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono text-neutral-800 text-xs"
                                 placeholder="Tồn kho (0 là hết hàng)..."
@@ -5370,9 +5503,12 @@ function getColumnLetter(colIndex) {
                                 type="text"
                                 value={v.pob || ''}
                                 onChange={(e) => {
-                                  const updated = [...variantMatrix];
-                                  updated[idx].pob = e.target.value;
-                                  setVariantMatrix(updated);
+                                  const val = e.target.value;
+                                  setVariantMatrix(prev => {
+                                    const updated = [...prev];
+                                    updated[idx] = { ...updated[idx], pob: val };
+                                    return updated;
+                                  });
                                 }}
                                 placeholder="Mô tả defect, phụ kiện đi kèm..."
                                 className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-medium text-neutral-800 text-xs"
@@ -5428,9 +5564,10 @@ function getColumnLetter(colIndex) {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#e8f0ff] border border-blue-400 text-blue-950 font-display font-bold tracking-wider uppercase rounded-xl hover:bg-blue-105 transition-colors shadow-sm"
+                  className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-display font-bold tracking-wider uppercase rounded-xl transition-all shadow-md flex items-center space-x-1.5"
                 >
-                  {editingProduct ? 'Cập Nhật Sản Phẩm' : 'Tạo Sản Phẩm Mới'}
+                  <Save className="w-4 h-4" />
+                  <span>{editingProduct ? 'Lưu thay đổi' : 'Tạo Sản Phẩm Mới'}</span>
                 </button>
               </div>
             </form>
