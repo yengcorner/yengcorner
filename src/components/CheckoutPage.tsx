@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingBag, CreditCard, Landmark, CheckCircle2, Copy, Image as ImageIcon, UploadCloud, ClipboardCheck, ArrowLeft, Truck, Flame, X, Mail, RefreshCw, AlertTriangle } from 'lucide-react';
 import { CartItem, OrderPayload, Coupon } from '../types';
-import { saveOrder } from '../utils/orders';
+import { saveOrder, generateUniqueOrderId } from '../utils/orders';
 import { deductProductStock, getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut } from '../utils/products';
 import { initAuth, googleSignIn, compressImage, sanitizeProductForOrder } from '../utils/googleAuth';
 
@@ -362,7 +362,8 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
       }
     }
 
-    const orderId = "YENG" + Math.floor(1000 + Math.random() * 9000);
+    // Sinh mã đơn hàng duy nhất YENGXXXX đối chiếu kiểm tra chống trùng lặp tuyệt đối
+    const orderId = generateUniqueOrderId();
 
     // Compress image locally using HTML5 Canvas to keep base64 extremely lightweight yet clear
     let invoiceUrl = "";
