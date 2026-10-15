@@ -132,10 +132,10 @@ export const saveProductsToCache = (list: Product[]) => {
   isProductsInitialLoaded = true;
   syncDocIdMap(list);
 
-  // 2. Safely attempt saving lightweight subset to localStorage & sessionStorage
+  // 2. Safely attempt saving to localStorage & sessionStorage
   try {
-    const lightweightList = list.slice(0, 40).map(sanitizeProductForStorage);
-    const jsonStr = JSON.stringify(lightweightList);
+    const serializedList = list.map(sanitizeProductForStorage);
+    const jsonStr = JSON.stringify(serializedList);
 
     try {
       localStorage.setItem('yeng_products', jsonStr);
@@ -146,8 +146,8 @@ export const saveProductsToCache = (list: Product[]) => {
         try {
           localStorage.removeItem('yeng_products');
           localStorage.removeItem('yeng_products_session');
-          // Try with smaller subset (15 items)
-          const miniList = list.slice(0, 15).map(sanitizeProductForStorage);
+          // Try with smaller subset (30 items)
+          const miniList = list.slice(0, 30).map(sanitizeProductForStorage);
           localStorage.setItem('yeng_products', JSON.stringify(miniList));
         } catch {
           // Gracefully fallback to in-memory array
@@ -333,14 +333,7 @@ export const saveProduct = async (product: Product): Promise<void> => {
     const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
     const mergedProduct = { ...existingInCache, ...product };
     
-    // Recursive data sanitization to remove all undefined values for Firestore compatibility
-    const sanitizedProduct = sanitizeData(mergedProduct);
-    
-    const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
-    const docRef = doc(db, "products", docId);
-    await setDoc(docRef, sanitizedProduct, { merge: true });
-
-    // Update memory cache safely and immediately
+    // Update memory cache and localStorage safely and immediately FIRST
     const idx = cachedProducts.findIndex(p => Number(p.id) === Number(product.id));
     let nextProducts = [...cachedProducts];
     if (idx > -1) {
@@ -352,10 +345,20 @@ export const saveProduct = async (product: Product): Promise<void> => {
     saveProductsToLocalStorage(nextProducts);
 
     // Dispatch custom event to notify React components instantly
-    const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
+    const event = new CustomEvent('yeng_products_updated', { detail: { products: nextProducts, isLoaded: true } });
     window.dispatchEvent(event);
+
+    // Recursive data sanitization to remove all undefined values for Firestore compatibility
+    try {
+      const sanitizedProduct = sanitizeData(mergedProduct);
+      const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
+      const docRef = doc(db, "products", docId);
+      await setDoc(docRef, sanitizedProduct, { merge: true });
+    } catch (fsErr) {
+      console.warn("Firestore background sync notice in saveProduct:", fsErr);
+    }
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `products/${product?.id}`);
+    console.error("Error in saveProduct:", err);
   }
 };
 
