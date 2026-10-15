@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit, deleteField } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -332,7 +332,8 @@ export const saveProduct = async (product: Product): Promise<void> => {
     // Find existing product in cache to merge unedited fields (e.g. stock, status, rating, etc.)
     const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
     const mergedProduct = { ...existingInCache, ...product };
-    if (!product.attribute2Name) {
+    const hasGroup2 = !!(product.attribute2Name && product.attribute2Name.trim().length > 0 && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0);
+    if (!hasGroup2) {
       delete (mergedProduct as any).attribute2Name;
       delete (mergedProduct as any).attribute2Options;
     }
@@ -355,6 +356,12 @@ export const saveProduct = async (product: Product): Promise<void> => {
     // Recursive data sanitization to remove all undefined values for Firestore compatibility
     try {
       const sanitizedProduct = sanitizeData(mergedProduct);
+      if (!hasGroup2) {
+        delete sanitizedProduct.attribute2Name;
+        delete sanitizedProduct.attribute2Options;
+        sanitizedProduct.attribute2Name = deleteField();
+        sanitizedProduct.attribute2Options = deleteField();
+      }
       const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
       const docRef = doc(db, "products", docId);
       await setDoc(docRef, sanitizedProduct, { merge: true });
