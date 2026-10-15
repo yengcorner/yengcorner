@@ -5,7 +5,7 @@ import {
   DollarSign, FileText, PlusCircle, HelpCircle, Truck, Package, ShieldCheck,
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
-import { OrderPayload, Product, CartItem, Coupon } from '../types';
+import { OrderPayload, Product, CartItem, Coupon, VariantMatrixItem } from '../types';
 import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, deleteCoupon, saveAllCoupons, listenToOrders } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts, saveProductsToLocalStorage } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
@@ -1881,7 +1881,16 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Helper to extract all variants with exact prices for a product
   const getProductVariants = (prod?: Product | null): { name: string; price: number; stock?: number; pob?: string }[] => {
     if (!prod) return [];
-    // 1. Multi-tier variantMatrix
+    // 1. Variants array if present
+    if (prod.variants && Array.isArray(prod.variants) && prod.variants.length > 0) {
+      return prod.variants.map(v => ({
+        name: v.name || (v.option2 ? `${v.option1} - ${v.option2}` : (v.option1 || 'Bản chuẩn')),
+        price: typeof v.price === 'number' && !isNaN(v.price) ? v.price : (prod.price || 0),
+        stock: v.stock,
+        pob: v.pob || v.description
+      }));
+    }
+    // 2. Multi-tier variantMatrix
     if (prod.attribute1Name && prod.variantMatrix && Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0) {
       return prod.variantMatrix.map(v => ({
         name: v.option2 ? `${v.option1} - ${v.option2}` : v.option1,
@@ -1890,7 +1899,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         pob: v.pob
       }));
     }
-    // 2. Variations
+    // 3. Variations
     if (prod.variations && Array.isArray(prod.variations) && prod.variations.length > 0) {
       return prod.variations.map(v => ({
         name: v.name,
@@ -1899,7 +1908,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         pob: v.description
       }));
     }
-    // 3. Simple versions
+    // 4. Simple versions
     if (prod.versions && Array.isArray(prod.versions) && prod.versions.length > 0) {
       return prod.versions.map(ver => ({
         name: ver,
@@ -2061,22 +2070,34 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const has2Tiers = !!(
       (prod.attribute2Name && prod.attribute2Name.trim().length > 0) ||
       (Array.isArray(prod.attribute2Options) && prod.attribute2Options.length > 0) ||
-      (Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0 && prod.variantMatrix.some(v => v && v.option2 && v.option2.trim().length > 0))
+      (Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0 && prod.variantMatrix.some(v => v && v.option2 && v.option2.trim().length > 0)) ||
+      (Array.isArray(prod.variants) && prod.variants.length > 0 && prod.variants.some(v => v && v.option2 && v.option2.trim().length > 0)) ||
+      (Array.isArray(prod.groups) && prod.groups.length > 1)
     );
 
     setShowSecondAttribute(has2Tiers);
 
     if (has2Tiers) {
       setFormVariations([]);
-      const boundMatrix = Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0
-        ? prod.variantMatrix.map(v => ({
-            option1: v?.option1 || '',
-            option2: v?.option2 || '',
-            price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
-            stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
-            pob: v?.pob || ''
-          }))
-        : [];
+      const rawMatrix = (Array.isArray(prod.variantMatrix) && prod.variantMatrix.length > 0)
+        ? prod.variantMatrix
+        : (Array.isArray(prod.variants) && prod.variants.length > 0
+          ? prod.variants.map(v => ({
+              option1: v?.option1 || (v?.name ? v.name.split(' - ')[0] : ''),
+              option2: v?.option2 || (v?.name && v.name.includes(' - ') ? v.name.split(' - ')[1] : ''),
+              price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+              stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+              pob: v?.pob || v?.description || ''
+            }))
+          : []);
+
+      const boundMatrix = rawMatrix.map(v => ({
+        option1: v?.option1 || '',
+        option2: v?.option2 || '',
+        price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+        stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+        pob: v?.pob || ''
+      }));
       setVariantMatrix(boundMatrix);
       
       const matrixStockSum = boundMatrix.reduce((sum, v) => sum + Number(v.stock || 0), 0);
@@ -2088,11 +2109,17 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
       const opts1Text = Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0
         ? prod.attribute1Options.join(', ')
-        : (Array.isArray(prod.versions) ? prod.versions.join(', ') : '');
-      const opts2Text = Array.isArray(prod.attribute2Options) ? prod.attribute2Options.join(', ') : '';
+        : (Array.isArray(prod.groups) && prod.groups[0]?.options && Array.isArray(prod.groups[0].options)
+          ? prod.groups[0].options.join(', ')
+          : (Array.isArray(prod.versions) ? prod.versions.join(', ') : ''));
+      const opts2Text = Array.isArray(prod.attribute2Options) && prod.attribute2Options.length > 0
+        ? prod.attribute2Options.join(', ')
+        : (Array.isArray(prod.groups) && prod.groups[1]?.options && Array.isArray(prod.groups[1].options)
+          ? prod.groups[1].options.join(', ')
+          : '');
 
-      const attr1Title = prod.attribute1Name || prod.variationName || 'SIZE';
-      const attr2Title = prod.attribute2Name || 'MÀU SẮC';
+      const attr1Title = prod.attribute1Name || prod.variationName || (Array.isArray(prod.groups) && prod.groups[0]?.name) || 'SIZE';
+      const attr2Title = prod.attribute2Name || (Array.isArray(prod.groups) && prod.groups[1]?.name) || 'MÀU SẮC';
 
       setProductForm({
         id: prod.id || 0,
@@ -2119,7 +2146,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       });
     } else {
       let boundVariations: { name: string; price: number; description?: string; stock?: number }[] = [];
-      if (Array.isArray(prod.variations) && prod.variations.length > 0) {
+      if (Array.isArray(prod.variants) && prod.variants.length > 0) {
+        boundVariations = prod.variants.map(v => ({
+          name: typeof v === 'object' ? (v?.name || v?.option1 || '') : String(v),
+          price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
+          stock: v && v.stock !== undefined && v.stock !== null && !isNaN(Number(v.stock)) ? Number(v.stock) : (prod.stock !== undefined ? Number(prod.stock) : 100),
+          description: v && typeof v === 'object' ? (v?.description || v?.pob || '') : ''
+        }));
+      } else if (Array.isArray(prod.variations) && prod.variations.length > 0) {
         boundVariations = prod.variations.map(v => ({
           name: typeof v === 'object' ? (v?.name || '') : String(v),
           price: v && v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(prod.price) || 0),
@@ -2154,7 +2188,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       
       const versionsStr = boundVariations.length > 0
         ? boundVariations.map(v => v.name).join(', ')
-        : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''));
+        : (Array.isArray(prod.attribute1Options) && prod.attribute1Options.length > 0
+          ? prod.attribute1Options.join(', ')
+          : (Array.isArray(prod.groups) && prod.groups[0]?.options
+            ? prod.groups[0].options.join(', ')
+            : (Array.isArray(prod.versions) ? prod.versions.join(', ') : (prod.versions || ''))));
 
       const varsStockSum = boundVariations.reduce((sum, v) => sum + Number(v.stock || 0), 0);
       const masterStockVal = boundVariations.length > 0 ? varsStockSum : (prod.stock ?? 100);
@@ -2163,7 +2201,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const varPrices = boundVariations.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestVarPrice = varPrices.length > 0 ? Math.min(...varPrices) : (Number(prod.price) || 0);
 
-      const varTitle = prod.variationName || prod.attribute1Name || (boundVariations.length > 0 ? 'VERSION' : '');
+      const varTitle = prod.variationName || prod.attribute1Name || (Array.isArray(prod.groups) && prod.groups[0]?.name) || (boundVariations.length > 0 ? 'VERSION' : '');
 
       setProductForm({
         id: prod.id || 0,
@@ -2193,8 +2231,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   };
 
   // Save/Update product handler
-  const handleSaveProductSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveProductSubmit = async (e?: React.FormEvent) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
     
     let generatedVersions: string[] = [];
     let productPayload: Product;
@@ -2224,6 +2264,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     const existingProduct = (products || []).find(p => Number(p?.id) === Number(targetId)) || editingProduct || null;
     const baseObject = existingProduct ? { ...existingProduct } : {};
 
+    let currentVariants: any[] = [];
+    let currentGroups: any[] = [];
+    let currentOptions: any[] = [];
+
     if (showSecondAttribute) {
       const opts1 = (productForm.versionsText || '')
         .split(',')
@@ -2235,12 +2279,22 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         .filter(v => v.length > 0);
 
       // Rebuild matrix if variantMatrix is empty or missing combinations
-      let matrixSource = [...(variantMatrix || [])];
+      let matrixSource: VariantMatrixItem[] = [];
       if (opts1.length > 0 && opts2.length > 0) {
         opts1.forEach(k1 => {
           opts2.forEach(k2 => {
-            const existsInMatrix = matrixSource.some(v => v && v.option1 === k1 && v.option2 === k2);
-            if (!existsInMatrix) {
+            const found = (variantMatrix || []).find(v => v && v.option1 === k1 && v.option2 === k2);
+            if (found) {
+              matrixSource.push({
+                option1: k1,
+                option2: k2,
+                price: found.price !== undefined && !isNaN(Number(found.price)) ? Number(found.price) : (Number(productForm.price) || 0),
+                stock: found.stock !== undefined && found.stock !== null && found.stock !== '' && !isNaN(Number(found.stock))
+                  ? Number(found.stock)
+                  : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0),
+                pob: found.pob || ''
+              });
+            } else {
               matrixSource.push({
                 option1: k1,
                 option2: k2,
@@ -2251,33 +2305,67 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             }
           });
         });
-      }
-
-      const cleanedMatrix = matrixSource.map(v => {
-        const itemStock = v.stock !== undefined && v.stock !== null && v.stock !== '' && !isNaN(Number(v.stock))
-          ? Number(v.stock)
-          : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0);
-        return {
+      } else if (opts1.length > 0) {
+        opts1.forEach(k1 => {
+          const found = (variantMatrix || []).find(v => v && v.option1 === k1);
+          if (found) {
+            matrixSource.push({
+              option1: k1,
+              option2: '',
+              price: found.price !== undefined && !isNaN(Number(found.price)) ? Number(found.price) : (Number(productForm.price) || 0),
+              stock: found.stock !== undefined && found.stock !== null && found.stock !== '' && !isNaN(Number(found.stock))
+                ? Number(found.stock)
+                : (productForm.stock !== undefined && !isNaN(Number(productForm.stock)) ? Number(productForm.stock) : 0),
+              pob: found.pob || ''
+            });
+          } else {
+            matrixSource.push({
+              option1: k1,
+              option2: '',
+              price: Number(productForm.price) || 0,
+              stock: productForm.stock !== undefined ? Number(productForm.stock) : 100,
+              pob: ''
+            });
+          }
+        });
+      } else {
+        matrixSource = (variantMatrix || []).map(v => ({
           option1: v.option1 || '',
           option2: v.option2 || '',
           price: v.price !== undefined && !isNaN(Number(v.price)) ? Number(v.price) : (Number(productForm.price) || 0),
-          stock: itemStock,
+          stock: v.stock !== undefined && !isNaN(Number(v.stock)) ? Number(v.stock) : 0,
           pob: v.pob || ''
-        };
-      });
+        }));
+      }
 
-      const masterStock = cleanedMatrix.reduce((sum, item) => sum + Number(item.stock || 0), 0);
-      generatedVersions = cleanedMatrix.map(v => `${v?.option1 || ""} - ${v?.option2 || ""}`);
+      const masterStock = matrixSource.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+      generatedVersions = matrixSource.map(v => v.option2 ? `${v.option1} - ${v.option2}` : v.option1);
 
       const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
       const tagVal = productForm.tag ? productForm.tag.trim() : "";
 
       // Ensure price is the lowest variant price if options exist
-      const matrixPrices = cleanedMatrix.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+      const matrixPrices = matrixSource.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
       const lowestMatrixPrice = matrixPrices.length > 0 ? Math.min(...matrixPrices) : Number(productForm.price);
 
       const attr1Title = productForm.variationName || productForm.attribute1Name || "PHÂN LOẠI 1";
       const attr2Title = productForm.attribute2Name || "PHÂN LOẠI 2";
+
+      currentVariants = matrixSource.map(v => ({
+        name: v.option2 ? `${v.option1} - ${v.option2}` : v.option1,
+        option1: v.option1,
+        option2: v.option2 || '',
+        price: Number(v.price) || 0,
+        stock: Number(v.stock) || 0,
+        pob: v.pob || '',
+        description: v.pob || ''
+      }));
+
+      currentGroups = [
+        { name: attr1Title, options: opts1 },
+        { name: attr2Title, options: opts2 }
+      ];
+      currentOptions = [...opts1, ...opts2];
 
       productPayload = {
         ...baseObject,
@@ -2302,8 +2390,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1Options: opts1,
         attribute2Name: attr2Title,
         attribute2Options: opts2,
-        variantMatrix: cleanedMatrix,
-        variations: undefined,
+        variantMatrix: matrixSource,
+        variants: currentVariants,
+        variations: currentVariants,
+        groups: currentGroups,
+        options: currentOptions,
         stock: masterStock,
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
@@ -2363,6 +2454,21 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
       const varTitle = productForm.variationName || productForm.attribute1Name || "VERSION";
 
+      currentVariants = cleanedVariations.map(v => ({
+        name: v.name,
+        option1: v.name,
+        option2: '',
+        price: Number(v.price) || 0,
+        stock: Number(v.stock) || 0,
+        description: v.description || '',
+        pob: v.description || ''
+      }));
+
+      currentGroups = [
+        { name: varTitle, options: parsedVersions }
+      ];
+      currentOptions = parsedVersions;
+
       productPayload = {
         ...baseObject,
         id: targetId,
@@ -2385,23 +2491,63 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute1Name: varTitle,
         attribute1Options: parsedVersions,
         variations: cleanedVariations.length > 0 ? cleanedVariations : undefined,
+        variants: currentVariants,
+        variantMatrix: currentVariants.map(v => ({
+          option1: v.name,
+          option2: '',
+          price: v.price,
+          stock: v.stock,
+          pob: v.description
+        })),
+        groups: currentGroups,
+        options: currentOptions,
         stock: masterStock,
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
 
       delete productPayload.attribute2Name;
       delete productPayload.attribute2Options;
-      delete productPayload.variantMatrix;
+    }
+
+    // ÉP BUỘC GÁN MẢNG MA TRẬN VÀ PHÂN LOẠI TRỰC TIẾP VÀO OBJECT SẢN PHẨM ĐANG CHỈNH SỬA
+    if (editingProduct) {
+      editingProduct.variants = currentVariants;
+      editingProduct.variantMatrix = productPayload.variantMatrix;
+      editingProduct.variations = productPayload.variations;
+      editingProduct.groups = currentGroups;
+      editingProduct.options = currentOptions;
+      editingProduct.attribute1Name = productPayload.attribute1Name;
+      editingProduct.attribute1Options = productPayload.attribute1Options;
+      editingProduct.attribute2Name = productPayload.attribute2Name;
+      editingProduct.attribute2Options = productPayload.attribute2Options;
+      editingProduct.variationName = productPayload.variationName;
+      editingProduct.versions = generatedVersions.length > 0 ? generatedVersions : (editingProduct.versions || []);
+      editingProduct.price = productPayload.price;
+      editingProduct.stock = productPayload.stock;
+      editingProduct.name = productPayload.name;
+      editingProduct.category = productPayload.category;
+      editingProduct.tag = productPayload.tag;
+      editingProduct.status = productPayload.status;
+      editingProduct.info = productPayload.info;
+      editingProduct.detailedDesc = productPayload.detailedDesc;
+      editingProduct.image = productPayload.image;
+      editingProduct.images = productPayload.images;
+      editingProduct.weight = productPayload.weight;
+      editingProduct.orderDeadline = productPayload.orderDeadline;
+      editingProduct.releaseDate = productPayload.releaseDate;
+      editingProduct.preorderGift = productPayload.preorderGift;
+      editingProduct.artist = productPayload.artist;
+      editingProduct.shippingFeeIncluded = productPayload.shippingFeeIncluded;
     }
 
     // Save locally and track change
     try {
-      const exists = products.some(p => Number(p.id) === Number(targetId));
+      const exists = products.some(p => Number(p?.id) === Number(targetId));
       let nextProductsList: Product[];
       if (exists) {
-        nextProductsList = products.map(p => Number(p?.id) === Number(targetId) ? productPayload : p);
+        nextProductsList = products.map(p => Number(p?.id) === Number(targetId) ? { ...p, ...productPayload, variants: currentVariants } : p);
       } else {
-        nextProductsList = [productPayload, ...products];
+        nextProductsList = [{ ...productPayload, variants: currentVariants }, ...products];
       }
 
       // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state
@@ -2496,6 +2642,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
 
   // Backward compatibility aliases
   const handleUpdateProduct = handleSaveProductSubmit;
+  const handleSaveProduct = handleSaveProductSubmit;
   const handleSave = handlePersistCatalogChanges;
 
   // Reset products list
