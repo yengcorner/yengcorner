@@ -71,11 +71,14 @@ export default function Footer({ setCurrentPage, navigateToRulesSection }: Foote
 
         <div className="flex items-start space-x-3">
           <div className="p-3 bg-white border border-blue-300 rounded-lg text-blue-900 shadow-sm">
-            <ShieldAlert className="w-6 h-6" />
+            <Truck className="w-6 h-6" />
           </div>
           <div>
-            <h4 className="text-neutral-900 text-sm font-display font-bold tracking-wide uppercase">BẢO HIỂM VẬN CHUYỂN</h4>
-            <p className="text-xs text-neutral-600 mt-1 leading-relaxed">Hỗ trợ khiếu nại và bồi thường từ các đối tác vận chuyển nội địa (SPX, VTP, GHTK)</p>
+            <h4 className="text-neutral-900 text-sm font-display font-bold tracking-wide uppercase">VẬN CHUYỂN & ĐÓNG GÓI</h4>
+            <p className="text-xs text-neutral-600 mt-1 leading-relaxed">
+              Vận chuyển nội địa tiết kiệm: Ship SPX đồng giá 14k toàn quốc (áp dụng đơn dưới 1kg)<br />
+              Không phụ phí đóng gói
+            </p>
           </div>
         </div>
       </div>
