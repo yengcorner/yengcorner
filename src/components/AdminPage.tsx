@@ -6,7 +6,7 @@ import {
   Download, Database, Save, Ticket, Percent, FileSpreadsheet, Send, Loader2, Upload
 } from 'lucide-react';
 import { OrderPayload, Product, CartItem, Coupon, VariantMatrixItem } from '../types';
-import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, deleteCoupon, saveAllCoupons, listenToOrders } from '../utils/orders';
+import { getOrders, updateOrderStatus, updateOrderStatusAndPaidAmount, updateOrderTrackingCode, updateOrderPaidAmount, updateBulkOrdersTracking, deleteOrder, resetOrdersToDefault, saveOrder, slugify, syncAllProductSpecificOrders, getCoupons, saveCoupon, deleteCoupon, saveAllCoupons, listenToOrders, generateUniqueOrderId, getOrdersFromLocalSync } from '../utils/orders';
 import { getProducts, saveProduct as saveAdminProduct, deleteProduct as deleteAdminProduct, resetProductsToDefault as resetAdminProducts, subscribeProducts, saveProductsToLocalStorage } from '../utils/products';
 import { initAuth, googleSignIn, logout as googleLogout, db } from '../utils/googleAuth';
 import { collection, getDocs, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -1243,11 +1243,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Load orders and products on authentication
   useEffect(() => {
     if (isAuthenticated) {
-      // 🔄 1. Đọc ngay từ localStorage cache trước để tránh màn hình trắng khi tải trang
+      // 🔄 1. Đọc ngay từ localStorage cache (hỗ trợ cả yeng_orders & yeng_corner_orders_v1) để tránh màn hình trắng khi tải trang
       try {
-        const saved = localStorage.getItem('yeng_corner_orders_v1');
-        if (saved) {
-          setOrders(JSON.parse(saved));
+        const localList = getOrdersFromLocalSync();
+        if (localList && localList.length > 0) {
+          setOrders(localList);
         }
       } catch (e) {
         console.warn("Lỗi đọc cache ban đầu:", e);
@@ -1586,7 +1586,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
 
     const manualOrder: OrderPayload = {
-      id: "YENG-OFF-" + Math.floor(1000 + Math.random() * 9000),
+      id: generateUniqueOrderId(orders, "YENG"),
       status: newOrderForm.status || "Chờ xác nhận",
       items: [
         {
