@@ -1158,10 +1158,36 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     showSecondAttribute,
     productForm.versionsText,
     productForm.attribute2OptionsText,
-    productForm.price,
     productForm.stock,
     editingProduct
   ]);
+
+  // Auto sync "Đơn giá VND mặc định" to the lowest price among variants if product has variations/variants
+  useEffect(() => {
+    if (!isProductModalOpen) return;
+
+    if (showSecondAttribute) {
+      if (variantMatrix && variantMatrix.length > 0) {
+        const prices = variantMatrix
+          .map(v => Number(v.price))
+          .filter(p => !isNaN(p) && p > 0);
+        if (prices.length > 0) {
+          const minPrice = Math.min(...prices);
+          setProductForm(prev => (prev.price !== minPrice ? { ...prev, price: minPrice } : prev));
+        }
+      }
+    } else {
+      if (formVariations && formVariations.length > 0) {
+        const prices = formVariations
+          .map(v => Number(v.price))
+          .filter(p => !isNaN(p) && p > 0);
+        if (prices.length > 0) {
+          const minPrice = Math.min(...prices);
+          setProductForm(prev => (prev.price !== minPrice ? { ...prev, price: minPrice } : prev));
+        }
+      }
+    }
+  }, [variantMatrix, formVariations, showSecondAttribute, isProductModalOpen]);
 
   // Google Sheets integration state
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState(() => {
@@ -2015,10 +2041,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const matrixStockSum = boundMatrix.reduce((sum, v) => sum + Number(v.stock || 0), 0);
       const masterStockVal = boundMatrix.length > 0 ? matrixStockSum : (prod.stock ?? 100);
 
+      // Auto set default unit price to lowest variant price if options exist
+      const matrixPrices = boundMatrix.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+      const lowestMatrixPrice = matrixPrices.length > 0 ? Math.min(...matrixPrices) : (Number(prod.price) || 0);
+
       setProductForm({
         id: prod.id || 0,
         name: prod.name || '',
-        price: Number(prod.price) || 0,
+        price: lowestMatrixPrice,
         category: prod.category || '',
         image: prod.image || '',
         tag: prod.tag ?? '',
@@ -2064,10 +2094,14 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const varsStockSum = boundVariations.reduce((sum, v) => sum + Number(v.stock || 0), 0);
       const masterStockVal = boundVariations.length > 0 ? varsStockSum : (prod.stock ?? 100);
 
+      // Auto set default unit price to lowest variation price if options exist
+      const varPrices = boundVariations.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+      const lowestVarPrice = varPrices.length > 0 ? Math.min(...varPrices) : (Number(prod.price) || 0);
+
       setProductForm({
         id: prod.id || 0,
         name: prod.name || '',
-        price: Number(prod.price) || 0,
+        price: lowestVarPrice,
         category: prod.category || '',
         image: prod.image || '',
         tag: prod.tag ?? '',
@@ -2150,11 +2184,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
       const tagVal = productForm.tag ? productForm.tag.trim() : "";
 
+      // Ensure price is the lowest variant price if options exist
+      const matrixPrices = cleanedMatrix.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+      const lowestMatrixPrice = matrixPrices.length > 0 ? Math.min(...matrixPrices) : Number(productForm.price);
+
       productPayload = {
         ...baseObject,
         id: targetId,
         name: productForm.name,
-        price: Number(productForm.price),
+        price: lowestMatrixPrice,
         category: productForm.category,
         image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
@@ -2208,11 +2246,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const statusVal = masterStock > 0 ? "Còn hàng" : "Hết hàng";
       const tagVal = productForm.tag ? productForm.tag.trim() : "";
 
+      // Ensure price is the lowest variation price if options exist
+      const varPrices = cleanedVariations.map(v => Number(v.price)).filter(p => !isNaN(p) && p > 0);
+      const lowestVarPrice = varPrices.length > 0 ? Math.min(...varPrices) : Number(productForm.price);
+
       productPayload = {
         ...baseObject,
         id: targetId,
         name: productForm.name,
-        price: Number(productForm.price),
+        price: lowestVarPrice,
         category: productForm.category,
         image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
         images: additionalImages,
@@ -4700,7 +4742,14 @@ function getColumnLetter(colIndex) {
                 {/* GIÁ & TỒN KHO MẶC ĐỊNH */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">Đơn giá VND mặc định:</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10.5px] font-mono font-bold text-neutral-600 uppercase">Đơn giá VND mặc định:</label>
+                      {((showSecondAttribute ? variantMatrix.length : formVariations.length) > 0) && (
+                        <span className="text-[9.5px] font-sans font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          Giá thấp nhất
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       min={0}
@@ -4709,6 +4758,11 @@ function getColumnLetter(colIndex) {
                       placeholder="Giá bán cuối không cộng phí Seoul"
                       className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-mono font-bold text-neutral-900"
                     />
+                    {((showSecondAttribute ? variantMatrix.length : formVariations.length) > 0) && (
+                      <p className="text-[10px] text-emerald-600 mt-1 italic">
+                        * Tự động đặt bằng mức giá thấp nhất trong tất cả các lựa chọn ({Number(productForm.price).toLocaleString('vi-VN')}₫)
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10.5px] font-mono font-bold text-neutral-600 block mb-1 uppercase">Số lượng tồn kho mặc định:</label>
