@@ -757,25 +757,29 @@ export async function saveCoupon(coupon: Coupon): Promise<void> {
 }
 
 export async function deleteCoupon(code: string): Promise<void> {
+  const cleanCode = (code || '').trim();
+  if (!cleanCode) return;
+
+  // 1. Đồng bộ local cache ngay lập tức
   try {
-    const docRef = doc(db, 'coupons', code.toUpperCase());
+    const saved = localStorage.getItem('yeng_coupons');
+    let list: Coupon[] = saved ? JSON.parse(saved) : [];
+    list = list.filter(c => c.code.toUpperCase() !== cleanCode.toUpperCase());
+    localStorage.setItem('yeng_coupons', JSON.stringify(list));
+    localStorage.setItem('yeng_coupons_initialized', 'true');
+  } catch (e) {}
+
+  // 2. Xóa khỏi Firestore
+  try {
+    const docRef = doc(db, 'coupons', cleanCode.toUpperCase());
     await deleteDoc(docRef);
-    
-    // Đồng bộ local cache
-    try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== code.toUpperCase());
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    } catch (e) {}
+    if (cleanCode !== cleanCode.toUpperCase()) {
+      try {
+        await deleteDoc(doc(db, 'coupons', cleanCode));
+      } catch (err) {}
+    }
   } catch (e) {
     console.error("Lỗi xóa coupon trên Firestore:", e);
-    try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== code.toUpperCase());
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    } catch (err) {}
   }
 }
 
