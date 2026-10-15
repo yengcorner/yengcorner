@@ -112,7 +112,8 @@ const getInitialMockOrders = (): OrderPayload[] => {
   ];
 };
 
-const STORAGE_KEY = 'yeng_corner_orders_v1';
+export const STORAGE_KEY = 'yeng_corner_orders_v1';
+export const LEGACY_STORAGE_KEY = 'yeng_orders';
 
 const ORDERS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
 
@@ -126,9 +127,112 @@ export const isOrdersCacheExpired = (): boolean => {
   }
 };
 
-export const saveOrdersToLocalStorage = (list: OrderPayload[]) => {
+// Internal synchronous reader for raw orders in localStorage without triggering mocks
+function getOrdersFromLocalSyncRaw(): OrderPayload[] {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    const map = new Map<string, OrderPayload>();
+    // Check both STORAGE_KEY ('yeng_corner_orders_v1') and LEGACY_STORAGE_KEY ('yeng_orders')
+    const raw1 = localStorage.getItem(STORAGE_KEY);
+    if (raw1) {
+      const parsed1 = JSON.parse(raw1);
+      if (Array.isArray(parsed1)) {
+        parsed1.forEach((ord: any) => {
+          if (ord && ord.id) map.set(ord.id, ord);
+        });
+      }
+    }
+    const raw2 = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (raw2) {
+      const parsed2 = JSON.parse(raw2);
+      if (Array.isArray(parsed2)) {
+        parsed2.forEach((ord: any) => {
+          if (ord && ord.id && !map.has(ord.id)) map.set(ord.id, ord);
+        });
+      }
+    }
+    return Array.from(map.values()).map(ord => ({
+      ...ord,
+      status: normalizeOrderStatus(ord.status)
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// Synchronous local orders getter with safe fallback to mock orders
+export function getOrdersFromLocalSync(): OrderPayload[] {
+  const existing = getOrdersFromLocalSyncRaw();
+  if (existing.length > 0) {
+    existing.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return existing;
+  }
+  const initial = getInitialMockOrders();
+  saveOrdersToLocalStorage(initial);
+  return initial;
+}
+
+/**
+ * Sinh mã đơn hàng duy nhất có định dạng YENGXXXX (với 4 chữ số ngẫu nhiên từ 1000 đến 9999).
+ * Luôn đối chiếu toàn diện với danh sách đơn hàng trong state và localStorage (cả 2 key yeng_orders & yeng_corner_orders_v1)
+ * để đảm bảo tuyệt đối không trùng lặp mã đơn hàng cũ.
+ */
+export function generateUniqueOrderId(existingOrders?: OrderPayload[], prefix: string = "YENG"): string {
+  const existingIds = new Set<string>();
+
+  // 1. Quét danh sách truyền vào
+  if (Array.isArray(existingOrders)) {
+    existingOrders.forEach(o => {
+      if (o && o.id) existingIds.add(String(o.id).trim().toUpperCase());
+    });
+  }
+
+  // 2. Quét các đơn hàng đang lưu trữ trong localStorage (cả 2 key)
+  const localExisting = getOrdersFromLocalSyncRaw();
+  localExisting.forEach(o => {
+    if (o && o.id) existingIds.add(String(o.id).trim().toUpperCase());
+  });
+
+  // 3. Vòng lặp sinh số 4 chữ số ngẫu nhiên (1000 - 9999) và kiểm tra chống trùng lặp
+  let newId = "";
+  let attempts = 0;
+  const maxAttempts = 10000;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    const randomNum = Math.floor(1000 + Math.random() * 9000); // 4 chữ số ngẫu nhiên
+    const candidateId = `${prefix}${randomNum}`.toUpperCase();
+    if (!existingIds.has(candidateId)) {
+      newId = candidateId;
+      break;
+    }
+  }
+
+  // Dự phòng an toàn nếu toàn bộ 9000 số 4 chữ số đã được sử dụng
+  if (!newId) {
+    newId = `${prefix}${Math.floor(10000 + Math.random() * 90000)}`;
+  }
+
+  return newId;
+}
+
+export const saveOrdersToLocalStorage = (list: OrderPayload[], allowEmpty: boolean = false) => {
+  try {
+    if (!Array.isArray(list)) return;
+    
+    // BẢO VỆ CHỐNG MẤT ĐƠN HÀNG: Nếu mảng lưu truyền vào rỗng nhưng trong localStorage đã có đơn hàng
+    // thì tuyệt đối KHÔNG ĐƯỢC ghi đè làm mất đơn hàng cũ (trừ khi cố ý xóa hết có cờ allowEmpty)
+    if (list.length === 0 && !allowEmpty) {
+      const existing = getOrdersFromLocalSyncRaw();
+      if (existing.length > 0) {
+        console.warn("[Orders Protection] Từ chối ghi đè mảng rỗng vào localStorage vì đang có", existing.length, "đơn hàng hiện hữu.");
+        return;
+      }
+    }
+
+    const jsonStr = JSON.stringify(list);
+    // Đồng bộ đồng thời vào cả 2 key để tương thích 100% với yeng_orders và yeng_corner_orders_v1
+    localStorage.setItem(STORAGE_KEY, jsonStr);
+    localStorage.setItem(LEGACY_STORAGE_KEY, jsonStr);
     localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
   } catch (e) {
     console.error("Error setting orders to localStorage:", e);
@@ -169,8 +273,9 @@ export function slugify(text: string): string {
 export function syncAllProductSpecificOrders(): void {
   try {
     // Clear old orders_ prefixed keys to free up localStorage quota immediately
+    // Giữ an toàn tuyệt đối cho STORAGE_KEY và LEGACY_STORAGE_KEY
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith("orders_") && key !== STORAGE_KEY) {
+      if (key.startsWith("orders_") && key !== STORAGE_KEY && key !== LEGACY_STORAGE_KEY) {
         localStorage.removeItem(key);
       }
     });
@@ -182,21 +287,23 @@ export function syncAllProductSpecificOrders(): void {
 // Internal localStorage helper to avoid nested getOrders() recursion
 async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    const parsed: OrderPayload[] = saved ? JSON.parse(saved) : [];
-    return parsed.map(ord => ({
-      ...ord,
-      status: normalizeOrderStatus(ord.status)
-    }));
+    const existing = getOrdersFromLocalSyncRaw();
+    if (existing.length > 0) {
+      return existing;
+    }
+    const mock = getInitialMockOrders();
+    saveOrdersToLocalStorage(mock);
+    return mock;
   } catch (e) {
-    return [];
+    return getInitialMockOrders();
   }
 }
 
 export async function getOrders(forceRefresh: boolean = false): Promise<OrderPayload[]> {
+  const localList = await getOrdersLocalFallback();
+
   if (!forceRefresh && !isOrdersCacheExpired()) {
     console.log("[getOrders] Orders cache is fresh, returning local cache.");
-    const localList = await getOrdersLocalFallback();
     if (localList.length > 0) {
       localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       return localList;
@@ -208,25 +315,56 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
     console.log("[getOrders] Fetching fresh orders directly from Firestore client-side...");
     const q = collection(db, 'orders');
     const querySnapshot = await getDocs(q);
-    const list: OrderPayload[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data() as OrderPayload;
+    const firestoreList: OrderPayload[] = [];
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data() as OrderPayload;
       if (data) {
-        list.push({
+        firestoreList.push({
           ...data,
-          id: data.id || doc.id,
+          id: data.id || docSnap.id,
           status: normalizeOrderStatus(data.status)
         });
       }
     });
     
-    // Sắp xếp đơn hàng giảm dần theo thời gian (mới nhất lên đầu)
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // HỢP NHẤT THÔNG MINH: Giữ toàn bộ đơn hàng hiện có ở máy cục bộ và cập nhật thêm/mới từ Firestore
+    const orderMap = new Map<string, OrderPayload>();
+    localList.forEach(ord => {
+      if (ord && ord.id) orderMap.set(ord.id, ord);
+    });
+    firestoreList.forEach(ord => {
+      if (ord && ord.id) orderMap.set(ord.id, ord);
+    });
+
+    const mergedList = Array.from(orderMap.values());
+    mergedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     
-    // Đồng bộ vào localStorage cache để các tính năng offline/truy xuất nhanh hoạt động mượt mà
-    saveOrdersToLocalStorage(list);
-    console.log("[getOrders] Successfully fetched orders directly from Firestore:", list.length);
-    return list;
+    // Đồng bộ vào localStorage cache (cả 2 key)
+    if (mergedList.length > 0) {
+      saveOrdersToLocalStorage(mergedList);
+    }
+
+    // Tự động sao lưu ngầm các đơn hàng chỉ có ở máy cục bộ lên Firestore để bảo lưu vĩnh viễn trên đám mây
+    if (firestoreList.length > 0) {
+      const firestoreIds = new Set(firestoreList.map(o => o.id));
+      const unsynced = localList.filter(o => o && o.id && !firestoreIds.has(o.id));
+      if (unsynced.length > 0) {
+        console.log(`[Order Sync] Tự động đồng bộ ${unsynced.length} đơn hàng cũ từ máy lên Firestore...`);
+        unsynced.forEach(ord => {
+          const docRef = doc(db, 'orders', ord.id);
+          setDoc(docRef, cleanUndefined(ord)).catch(err => console.warn("Lỗi sync ngầm Firestore:", err));
+        });
+      }
+    } else if (localList.length > 0) {
+      console.log(`[Order Sync] Firestore rỗng, đồng bộ toàn bộ ${localList.length} đơn hàng từ máy lên Firestore...`);
+      localList.forEach(ord => {
+        const docRef = doc(db, 'orders', ord.id);
+        setDoc(docRef, cleanUndefined(ord)).catch(err => console.warn("Lỗi sync ngầm Firestore:", err));
+      });
+    }
+
+    console.log("[getOrders] Successfully fetched & merged orders:", mergedList.length);
+    return mergedList;
   } catch (err) {
     console.warn("[getOrders] Direct Firestore client fetch failed, falling back to server API...", err);
   }
@@ -249,9 +387,19 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
           ...ord,
           status: normalizeOrderStatus(ord.status)
         }));
-        normalizedList.sort((a: OrderPayload, b: OrderPayload) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        saveOrdersToLocalStorage(normalizedList);
-        return normalizedList;
+        
+        const orderMap = new Map<string, OrderPayload>();
+        localList.forEach(ord => {
+          if (ord && ord.id) orderMap.set(ord.id, ord);
+        });
+        normalizedList.forEach((ord: OrderPayload) => {
+          if (ord && ord.id) orderMap.set(ord.id, ord);
+        });
+
+        const mergedList = Array.from(orderMap.values());
+        mergedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        saveOrdersToLocalStorage(mergedList);
+        return mergedList;
       }
     }
   } catch (err) {
@@ -259,7 +407,6 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
   }
 
   // Final fallback to localStorage if everything fails
-  const localList = await getOrdersLocalFallback();
   localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   return localList;
 }
@@ -377,7 +524,7 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     try {
       const currentOrders = await getOrdersLocalFallback();
       const updatedOrders = [finalCleanedOrder, ...currentOrders.filter(o => o.id !== finalCleanedOrder.id)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
+      saveOrdersToLocalStorage(updatedOrders);
       syncAllProductSpecificOrders();
     } catch (e) {}
   } catch (e: any) {
@@ -387,7 +534,7 @@ export async function saveOrder(order: OrderPayload): Promise<void> {
     try {
       const currentOrders = await getOrdersLocalFallback();
       const updatedOrders = [order, ...currentOrders.filter(o => o.id !== order.id)];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedOrders));
+      saveOrdersToLocalStorage(updatedOrders);
       syncAllProductSpecificOrders();
     } catch (err) {}
     throw e; // Throw so that CheckoutPage is aware
@@ -407,7 +554,7 @@ export async function updateOrderStatus(orderId: string, status: string): Promis
       const updated = currentOrders.map(ord => 
         ord.id === orderId ? { ...ord, status: normalizedStatus } : ord
       );
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      saveOrdersToLocalStorage(updated);
       syncAllProductSpecificOrders();
       return updated;
     } catch (err) {}
