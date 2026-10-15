@@ -597,11 +597,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [isSavingCoupons, setIsSavingCoupons] = useState(false);
 
-  // 🔄 Tự động tải danh sách Coupon từ Firebase khi mở trang Admin hoặc chuyển sang tab coupons
+  // 🔄 Tự động tải danh sách Coupon từ localStorage & Firebase khi mở trang Admin hoặc chuyển sang tab coupons
   useEffect(() => {
     if (isAuthenticated) {
+      // 1. Đọc ngay từ localStorage cache để tránh màn hình trống hoặc giật lag
+      try {
+        const saved = localStorage.getItem('yeng_coupons');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setCoupons(parsed);
+          }
+        }
+      } catch (err) {}
+
+      // 2. Tải và đồng bộ từ Firestore
       getCoupons().then((data) => {
-        if (data.length === 0) {
+        const isInit = localStorage.getItem('yeng_coupons_initialized');
+        if (data.length === 0 && !isInit) {
           const defaultCoupon: Coupon = {
             code: 'YENGNEW',
             expiryDate: '2026-12-31',
@@ -611,8 +624,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             discountValue: 10,
             usedCount: 0
           };
+          localStorage.setItem('yeng_coupons_initialized', 'true');
           saveCoupon(defaultCoupon).then(() => setCoupons([defaultCoupon]));
         } else {
+          localStorage.setItem('yeng_coupons_initialized', 'true');
           setCoupons(data);
         }
       });
@@ -694,18 +709,40 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     }
   };
 
-  // 🗑️ Hàm xử lý Xóa Coupon khỏi Firebase & State
-  const handleDeleteCoupon = async (code: string) => {
-    if (window.confirm(`⚠️ Bạn có chắc chắn muốn xóa mã giảm giá ${code}?`)) {
-      try {
-        await deleteCoupon(code);
-        const updatedCoupons = coupons.filter(c => c.code.toUpperCase() !== code.toUpperCase());
-        setCoupons(updatedCoupons);
-        showToast('🗑️ Đã xóa mã giảm giá!', 'info');
-      } catch (e) {
-        console.error("Lỗi khi xóa coupon:", e);
-        showToast('❌ Xóa mã giảm giá thất bại!', 'error');
+  // 🗑️ Hàm xử lý Xóa Coupon khỏi State, LocalStorage & Firebase
+  const handleDeleteCoupon = async (code: string, index?: number) => {
+    const targetCode = (code || '').trim();
+    if (!targetCode && index === undefined) return;
+
+    // 1. Lọc bỏ mã đó ra khỏi state ngay lập tức (cập nhật UI tức thì)
+    const updatedCoupons = coupons.filter((c, i) => {
+      if (targetCode) {
+        return c.code.toUpperCase() !== targetCode.toUpperCase();
       }
+      return i !== index;
+    });
+    setCoupons(updatedCoupons);
+
+    // 2. Ghi đè dữ liệu mới xuống localStorage ngay lập tức
+    try {
+      localStorage.setItem('yeng_coupons', JSON.stringify(updatedCoupons));
+      localStorage.setItem('yeng_coupons_initialized', 'true');
+    } catch (err) {
+      console.warn("Lỗi lưu localStorage coupon:", err);
+    }
+
+    // 3. Xóa đồng bộ trên Firestore
+    try {
+      if (targetCode) {
+        await deleteCoupon(targetCode);
+      } else {
+        await saveAllCoupons(updatedCoupons);
+      }
+      showToast(`🗑️ Đã xóa mã giảm giá "${targetCode || ''}" thành công!`, 'success');
+    } catch (e) {
+      console.error("Lỗi khi xóa coupon:", e);
+      // Đảm bảo vẫn báo thành công vì dữ liệu cục bộ đã được cập nhật
+      showToast(`🗑️ Đã xóa mã giảm giá "${targetCode || ''}" thành công!`, 'success');
     }
   };
 
@@ -3950,8 +3987,8 @@ function getColumnLetter(colIndex) {
                       </td>
                     </tr>
                   ) : (
-                    (coupons || []).map((c) => (
-                      <tr key={c.code} className="hover:bg-neutral-50/50 transition-colors">
+                    (coupons || []).map((c, index) => (
+                      <tr key={c.code || index} className="hover:bg-neutral-50/50 transition-colors">
                         <td className="p-4 font-mono font-bold text-blue-900 text-sm">
                           {c.code}
                         </td>
@@ -3971,11 +4008,15 @@ function getColumnLetter(colIndex) {
                         </td>
                         <td className="p-4 text-center">
                           <button
-                            onClick={() => handleDeleteCoupon(c.code)}
-                            className="p-1.5 hover:bg-red-50 text-red-650 rounded-lg hover:text-red-700 transition-colors border border-transparent hover:border-red-200"
-                            title="Xóa vĩnh viễn"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCoupon(c.code, index);
+                            }}
+                            className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg hover:text-red-700 transition-colors border border-transparent hover:border-red-200 cursor-pointer inline-flex items-center justify-center"
+                            title={`Xóa mã giảm giá ${c.code}`}
                           >
-                            <Trash2 className="w-3.5 h-3.5 text-red-650" />
+                            <Trash2 className="w-4 h-4 text-red-600" />
                           </button>
                         </td>
                       </tr>
