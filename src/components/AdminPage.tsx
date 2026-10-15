@@ -2123,6 +2123,59 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     setIsProductModalOpen(true);
   };
 
+  // Xử lý sự kiện Xóa Nhóm Phân Loại 2
+  const handleRemoveSecondAttribute = () => {
+    // 1. Tắt hiển thị nhóm phân loại 2
+    setShowSecondAttribute(false);
+
+    // 2. Gán tên nhóm 2 và các tùy chọn phân loại nhóm 2 về chuỗi rỗng ""
+    setProductForm(prev => ({
+      ...prev,
+      attribute2Name: '',
+      attribute2OptionsText: ''
+    }));
+
+    // 3. Xóa sạch ma trận tổ hợp
+    setVariantMatrix([]);
+
+    // 4. Nếu đang chỉnh sửa sản phẩm (editingProduct), xóa sạch hoàn toàn thuộc tính nhóm 2
+    if (editingProduct) {
+      delete (editingProduct as any).attribute2Name;
+      delete (editingProduct as any).attribute2Options;
+      editingProduct.attribute2Name = undefined;
+      editingProduct.attribute2Options = undefined;
+      editingProduct.variantMatrix = [];
+      if (Array.isArray(editingProduct.groups) && editingProduct.groups.length > 1) {
+        editingProduct.groups = [editingProduct.groups[0]];
+      }
+    }
+
+    // 5. Đồng bộ ngay lập tức formVariations cho Nhóm 1 từ versionsText
+    const keys1 = (productForm.versionsText || '')
+      .split(',')
+      .map(v => v.trim())
+      .filter(v => v.length > 0);
+
+    setFormVariations(prevVars => {
+      const prevArray = Array.isArray(prevVars) ? prevVars : [];
+      return keys1.map(key => {
+        const inMatrix = (variantMatrix || []).find(v => v && v.option1 === key);
+        const inPrev = prevArray.find(v => v && v.name === key);
+        const priceVal = inMatrix?.price ?? inPrev?.price ?? (Number(productForm.price) || 0);
+        const stockVal = inMatrix?.stock ?? inPrev?.stock ?? (productForm.stock !== undefined ? Number(productForm.stock) : 100);
+        const descVal = inMatrix?.pob ?? inPrev?.description ?? '';
+        return {
+          name: key,
+          price: Number(priceVal) || 0,
+          stock: Number(stockVal) || 0,
+          description: descVal
+        };
+      });
+    });
+
+    showToast("Đã xóa nhóm phân loại 2", "info");
+  };
+
   // Open product modal for Edit
   const handleOpenEditProduct = (prod: Product) => {
     setEditingProduct(prod);
@@ -2331,7 +2384,11 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     let currentGroups: any[] = [];
     let currentOptions: any[] = [];
 
-    if (showSecondAttribute) {
+    const isMultiTier = showSecondAttribute &&
+      (productForm.attribute2OptionsText || '').split(',').map(v => v.trim()).filter(v => v.length > 0).length > 0 &&
+      (productForm.attribute2Name || '').trim().length > 0;
+
+    if (isMultiTier) {
       const opts1 = (productForm.versionsText || '')
         .split(',')
         .map(v => v.trim())
@@ -2568,12 +2625,24 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         shippingFeeIncluded: productForm.shippingFeeIncluded || ""
       };
 
-      delete productPayload.attribute2Name;
-      delete productPayload.attribute2Options;
+      delete (productPayload as any).attribute2Name;
+      delete (productPayload as any).attribute2Options;
     }
 
     // ÉP BUỘC GÁN MẢNG MA TRẬN VÀ PHÂN LOẠI TRỰC TIẾP VÀO OBJECT SẢN PHẨM ĐANG CHỈNH SỬA
     if (editingProduct) {
+      if (!isMultiTier) {
+        delete (editingProduct as any).attribute2Name;
+        delete (editingProduct as any).attribute2Options;
+        editingProduct.attribute2Name = undefined;
+        editingProduct.attribute2Options = undefined;
+        if (Array.isArray(editingProduct.groups) && editingProduct.groups.length > 1) {
+          editingProduct.groups = currentGroups;
+        }
+      } else {
+        editingProduct.attribute2Name = productPayload.attribute2Name;
+        editingProduct.attribute2Options = productPayload.attribute2Options;
+      }
       editingProduct.variants = currentVariants;
       editingProduct.variantMatrix = productPayload.variantMatrix;
       editingProduct.variations = productPayload.variations;
@@ -2581,8 +2650,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       editingProduct.options = currentOptions;
       editingProduct.attribute1Name = productPayload.attribute1Name;
       editingProduct.attribute1Options = productPayload.attribute1Options;
-      editingProduct.attribute2Name = productPayload.attribute2Name;
-      editingProduct.attribute2Options = productPayload.attribute2Options;
       editingProduct.variationName = productPayload.variationName;
       editingProduct.versions = generatedVersions.length > 0 ? generatedVersions : (editingProduct.versions || []);
       editingProduct.price = productPayload.price;
@@ -2608,9 +2675,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const exists = products.some(p => Number(p?.id) === Number(targetId));
       let nextProductsList: Product[];
       if (exists) {
-        nextProductsList = products.map(p => Number(p?.id) === Number(targetId) ? { ...p, ...productPayload, variants: currentVariants } : p);
+        nextProductsList = products.map(p => {
+          if (Number(p?.id) === Number(targetId)) {
+            const cleanP = { ...p };
+            if (!isMultiTier) {
+              delete (cleanP as any).attribute2Name;
+              delete (cleanP as any).attribute2Options;
+            }
+            const updatedItem: Product = {
+              ...cleanP,
+              ...productPayload,
+              variants: currentVariants,
+              groups: currentGroups,
+              options: currentOptions
+            };
+            if (!isMultiTier) {
+              delete (updatedItem as any).attribute2Name;
+              delete (updatedItem as any).attribute2Options;
+            }
+            return updatedItem;
+          }
+          return p;
+        });
       } else {
-        nextProductsList = [{ ...productPayload, variants: currentVariants }, ...products];
+        const newProduct: Product = { ...productPayload, variants: currentVariants };
+        if (!isMultiTier) {
+          delete (newProduct as any).attribute2Name;
+          delete (newProduct as any).attribute2Options;
+        }
+        nextProductsList = [newProduct, ...products];
       }
 
       // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state
@@ -5483,15 +5576,9 @@ function getColumnLetter(colIndex) {
                       <span>Nhóm phân loại 2</span>
                       <button
                         type="button"
-                        onClick={() => {
-                          setShowSecondAttribute(false);
-                          setProductForm(prev => ({
-                            ...prev,
-                            attribute2Name: '',
-                            attribute2OptionsText: ''
-                          }));
-                        }}
-                        className="text-[9.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded hover:bg-rose-100 transition-colors"
+                        onClick={handleRemoveSecondAttribute}
+                        className="text-[9.5px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded hover:bg-rose-100 transition-colors cursor-pointer active:scale-95"
+                        title="Xóa sạch dữ liệu nhóm 2 và ẩn khỏi form"
                       >
                         ❌ Xóa nhóm 2
                       </button>
