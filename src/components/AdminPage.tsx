@@ -1290,12 +1290,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         console.warn("Lỗi đọc cache ban đầu:", e);
       }
 
-      // 🔄 2. Gọi API getOrders() tải trực tiếp từ Firestore ngay lập tức để đồng bộ nhanh nhất
-      getOrders()
+      // 🔄 2. Gọi API getOrders() tải trực tiếp từ Cloud Firestore ngay lập tức để đồng bộ chính xác 100%
+      getOrders(true)
         .then((data) => {
-          if (data && data.length > 0) {
-            setOrders(data);
-          }
+          setOrders(data || []);
         })
         .catch((err) => {
           console.error("Lỗi getOrders khi khởi tạo AdminPage:", err);
@@ -2101,7 +2099,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       name: '',
       price: 250000,
       category: 'Album',
-      image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80',
+      image: '',
       tag: 'Pre-order',
       info: 'Đặt trước nhận ưu đãi quà POB độc quyền từ Hàn Quốc',
       detailedDesc: 'Mô tả chi tiết sản phẩm album nhập khẩu chính hãng...',
@@ -2376,9 +2374,33 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       const validIds = (products || []).map(p => Number(p?.id)).filter(id => !isNaN(id) && isFinite(id));
       return validIds.length > 0 ? Math.max(...validIds) + 1 : 1;
     };
-    const targetId = editingProduct ? editingProduct.id : getNextId();
+    const targetId = editingProduct ? editingProduct.id : (productForm.id && productForm.id > 0 ? productForm.id : getNextId());
     const existingProduct = (products || []).find(p => Number(p?.id) === Number(targetId)) || editingProduct || null;
     const baseObject = existingProduct ? { ...existingProduct } : {};
+
+    // 📸 Chuẩn hóa và đồng bộ trường ảnh chính (image) và mảng thư viện ảnh (images)
+    const validGallery = (additionalImages || [])
+      .map(img => (typeof img === 'string' ? img.trim() : ''))
+      .filter(img => img.length > 0);
+
+    let primaryImage = (productForm.image || '').trim();
+    if (!primaryImage && validGallery.length > 0) {
+      primaryImage = validGallery[0];
+    }
+    if (!primaryImage && baseObject.image) {
+      primaryImage = String(baseObject.image).trim();
+    }
+    if (!primaryImage) {
+      primaryImage = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
+    }
+
+    let finalGallery = [...validGallery];
+    if (primaryImage && !finalGallery.includes(primaryImage)) {
+      finalGallery.unshift(primaryImage);
+    }
+    if (finalGallery.length === 0) {
+      finalGallery = [primaryImage];
+    }
 
     let currentVariants: any[] = [];
     let currentGroups: any[] = [];
@@ -2493,8 +2515,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         name: productForm.name,
         price: lowestMatrixPrice,
         category: productForm.category,
-        image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
-        images: additionalImages,
+        image: primaryImage,
+        images: finalGallery,
         tag: tagVal,
         status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
@@ -2595,8 +2617,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         name: productForm.name,
         price: lowestVarPrice,
         category: productForm.category,
-        image: productForm.image || baseObject.image || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80",
-        images: additionalImages,
+        image: primaryImage,
+        images: finalGallery,
         tag: tagVal,
         status: statusVal,
         info: productForm.info || baseObject.info || "Sản phẩm phân phối chính hãng.",
@@ -2660,8 +2682,8 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       editingProduct.status = productPayload.status;
       editingProduct.info = productPayload.info;
       editingProduct.detailedDesc = productPayload.detailedDesc;
-      editingProduct.image = productPayload.image;
-      editingProduct.images = productPayload.images;
+      editingProduct.image = primaryImage;
+      editingProduct.images = finalGallery;
       editingProduct.weight = productPayload.weight;
       editingProduct.orderDeadline = productPayload.orderDeadline;
       editingProduct.releaseDate = productPayload.releaseDate;
@@ -2685,6 +2707,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
             const updatedItem: Product = {
               ...cleanP,
               ...productPayload,
+              id: targetId,
+              image: primaryImage,
+              images: finalGallery,
               variants: currentVariants,
               groups: currentGroups,
               options: currentOptions
@@ -2698,7 +2723,15 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
           return p;
         });
       } else {
-        const newProduct: Product = { ...productPayload, variants: currentVariants };
+        const newProduct: Product = {
+          ...productPayload,
+          id: targetId,
+          image: primaryImage,
+          images: finalGallery,
+          variants: currentVariants,
+          groups: currentGroups,
+          options: currentOptions
+        };
         if (!isMultiTier) {
           delete (newProduct as any).attribute2Name;
           delete (newProduct as any).attribute2Options;
@@ -2706,10 +2739,10 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         nextProductsList = [newProduct, ...products];
       }
 
-      // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state
+      // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state (giao diện re-render ngay tức thì)
       setProducts(nextProductsList);
 
-      // 1. Đồng thời lưu đè (localStorage.setItem) để dữ liệu được ghi nhận vĩnh viễn
+      // 2. Đồng thời lưu đè (localStorage.setItem) để dữ liệu được ghi nhận vĩnh viễn
       try {
         localStorage.setItem('yeng_products', JSON.stringify(nextProductsList));
         localStorage.setItem('yeng_products_timestamp', Date.now().toString());
@@ -2718,19 +2751,35 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       }
       saveProductsToLocalStorage(nextProductsList);
 
-      // 2. Kích hoạt state reload / UI refresh để bảng hiển thị đúng giá trị mới sửa mà không cần F5
+      // 3. Kích hoạt state reload / UI refresh để bảng hiển thị đúng giá trị mới sửa mà không cần F5
       clearTracking();
       setHasUnsavedCatalogChanges(false);
       setIsProductModalOpen(false);
       window.dispatchEvent(new CustomEvent('yeng_products_updated', { detail: { products: nextProductsList, isLoaded: true } }));
 
-      // 3. Hiện thông báo Toast
-      showToast("Đã lưu thay đổi sản phẩm thành công!", "success");
+      // 4. Hiện thông báo Toast
+      showToast(exists ? `Đã lưu thay đổi sản phẩm #${targetId} thành công!` : `Đã thêm sản phẩm #${targetId} thành công!`, "success");
 
-      // Đồng bộ ngầm lên Firestore để bảo lưu trên đám mây
-      saveAdminProduct(productPayload).catch(err => {
-        console.warn("Lỗi đồng bộ ngầm Firestore:", err);
-      });
+      // 5. Đẩy thành công dữ liệu sản phẩm mới (kể cả ID 81) lên Firebase Firestore
+      const cloudPayload: Product = {
+        ...productPayload,
+        id: targetId,
+        image: primaryImage,
+        images: finalGallery,
+        variants: currentVariants,
+        groups: currentGroups,
+        options: currentOptions
+      };
+      if (!isMultiTier) {
+        delete (cloudPayload as any).attribute2Name;
+        delete (cloudPayload as any).attribute2Options;
+      }
+      try {
+        await saveAdminProduct(cloudPayload);
+        console.log(`[Firestore Sync] Đã lưu thành công sản phẩm #${targetId} lên Firestore.`);
+      } catch (cloudErr: any) {
+        console.warn("Lỗi đồng bộ ngầm Firestore:", cloudErr);
+      }
     } catch (err: any) {
       console.error("Error saving product changes:", err);
       showToast(`⚠️ Lỗi khi cập nhật sản phẩm: ${err.message}`, "error");
@@ -3470,13 +3519,33 @@ function getColumnLetter(colIndex) {
                 );
               })()}
             </div>
-            <button
-              onClick={handleOpenCreateModal}
-              className="px-4 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-display font-bold tracking-wider uppercase rounded-xl flex items-center space-x-1.5 transition-colors shadow-sm self-end sm:self-auto"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Thêm Đơn Offline</span>
-            </button>
+            <div className="flex items-center space-x-2 self-end sm:self-auto">
+              <button
+                onClick={async () => {
+                  showToast("⏳ Đang dọn dẹp và tải lại danh sách đơn hàng từ Cloud Firestore...", "info");
+                  try {
+                    const fresh = await getOrders(true);
+                    setOrders(fresh);
+                    showToast(`🔄 Đã đồng bộ 100% dữ liệu từ Cloud Firestore (${fresh.length} đơn)!`, "success");
+                  } catch (err: any) {
+                    showToast(`⚠️ Lỗi tải dữ liệu Cloud: ${err.message || err}`, "error");
+                  }
+                }}
+                className="px-3.5 py-2 bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-900 text-xs font-display font-bold tracking-wider uppercase rounded-xl flex items-center space-x-1.5 transition-colors shadow-sm cursor-pointer"
+                title="Tải lại trực tiếp toàn bộ dữ liệu đơn hàng thực tế từ Cloud Firestore, dọn sạch dữ liệu cũ"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Làm Mới Cloud</span>
+              </button>
+
+              <button
+                onClick={handleOpenCreateModal}
+                className="px-4 py-2 bg-emerald-50 border border-emerald-300 hover:bg-emerald-100 text-emerald-900 text-xs font-display font-bold tracking-wider uppercase rounded-xl flex items-center space-x-1.5 transition-colors shadow-sm cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Thêm Đơn Offline</span>
+              </button>
+            </div>
           </div>
 
           {/* Bulk Ship & Automatic Email Notification Control Panel */}
@@ -3709,14 +3778,15 @@ function getColumnLetter(colIndex) {
                             const itemPrice = Number(getPrice(item)) || 0;
                             return (
                               <div key={idx} className="flex items-start space-x-3 bg-neutral-50 border p-2.5 rounded-xl text-xs">
-                                {item?.product?.image && (
                                   <img 
-                                    src={item.product.image} 
-                                    alt={item.product.name} 
+                                    src={item?.product?.image || (Array.isArray(item?.product?.images) && item.product.images[0]) || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80"} 
+                                    alt={item?.product?.name || "Sản phẩm"} 
                                     className="w-11 h-11 object-cover rounded-lg border bg-white shrink-0"
                                     referrerPolicy="no-referrer"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
+                                    }}
                                   />
-                                )}
                                 <div className="flex-1 min-w-0 space-y-1">
                                   <h5 className="font-bold text-neutral-900 truncate" title={item?.product?.name || "Sản phẩm"}>{item?.product?.name || "Sản phẩm"}</h5>
                                   <div className="flex flex-wrap items-center gap-1.5">
@@ -4000,10 +4070,13 @@ function getColumnLetter(colIndex) {
                       <tr key={p.id} className="hover:bg-neutral-50/50 transition-colors">
                         <td className="p-4">
                           <img 
-                            src={p.image} 
+                            src={p.image || (Array.isArray(p.images) && p.images[0]) || "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80"} 
                             alt={p.name} 
                             className="w-10 h-10 object-cover rounded-lg border bg-white shrink-0" 
                             referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
+                            }}
                           />
                         </td>
                         <td className="p-4 max-w-[220px]">
@@ -5353,8 +5426,16 @@ function getColumnLetter(colIndex) {
                   {/* Preview box */}
                   <div className="md:col-span-3 flex justify-center">
                     <div className="w-20 h-24 border border-neutral-300 rounded-lg overflow-hidden bg-white shadow-sm flex items-center justify-center text-neutral-400">
-                      {productForm.image ? (
-                        <img src={productForm.image} className="w-full h-full object-cover" alt="Product preview" referrerPolicy="no-referrer" />
+                      {productForm.image || additionalImages.length > 0 ? (
+                        <img 
+                          src={productForm.image || additionalImages[0]} 
+                          className="w-full h-full object-cover" 
+                          alt="Product preview" 
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
+                          }}
+                        />
                       ) : (
                         <span className="text-[10px] text-neutral-400 font-mono">No Image</span>
                       )}
@@ -5373,7 +5454,9 @@ function getColumnLetter(colIndex) {
                             const reader = new FileReader();
                             reader.onload = (event) => {
                               if (event.target?.result) {
-                                setProductForm({...productForm, image: event.target.result as string});
+                                const dataUrl = event.target.result as string;
+                                setProductForm(prev => ({ ...prev, image: dataUrl }));
+                                setAdditionalImages(prev => prev.includes(dataUrl) ? prev : [dataUrl, ...prev]);
                               }
                             };
                             reader.readAsDataURL(file);
@@ -5392,7 +5475,13 @@ function getColumnLetter(colIndex) {
                   <input
                     type="url"
                     value={productForm.image}
-                    onChange={(e) => setProductForm({...productForm, image: e.target.value})}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setProductForm(prev => ({ ...prev, image: val }));
+                      if (val.trim()) {
+                        setAdditionalImages(prev => prev.includes(val.trim()) ? prev : [val.trim(), ...prev]);
+                      }
+                    }}
                     placeholder="https://images.unsplash.com/photo-..."
                     className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-mono text-[10.5px]"
                   />
@@ -5437,7 +5526,8 @@ function getColumnLetter(colIndex) {
                           const input = e.currentTarget;
                           const val = input.value.trim();
                           if (val) {
-                            setAdditionalImages([...additionalImages, val]);
+                            setAdditionalImages(prev => prev.includes(val) ? prev : [...prev, val]);
+                            setProductForm(prev => prev.image ? prev : { ...prev, image: val });
                             input.value = '';
                           }
                         }
@@ -5449,7 +5539,8 @@ function getColumnLetter(colIndex) {
                         const input = document.getElementById('new-additional-image-url') as HTMLInputElement;
                         const val = input?.value?.trim();
                         if (val) {
-                          setAdditionalImages([...additionalImages, val]);
+                          setAdditionalImages(prev => prev.includes(val) ? prev : [...prev, val]);
+                          setProductForm(prev => prev.image ? prev : { ...prev, image: val });
                           input.value = '';
                         }
                       }}
@@ -5471,7 +5562,9 @@ function getColumnLetter(colIndex) {
                             const reader = new FileReader();
                             reader.onload = (event) => {
                               if (event.target?.result) {
-                                setAdditionalImages(prev => [...prev, event.target!.result as string]);
+                                const newImg = event.target!.result as string;
+                                setAdditionalImages(prev => prev.includes(newImg) ? prev : [...prev, newImg]);
+                                setProductForm(prev => prev.image ? prev : { ...prev, image: newImg });
                               }
                             };
                             reader.readAsDataURL(file as any);
