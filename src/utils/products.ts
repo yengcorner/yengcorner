@@ -1,7 +1,7 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, auth } from './googleAuth';
-import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit, deleteField } from 'firebase/firestore';
 
 export enum OperationType {
   CREATE = 'create',
@@ -132,10 +132,10 @@ export const saveProductsToCache = (list: Product[]) => {
   isProductsInitialLoaded = true;
   syncDocIdMap(list);
 
-  // 2. Safely attempt saving lightweight subset to localStorage & sessionStorage
+  // 2. Safely attempt saving to localStorage & sessionStorage
   try {
-    const lightweightList = list.slice(0, 40).map(sanitizeProductForStorage);
-    const jsonStr = JSON.stringify(lightweightList);
+    const serializedList = list.map(sanitizeProductForStorage);
+    const jsonStr = JSON.stringify(serializedList);
 
     try {
       localStorage.setItem('yeng_products', jsonStr);
@@ -146,8 +146,8 @@ export const saveProductsToCache = (list: Product[]) => {
         try {
           localStorage.removeItem('yeng_products');
           localStorage.removeItem('yeng_products_session');
-          // Try with smaller subset (15 items)
-          const miniList = list.slice(0, 15).map(sanitizeProductForStorage);
+          // Try with smaller subset (30 items)
+          const miniList = list.slice(0, 30).map(sanitizeProductForStorage);
           localStorage.setItem('yeng_products', JSON.stringify(miniList));
         } catch {
           // Gracefully fallback to in-memory array
@@ -213,8 +213,8 @@ export const getProducts = (): Product[] => {
 // 3. BACKGROUND ASYNC SYNC WITH LIMIT QUERY (limit 60)
 const fetchFromFirestoreInternal = async (): Promise<Product[]> => {
   try {
-    console.log("[Background Sync] Fetching newest products from Firestore (limit 60)...");
-    const qFast = query(collection(db, "products"), limit(60));
+    console.log("[Background Sync] Fetching newest products from Firestore (limit 300)...");
+    const qFast = query(collection(db, "products"), limit(300));
     const snapshot = await getDocs(qFast);
     const list: Product[] = [];
     snapshot.forEach((docSnap) => {
@@ -333,14 +333,37 @@ export const saveProduct = async (product: Product): Promise<void> => {
     const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
     const mergedProduct = { ...existingInCache, ...product };
     
-    // Recursive data sanitization to remove all undefined values for Firestore compatibility
-    const sanitizedProduct = sanitizeData(mergedProduct);
-    
-    const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
-    const docRef = doc(db, "products", docId);
-    await setDoc(docRef, sanitizedProduct, { merge: true });
+    // 📸 Chuẩn hóa và đồng bộ trường ảnh chính (image) và mảng thư viện ảnh (images)
+    const galleryImgs = Array.isArray(mergedProduct.images)
+      ? mergedProduct.images.map(img => (typeof img === 'string' ? img.trim() : '')).filter(Boolean)
+      : [];
+    let primaryImg = (mergedProduct.image || '').trim();
+    if (!primaryImg && galleryImgs.length > 0) {
+      primaryImg = galleryImgs[0];
+    }
+    if (!primaryImg && (existingInCache as any).image) {
+      primaryImg = String((existingInCache as any).image).trim();
+    }
+    if (!primaryImg) {
+      primaryImg = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
+    }
+    mergedProduct.image = primaryImg;
+    let finalImgs = [...galleryImgs];
+    if (primaryImg && !finalImgs.includes(primaryImg)) {
+      finalImgs.unshift(primaryImg);
+    }
+    if (finalImgs.length === 0) {
+      finalImgs = [primaryImg];
+    }
+    mergedProduct.images = finalImgs;
 
-    // Update memory cache safely and immediately
+    const hasGroup2 = !!(product.attribute2Name && product.attribute2Name.trim().length > 0 && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0);
+    if (!hasGroup2) {
+      delete (mergedProduct as any).attribute2Name;
+      delete (mergedProduct as any).attribute2Options;
+    }
+    
+    // Update memory cache and localStorage safely and immediately FIRST
     const idx = cachedProducts.findIndex(p => Number(p.id) === Number(product.id));
     let nextProducts = [...cachedProducts];
     if (idx > -1) {
@@ -352,10 +375,59 @@ export const saveProduct = async (product: Product): Promise<void> => {
     saveProductsToLocalStorage(nextProducts);
 
     // Dispatch custom event to notify React components instantly
-    const event = new CustomEvent('yeng_products_updated', { detail: nextProducts });
+    const event = new CustomEvent('yeng_products_updated', { detail: { products: nextProducts, isLoaded: true } });
     window.dispatchEvent(event);
+
+    // Recursive data sanitization to remove all undefined values for Firestore compatibility
+    try {
+      const sanitizedProduct = sanitizeData(mergedProduct);
+      const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
+      const docRef = doc(db, "products", docId);
+
+      // Check if document exists before applying deleteField (FieldValue.delete fails on non-existent documents)
+      let docExists = productIdToDocIdMap.has(product.id);
+      if (!docExists) {
+        try {
+          const docSnap = await getDoc(docRef);
+          docExists = docSnap.exists();
+        } catch {
+          docExists = false;
+        }
+      }
+
+      if (docExists) {
+        const payloadToUpdate = { ...sanitizedProduct };
+        if (!hasGroup2) {
+          payloadToUpdate.attribute2Name = deleteField();
+          payloadToUpdate.attribute2Options = deleteField();
+        }
+        await setDoc(docRef, payloadToUpdate, { merge: true });
+      } else {
+        // Document mới hoàn toàn (ví dụ ID 81): ghi sạch không truyền deleteField()
+        const payloadToCreate = { ...sanitizedProduct };
+        delete payloadToCreate.attribute2Name;
+        delete payloadToCreate.attribute2Options;
+        await setDoc(docRef, payloadToCreate);
+      }
+      productIdToDocIdMap.set(Number(product.id), docId);
+      console.log(`[Firestore] Successfully saved product #${product.id} (docId: ${docId}) to collection 'products'`);
+    } catch (fsErr) {
+      console.warn("Firestore sync primary attempt notice, executing direct write fallback:", fsErr);
+      try {
+        const docId = productIdToDocIdMap.get(product.id) || product.id.toString();
+        const docRef = doc(db, "products", docId);
+        const fallbackData = sanitizeData(mergedProduct);
+        delete fallbackData.attribute2Name;
+        delete fallbackData.attribute2Options;
+        await setDoc(docRef, fallbackData);
+        productIdToDocIdMap.set(Number(product.id), docId);
+        console.log(`[Firestore Fallback] Successfully pushed product #${product.id} to Firestore.`);
+      } catch (innerErr) {
+        console.error("Critical error pushing product to Firestore:", innerErr);
+      }
+    }
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `products/${product?.id}`);
+    console.error("Error in saveProduct:", err);
   }
 };
 
