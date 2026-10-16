@@ -1,7 +1,7 @@
 import { OrderPayload, CartItem, Product, Coupon, ORDER_STATUSES, OrderStatus } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
 import { db, compressImage, sanitizeProductForOrder } from './googleAuth';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 
 // Tự động chuẩn hóa và chuyển đổi trạng thái cũ (ví dụ "Đã có mã vận đơn") thành "Đã về HCM"
 export function normalizeOrderStatus(status?: string): string {
@@ -12,7 +12,33 @@ export function normalizeOrderStatus(status?: string): string {
   return status;
 }
 
-// Helper to generate some high-fidelity mock orders for first-time administration view
+// Kiểm tra đơn hàng thực tế còn hiệu lực: loại trừ đơn đã bị xóa vĩnh viễn, đơn rác hoặc bản ghi hỏng
+export function isValidActiveOrder(ord: any): boolean {
+  if (!ord || typeof ord !== 'object') return false;
+  const id = typeof ord.id === 'string' ? ord.id.trim() : String(ord.id || '').trim();
+  if (!id || id.length < 2) return false;
+
+  // Lọc bỏ đơn hàng đã có trạng thái bị xóa hoặc hủy vĩnh viễn
+  const status = String(ord.status || '').trim().toLowerCase();
+  if (
+    status === 'đã xóa' ||
+    status === 'xóa vĩnh viễn' ||
+    status === 'đã hủy vĩnh viễn' ||
+    status === 'deleted' ||
+    status === 'archived'
+  ) {
+    return false;
+  }
+
+  // Đảm bảo đơn hàng có danh sách sản phẩm hợp lệ, loại trừ bản ghi rác
+  if (!Array.isArray(ord.items) || ord.items.length === 0) {
+    return false;
+  }
+
+  return true;
+}
+
+// Helper to generate some high-fidelity mock orders ONLY when manually requested by admin for demo
 const getInitialMockOrders = (): OrderPayload[] => {
   const pNct = INITIAL_PRODUCTS.find(p => p.id === 1) || INITIAL_PRODUCTS[0];
   const pAespa = INITIAL_PRODUCTS.find(p => p.id === 2) || INITIAL_PRODUCTS[1];
@@ -46,7 +72,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
         method: "GHTK"
       },
       note: "Gói xốp nổ bọc dày chống df giúp mình nha shop iu!",
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // 1 day ago
+      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     },
     {
       id: "YENG1940",
@@ -74,7 +100,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
         method: "SPX"
       },
       note: "Hàng về hoãn giao đến đầu tháng giúp mình do đi công tác.",
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days ago
+      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
     },
     {
       id: "YENG4712",
@@ -107,7 +133,7 @@ const getInitialMockOrders = (): OrderPayload[] => {
         method: "Viettel Post"
       },
       note: "Hàng có quà pre-order đầy đủ đúng không ạ?",
-      timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() // 5 days ago
+      timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
     }
   ];
 };
@@ -131,13 +157,14 @@ export const isOrdersCacheExpired = (): boolean => {
 function getOrdersFromLocalSyncRaw(): OrderPayload[] {
   try {
     const map = new Map<string, OrderPayload>();
-    // Check both STORAGE_KEY ('yeng_corner_orders_v1') and LEGACY_STORAGE_KEY ('yeng_orders')
     const raw1 = localStorage.getItem(STORAGE_KEY);
     if (raw1) {
       const parsed1 = JSON.parse(raw1);
       if (Array.isArray(parsed1)) {
         parsed1.forEach((ord: any) => {
-          if (ord && ord.id) map.set(ord.id, ord);
+          if (isValidActiveOrder(ord)) {
+            map.set(String(ord.id).trim().toUpperCase(), ord);
+          }
         });
       }
     }
@@ -146,7 +173,10 @@ function getOrdersFromLocalSyncRaw(): OrderPayload[] {
       const parsed2 = JSON.parse(raw2);
       if (Array.isArray(parsed2)) {
         parsed2.forEach((ord: any) => {
-          if (ord && ord.id && !map.has(ord.id)) map.set(ord.id, ord);
+          const key = String(ord?.id || '').trim().toUpperCase();
+          if (isValidActiveOrder(ord) && !map.has(key)) {
+            map.set(key, ord);
+          }
         });
       }
     }
@@ -159,16 +189,14 @@ function getOrdersFromLocalSyncRaw(): OrderPayload[] {
   }
 }
 
-// Synchronous local orders getter with safe fallback to mock orders
+// Synchronous local orders getter (Tuyệt đối KHÔNG tự tạo mock orders khi danh sách rỗng)
 export function getOrdersFromLocalSync(): OrderPayload[] {
   const existing = getOrdersFromLocalSyncRaw();
   if (existing.length > 0) {
     existing.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     return existing;
   }
-  const initial = getInitialMockOrders();
-  saveOrdersToLocalStorage(initial);
-  return initial;
+  return [];
 }
 
 /**
@@ -287,97 +315,55 @@ export function syncAllProductSpecificOrders(): void {
 // Internal localStorage helper to avoid nested getOrders() recursion
 async function getOrdersLocalFallback(): Promise<OrderPayload[]> {
   try {
-    const existing = getOrdersFromLocalSyncRaw();
-    if (existing.length > 0) {
-      return existing;
-    }
-    // Nếu đã từng khởi tạo thì tôn trọng danh sách rỗng (người dùng đã xóa hết đơn), không tự ý hồi sinh mock data
-    const isInitialized = typeof window !== 'undefined' && localStorage.getItem('yeng_orders_initialized') === 'true';
-    if (isInitialized) {
-      return [];
-    }
-    const mock = getInitialMockOrders();
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('yeng_orders_initialized', 'true');
-    }
-    saveOrdersToLocalStorage(mock);
-    return mock;
+    return getOrdersFromLocalSyncRaw();
   } catch (e) {
     return [];
   }
 }
 
 export async function getOrders(forceRefresh: boolean = false): Promise<OrderPayload[]> {
-  const localList = await getOrdersLocalFallback();
-
-  if (!forceRefresh && !isOrdersCacheExpired()) {
-    console.log("[getOrders] Orders cache is fresh, returning local cache.");
-    if (localList.length > 0) {
-      localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return localList;
-    }
-  }
-
-  // Fetch directly from Firestore client-side first (ultra fast and authorized)
+  // 1. Tải trực tiếp danh sách đơn hàng thực tế từ Cloud Firestore (Nguồn dữ liệu chân lý 100%)
   try {
-    console.log("[getOrders] Fetching fresh orders directly from Firestore client-side...");
+    console.log("[getOrders] Đang tải danh sách đơn hàng thực tế từ Cloud Firestore...");
     const q = collection(db, 'orders');
     const querySnapshot = await getDocs(q);
     const firestoreList: OrderPayload[] = [];
+
     querySnapshot.forEach((docSnap) => {
       const data = docSnap.data() as OrderPayload;
       if (data) {
-        firestoreList.push({
+        const item: OrderPayload = {
           ...data,
           id: data.id || docSnap.id,
           status: normalizeOrderStatus(data.status)
-        });
+        };
+        // Lọc nghiêm ngặt: Chỉ tải những đơn hàng thực tế còn hiệu lực
+        if (isValidActiveOrder(item)) {
+          firestoreList.push(item);
+        } else {
+          // Tự động dọn dẹp các bản ghi rác hoặc đã có trạng thái xóa vĩnh viễn trên Cloud Firestore
+          const st = String(data.status || '').toLowerCase().trim();
+          if (st === 'đã xóa' || st === 'xóa vĩnh viễn' || st === 'đã hủy vĩnh viễn' || st === 'deleted') {
+            console.log(`[getOrders] Tự động dọn dẹp bản ghi rác/hủy trên Firestore: ${docSnap.id}`);
+            deleteDoc(docSnap.ref).catch(() => {});
+          }
+        }
       }
     });
-    
-    // HỢP NHẤT THÔNG MINH: Giữ toàn bộ đơn hàng hiện có ở máy cục bộ và cập nhật thêm/mới từ Firestore
-    const orderMap = new Map<string, OrderPayload>();
-    localList.forEach(ord => {
-      if (ord && ord.id) orderMap.set(ord.id, ord);
-    });
-    firestoreList.forEach(ord => {
-      if (ord && ord.id) orderMap.set(ord.id, ord);
-    });
 
-    const mergedList = Array.from(orderMap.values());
-    mergedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // Đồng bộ vào localStorage cache (cả 2 key)
-    if (mergedList.length > 0) {
-      saveOrdersToLocalStorage(mergedList);
-    }
+    firestoreList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    // Tự động sao lưu ngầm các đơn hàng chỉ có ở máy cục bộ lên Firestore để bảo lưu vĩnh viễn trên đám mây
-    if (firestoreList.length > 0) {
-      const firestoreIds = new Set(firestoreList.map(o => o.id));
-      const unsynced = localList.filter(o => o && o.id && !firestoreIds.has(o.id));
-      if (unsynced.length > 0) {
-        console.log(`[Order Sync] Tự động đồng bộ ${unsynced.length} đơn hàng cũ từ máy lên Firestore...`);
-        unsynced.forEach(ord => {
-          const docRef = doc(db, 'orders', ord.id);
-          setDoc(docRef, cleanUndefined(ord)).catch(err => console.warn("Lỗi sync ngầm Firestore:", err));
-        });
-      }
-    } else if (localList.length > 0) {
-      console.log(`[Order Sync] Firestore rỗng, đồng bộ toàn bộ ${localList.length} đơn hàng từ máy lên Firestore...`);
-      localList.forEach(ord => {
-        const docRef = doc(db, 'orders', ord.id);
-        setDoc(docRef, cleanUndefined(ord)).catch(err => console.warn("Lỗi sync ngầm Firestore:", err));
-      });
-    }
+    // ĐỒNG BỘ 100% VỚI CLOUD: Ghi đè trực tiếp danh sách sạch xuống localStorage cache
+    // Cờ allowEmpty=true đảm bảo khi Firestore rỗng thì cache cũng sạch, không bao giờ tự ý hồi sinh đơn cũ
+    saveOrdersToLocalStorage(firestoreList, true);
 
-    console.log("[getOrders] Successfully fetched & merged orders:", mergedList.length);
-    return mergedList;
+    console.log(`[getOrders] Tải thành công ${firestoreList.length} đơn hàng thực tế từ Cloud Firestore.`);
+    return firestoreList;
   } catch (err) {
-    console.warn("[getOrders] Direct Firestore client fetch failed, falling back to server API...", err);
+    console.warn("[getOrders] Không thể kết nối trực tiếp Firestore, thử API máy chủ...", err);
   }
 
-  // Fallback to server API if direct client-side Firestore read fails
+  // 2. Fallback to server API if direct client-side Firestore read fails
   try {
     const timestamp = Date.now();
     const response = await fetch(`/api/orders?t=${timestamp}`, {
@@ -391,30 +377,23 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
     if (response.ok) {
       const list = await response.json();
       if (Array.isArray(list)) {
-        const normalizedList = list.map((ord: OrderPayload) => ({
-          ...ord,
-          status: normalizeOrderStatus(ord.status)
-        }));
-        
-        const orderMap = new Map<string, OrderPayload>();
-        localList.forEach(ord => {
-          if (ord && ord.id) orderMap.set(ord.id, ord);
-        });
-        normalizedList.forEach((ord: OrderPayload) => {
-          if (ord && ord.id) orderMap.set(ord.id, ord);
-        });
-
-        const mergedList = Array.from(orderMap.values());
-        mergedList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        saveOrdersToLocalStorage(mergedList);
-        return mergedList;
+        const validList = list
+          .filter(isValidActiveOrder)
+          .map((ord: OrderPayload) => ({
+            ...ord,
+            status: normalizeOrderStatus(ord.status)
+          }));
+        validList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        saveOrdersToLocalStorage(validList, true);
+        return validList;
       }
     }
   } catch (err) {
-    console.warn("[getOrders] Failed to fetch from fallback server API:", err);
+    console.warn("[getOrders] Lỗi tải từ API máy chủ dự phòng:", err);
   }
 
-  // Final fallback to localStorage if everything fails
+  // 3. Cuối cùng nếu mất mạng hoàn toàn: Đọc từ bộ nhớ đệm cục bộ
+  const localList = getOrdersFromLocalSyncRaw();
   localList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   return localList;
 }
@@ -422,8 +401,17 @@ export async function getOrders(forceRefresh: boolean = false): Promise<OrderPay
 export function listenToOrders(callback: (orders: OrderPayload[]) => void): () => void {
   let isMounted = true;
 
-  // Run initial fetch
-  getOrders().then(list => {
+  // 1. Lắng nghe sự kiện cập nhật cục bộ tức thì trên toàn ứng dụng
+  const handleLocalUpdate = (e: any) => {
+    if (!isMounted) return;
+    if (e.detail && Array.isArray(e.detail)) {
+      callback(e.detail);
+    }
+  };
+  window.addEventListener('yeng_orders_updated', handleLocalUpdate);
+
+  // 2. Chạy tải lần đầu từ Firestore
+  getOrders(true).then(list => {
     if (isMounted) {
       callback(list);
     }
@@ -431,9 +419,10 @@ export function listenToOrders(callback: (orders: OrderPayload[]) => void): () =
     console.warn("listenToOrders initial load fallback:", err);
   });
 
-  // Poll orders periodically without WebChannel connection
+  // 3. Polling định kỳ mỗi 10 giây để đồng bộ hóa danh sách mới mà không duy trì gRPC Listen stream
   const intervalId = setInterval(() => {
-    getOrders().then(list => {
+    if (!isMounted) return;
+    getOrders(true).then(list => {
       if (isMounted) {
         callback(list);
       }
@@ -442,6 +431,7 @@ export function listenToOrders(callback: (orders: OrderPayload[]) => void): () =
 
   return () => {
     isMounted = false;
+    window.removeEventListener('yeng_orders_updated', handleLocalUpdate);
     clearInterval(intervalId);
   };
 }
@@ -678,9 +668,11 @@ export async function updateBulkOrdersTracking(updates: { orderId: string; track
 
 export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
   const cleanId = (orderId || '').trim();
-  if (!cleanId) return getOrdersFromLocalSync();
+  if (!cleanId) return [];
 
-  // 1. Cập nhật và đồng bộ ngay lập tức vào localStorage cache trước để tránh bị getOrders() hợp nhất lại
+  console.log(`[deleteOrder] Bắt đầu xóa vĩnh viễn đơn hàng #${cleanId} trên Cloud Firestore và bộ nhớ đệm...`);
+
+  // 1. Cập nhật và lưu đè ngay lập tức vào localStorage cache (xóa sạch cả 2 key yeng_orders & yeng_corner_orders_v1)
   let updatedOrders: OrderPayload[] = [];
   try {
     const currentOrders = getOrdersFromLocalSyncRaw();
@@ -691,17 +683,55 @@ export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
     syncAllProductSpecificOrders();
     if (typeof window !== 'undefined') {
       localStorage.setItem('yeng_orders_initialized', 'true');
+      // Phát sự kiện cập nhật tức thì toàn hệ thống để mọi component cập nhật state ngay lập tức
+      window.dispatchEvent(new CustomEvent('yeng_orders_updated', { detail: updatedOrders }));
     }
   } catch (err) {
     console.warn("Lỗi đồng bộ local cache trong deleteOrder:", err);
   }
 
-  // 2. Xóa tài liệu đơn hàng trên Firestore
+  // 2. XÓA VĨNH VIỄN TRÊN CLOUD FIRESTORE BẰNG deleteDoc
   try {
+    // 2.1 Xóa trực tiếp theo document ID
     const docRef = doc(db, 'orders', cleanId);
     await deleteDoc(docRef);
+
+    // 2.2 Xóa theo phiên bản in hoa (nếu khác)
+    if (cleanId.toUpperCase() !== cleanId) {
+      await deleteDoc(doc(db, 'orders', cleanId.toUpperCase()));
+    }
+
+    // 2.3 Quét tìm và xóa triệt để nếu document có Firestore Auto-ID nhưng field `id` trùng cleanId
+    try {
+      const q = query(collection(db, 'orders'), where('id', '==', cleanId));
+      const qSnap = await getDocs(q);
+      for (const d of qSnap.docs) {
+        await deleteDoc(d.ref);
+      }
+      if (cleanId.toUpperCase() !== cleanId) {
+        const qUpper = query(collection(db, 'orders'), where('id', '==', cleanId.toUpperCase()));
+        const qSnapUpper = await getDocs(qUpper);
+        for (const d of qSnapUpper.docs) {
+          await deleteDoc(d.ref);
+        }
+      }
+    } catch (queryErr) {
+      console.warn("Lỗi query xóa đơn hàng theo field id:", queryErr);
+    }
+
+    console.log(`[deleteOrder] Đã xóa thành công đơn hàng #${cleanId} khỏi Cloud Firestore!`);
   } catch (e) {
-    console.warn("Lỗi xóa đơn hàng trên Firestore (đã lưu trữ cục bộ thành công):", e);
+    console.error("Lỗi xóa đơn hàng trên Firestore:", e);
+  }
+
+  // 3. Gọi thêm DELETE API server như lớp bảo vệ kép
+  try {
+    await fetch(`/api/orders/${encodeURIComponent(cleanId)}`, {
+      method: 'DELETE',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+  } catch (apiErr) {
+    console.warn("Lỗi gọi DELETE /api/orders:", apiErr);
   }
 
   return updatedOrders;
