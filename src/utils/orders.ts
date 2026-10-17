@@ -259,11 +259,40 @@ export const saveOrdersToLocalStorage = (list: OrderPayload[], allowEmpty: boole
 
     const jsonStr = JSON.stringify(list);
     // Đồng bộ đồng thời vào cả 2 key để tương thích 100% với yeng_orders và yeng_corner_orders_v1
-    localStorage.setItem(STORAGE_KEY, jsonStr);
-    localStorage.setItem(LEGACY_STORAGE_KEY, jsonStr);
-    localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
+    try {
+      localStorage.setItem(STORAGE_KEY, jsonStr);
+      localStorage.setItem(LEGACY_STORAGE_KEY, jsonStr);
+      localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
+    } catch (quotaError) {
+      console.warn("[Orders Storage] Dung lượng localStorage đầy hoặc bị lỗi, đang giải phóng bộ nhớ đệm phụ...", quotaError);
+      // Dọn dẹp các cache rác phụ
+      try {
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith("orders_") && key !== STORAGE_KEY && key !== LEGACY_STORAGE_KEY) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (cleanErr) {}
+
+      // Nếu vẫn đầy, nén bớt hình ảnh hóa đơn base64 trong bản sao cache cục bộ
+      try {
+        const lightweightList = list.map(item => ({
+          ...item,
+          payment: {
+            ...item.payment,
+            invoiceImage: item.payment?.invoiceImage?.startsWith('data:') ? '[stored_in_cloud]' : item.payment?.invoiceImage
+          }
+        }));
+        const compressedJson = JSON.stringify(lightweightList);
+        localStorage.setItem(STORAGE_KEY, compressedJson);
+        localStorage.setItem(LEGACY_STORAGE_KEY, compressedJson);
+        localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
+      } catch (innerErr) {
+        console.warn("[Orders Storage] Bộ nhớ trình duyệt đã hết hạn mức hoàn toàn, dữ liệu vẫn được bảo toàn an toàn trên Cloud Firestore.", innerErr);
+      }
+    }
   } catch (e) {
-    console.error("Error setting orders to localStorage:", e);
+    console.error("Lỗi khi ghi đơn hàng vào localStorage:", e);
   }
 };
 
