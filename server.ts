@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
@@ -35,11 +35,18 @@ const PORT = 3000;
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
-// Initialize Firebase Admin SDK bypassed to rely on fully authorized and robust Firebase Client SDK
-// In sandboxed preview/dev environments with custom database ID, default service credentials do not have full IAM roles.
-// Since firestore.rules allows all reads/writes, Firebase Client SDK is fully authorized and runs perfectly.
+// Initialize Firebase Admin SDK (Duy nhất 1 lần cấu hình ở đầu file)
 let dbAdmin: any = null;
-console.log("[Firebase Admin] Bypassing Admin SDK to use fully functional Client SDK with client rules instead.");
+try {
+  const adminApps = getAdminApps();
+  const adminApp = adminApps.length === 0 
+    ? initializeAdminApp({ projectId: firebaseConfig.projectId }) 
+    : getAdminApp();
+  dbAdmin = getFirestoreAdmin(adminApp, firebaseConfig.firestoreDatabaseId);
+  console.log("[Firebase Admin] Khởi tạo Firebase Admin SDK thành công.");
+} catch (e: any) {
+  console.warn("[Firebase Admin] Dùng Client SDK thay thế:", e?.message || e);
+}
 
 const gmailDocRef = doc(db, "gmail", "settings");
 
@@ -1018,7 +1025,7 @@ app.use(express.json({ limit: '10mb' }));
   });
 
   // Health check endpoint
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (req: Request, res: Response) => {
     res.json({ status: "ok" });
   });
 
