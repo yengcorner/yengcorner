@@ -145,6 +145,7 @@ const ORDERS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
 
 export const isOrdersCacheExpired = (): boolean => {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
     const storedTime = localStorage.getItem(STORAGE_KEY + '_timestamp');
     if (!storedTime) return true;
     return Date.now() - Number(storedTime) > ORDERS_CACHE_MAX_AGE;
@@ -156,6 +157,7 @@ export const isOrdersCacheExpired = (): boolean => {
 // Internal synchronous reader for raw orders in localStorage without triggering mocks
 function getOrdersFromLocalSyncRaw(): OrderPayload[] {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return [];
     const map = new Map<string, OrderPayload>();
     const raw1 = localStorage.getItem(STORAGE_KEY);
     if (raw1) {
@@ -245,6 +247,7 @@ export function generateUniqueOrderId(existingOrders?: OrderPayload[], prefix: s
 
 export const saveOrdersToLocalStorage = (list: OrderPayload[], allowEmpty: boolean = false) => {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     if (!Array.isArray(list)) return;
     
     // BẢO VỆ CHỐNG MẤT ĐƠN HÀNG: Nếu mảng lưu truyền vào rỗng nhưng trong localStorage đã có đơn hàng
@@ -329,6 +332,7 @@ export function slugify(text: string): string {
 
 export function syncAllProductSpecificOrders(): void {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     // Clear old orders_ prefixed keys to free up localStorage quota immediately
     // Giữ an toàn tuyệt đối cho STORAGE_KEY và LEGACY_STORAGE_KEY
     Object.keys(localStorage).forEach(key => {
@@ -799,13 +803,19 @@ export async function getCoupons(): Promise<Coupon[]> {
     });
     
     // Đồng bộ vào local cache
-    localStorage.setItem('yeng_coupons', JSON.stringify(list));
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      }
+    } catch (e) {}
     return list;
   } catch (e) {
     console.error("Lỗi getCoupons từ Firestore, sử dụng localStorage fallback:", e);
     try {
-      const saved = localStorage.getItem('yeng_coupons');
-      if (saved) return JSON.parse(saved);
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('yeng_coupons');
+        if (saved) return JSON.parse(saved);
+      }
     } catch (err) {}
     return [];
   }
@@ -818,20 +828,24 @@ export async function saveCoupon(coupon: Coupon): Promise<void> {
     
     // Đồng bộ local cache
     try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
-      list.push(coupon);
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('yeng_coupons');
+        let list: Coupon[] = saved ? JSON.parse(saved) : [];
+        list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
+        list.push(coupon);
+        localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      }
     } catch (e) {}
   } catch (e) {
     console.error("Lỗi lưu coupon lên Firestore:", e);
     try {
-      const saved = localStorage.getItem('yeng_coupons');
-      let list: Coupon[] = saved ? JSON.parse(saved) : [];
-      list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
-      list.push(coupon);
-      localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem('yeng_coupons');
+        let list: Coupon[] = saved ? JSON.parse(saved) : [];
+        list = list.filter(c => c.code.toUpperCase() !== coupon.code.toUpperCase());
+        list.push(coupon);
+        localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      }
     } catch (err) {}
   }
 }
@@ -842,11 +856,13 @@ export async function deleteCoupon(code: string): Promise<void> {
 
   // 1. Đồng bộ local cache ngay lập tức
   try {
-    const saved = localStorage.getItem('yeng_coupons');
-    let list: Coupon[] = saved ? JSON.parse(saved) : [];
-    list = list.filter(c => c.code.toUpperCase() !== cleanCode.toUpperCase());
-    localStorage.setItem('yeng_coupons', JSON.stringify(list));
-    localStorage.setItem('yeng_coupons_initialized', 'true');
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('yeng_coupons');
+      let list: Coupon[] = saved ? JSON.parse(saved) : [];
+      list = list.filter(c => c.code.toUpperCase() !== cleanCode.toUpperCase());
+      localStorage.setItem('yeng_coupons', JSON.stringify(list));
+      localStorage.setItem('yeng_coupons_initialized', 'true');
+    }
   } catch (e) {}
 
   // 2. Xóa khỏi Firestore
@@ -885,10 +901,18 @@ export async function saveAllCoupons(couponsList: Coupon[]): Promise<void> {
       await setDoc(docRef, coupon);
     }
 
-    localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+      }
+    } catch (e) {}
   } catch (e) {
     console.error("Lỗi lưu toàn bộ coupons lên Firestore:", e);
-    localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+    try {
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.setItem('yeng_coupons', JSON.stringify(couponsList));
+      }
+    } catch (err) {}
   }
 }
 
