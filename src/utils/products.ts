@@ -1,6 +1,6 @@
 import { Product } from '../types';
 import { INITIAL_PRODUCTS } from '../data/products';
-import { db, auth } from './googleAuth';
+import { db, auth, compressImage } from './googleAuth';
 import { collection, doc, setDoc, deleteDoc, addDoc, getDoc, updateDoc, query, where, getDocs, limit, deleteField } from 'firebase/firestore';
 
 export enum OperationType {
@@ -132,66 +132,38 @@ export const saveProductsToCache = (list: Product[]) => {
   isProductsInitialLoaded = true;
   syncDocIdMap(list);
 
-  // 2. Safely attempt saving to localStorage & sessionStorage
+  // 2. CHUYỂN HOÀN TOÀN LÊN FIRESTORE: Tuyệt đối KHÔNG lưu mảng sản phẩm vào localStorage/sessionStorage
+  // Tự động dọn sạch các khóa sản phẩm cũ khỏi localStorage để giải phóng hoàn toàn dung lượng trình duyệt
   try {
-    const serializedList = list.map(sanitizeProductForStorage);
-    const jsonStr = JSON.stringify(serializedList);
-
-    try {
-      localStorage.setItem('yeng_products', jsonStr);
-      localStorage.setItem('yeng_products_timestamp', Date.now().toString());
-    } catch (e: any) {
-      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014 || (e?.message && e.message.includes('quota'))) {
-        console.warn("[Storage] LocalStorage quota exceeded. Cleaning storage and falling back to memory cache.");
-        try {
-          localStorage.removeItem('yeng_products');
-          localStorage.removeItem('yeng_products_session');
-          // Try with smaller subset (30 items)
-          const miniList = list.slice(0, 30).map(sanitizeProductForStorage);
-          localStorage.setItem('yeng_products', JSON.stringify(miniList));
-        } catch {
-          // Gracefully fallback to in-memory array
-        }
-      }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('yeng_products');
+      localStorage.removeItem('yeng_products_timestamp');
+      localStorage.removeItem('yeng_products_session');
     }
-
-    try {
-      sessionStorage.setItem('yeng_products_session', jsonStr);
-    } catch (e: any) {
-      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014 || (e?.message && e.message.includes('quota'))) {
-        try {
-          sessionStorage.removeItem('yeng_products_session');
-        } catch {}
-      }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('yeng_products_session');
     }
   } catch (e) {
-    console.warn("Storage caching notice (in-memory cache is fully active):", e);
+    // Không bao giờ throw lỗi ảnh hưởng đến ứng dụng
   }
 };
 
 export const saveProductsToLocalStorage = saveProductsToCache;
 
-// 1. INSTANT RENDER (0.1s - 0.5s): Synchronously load products from localStorage/sessionStorage immediately on module execution
+// Dọn dẹp sạch key yeng_products cũ trong localStorage khi khởi động để giải phóng QuotaExceededError ngay tức thì
 try {
-  const sessionSaved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('yeng_products_session') : null;
-  const localSaved = typeof localStorage !== 'undefined' ? localStorage.getItem('yeng_products') : null;
-  const saved = sessionSaved || localSaved;
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      cachedProducts = parsed;
-      isProductsInitialLoaded = true;
-      console.log(`[Instant Render] Loaded ${parsed.length} products immediately from local cache.`);
-    } else {
-      cachedProducts = INITIAL_PRODUCTS;
-    }
-  } else {
-    cachedProducts = INITIAL_PRODUCTS;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('yeng_products');
+    localStorage.removeItem('yeng_products_timestamp');
+    localStorage.removeItem('yeng_products_session');
   }
-} catch (e) {
-  console.warn("Notice loading products cache on boot:", e);
-  cachedProducts = INITIAL_PRODUCTS;
-}
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem('yeng_products_session');
+  }
+} catch (e) {}
+
+// Khởi tạo bộ nhớ tạm ban đầu với INITIAL_PRODUCTS cho tới khi Firestore tải xong
+cachedProducts = INITIAL_PRODUCTS;
 
 // Map to keep track of product.id -> Firestore document ID
 const productIdToDocIdMap = new Map<number, string>();
@@ -333,7 +305,7 @@ export const saveProduct = async (product: Product): Promise<void> => {
     const existingInCache = cachedProducts.find(p => Number(p.id) === Number(product.id)) || {};
     const mergedProduct = { ...existingInCache, ...product };
     
-    // 📸 Chuẩn hóa và đồng bộ trường ảnh chính (image) và mảng thư viện ảnh (images)
+    // 📸 Chuẩn hóa, nén ảnh Base64 và đồng bộ trường ảnh chính (image) và mảng thư viện ảnh (images)
     const galleryImgs = Array.isArray(mergedProduct.images)
       ? mergedProduct.images.map(img => (typeof img === 'string' ? img.trim() : '')).filter(Boolean)
       : [];
@@ -347,7 +319,17 @@ export const saveProduct = async (product: Product): Promise<void> => {
     if (!primaryImg) {
       primaryImg = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80";
     }
+
+    // Tự động nén ảnh chính nếu là base64 để tối ưu Firestore
+    if (primaryImg.startsWith('data:image/')) {
+      try {
+        primaryImg = await compressImage(primaryImg, 800, 800, 0.7);
+      } catch (e) {
+        console.warn("Could not compress primaryImg:", e);
+      }
+    }
     mergedProduct.image = primaryImg;
+
     let finalImgs = [...galleryImgs];
     if (primaryImg && !finalImgs.includes(primaryImg)) {
       finalImgs.unshift(primaryImg);
@@ -355,7 +337,22 @@ export const saveProduct = async (product: Product): Promise<void> => {
     if (finalImgs.length === 0) {
       finalImgs = [primaryImg];
     }
-    mergedProduct.images = finalImgs;
+
+    // Tự động nén từng ảnh thư viện nếu là base64
+    const compressedGallery: string[] = [];
+    for (const gImg of finalImgs) {
+      if (gImg.startsWith('data:image/')) {
+        try {
+          const comp = await compressImage(gImg, 800, 800, 0.7);
+          compressedGallery.push(comp);
+        } catch {
+          compressedGallery.push(gImg);
+        }
+      } else {
+        compressedGallery.push(gImg);
+      }
+    }
+    mergedProduct.images = compressedGallery;
 
     const hasGroup2 = !!(product.attribute2Name && product.attribute2Name.trim().length > 0 && Array.isArray(product.attribute2Options) && product.attribute2Options.length > 0);
     if (!hasGroup2) {
