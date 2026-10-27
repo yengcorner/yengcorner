@@ -1280,15 +1280,13 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Load orders and products on authentication
   useEffect(() => {
     if (isAuthenticated) {
-      // 🔄 1. Đọc ngay từ localStorage cache (hỗ trợ cả yeng_orders & yeng_corner_orders_v1) để tránh màn hình trắng khi tải trang
+      // 🔄 1. Đọc ngay từ bộ nhớ đệm RAM để tránh màn hình trắng khi tải trang
       try {
         const localList = getOrdersFromLocalSync();
         if (localList && localList.length > 0) {
           setOrders(localList);
         }
-      } catch (e) {
-        console.warn("Lỗi đọc cache ban đầu:", e);
-      }
+      } catch (e) {}
 
       // 🔄 2. Gọi API getOrders() tải trực tiếp từ Cloud Firestore ngay lập tức để đồng bộ chính xác 100%
       getOrders(true)
@@ -1561,16 +1559,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     );
     setOrders(updatedOrders);
 
-    // 2. GHI ĐÈ DỮ LIỆU MỚI XUỐNG LOCALSTORAGE
-    try {
-      const jsonStr = JSON.stringify(updatedOrders);
-      localStorage.setItem('yeng_orders', jsonStr);
-      localStorage.setItem('yeng_corner_orders_v1', jsonStr);
-      localStorage.setItem('yeng_corner_orders_v1_timestamp', Date.now().toString());
-      localStorage.setItem('yeng_orders_initialized', 'true');
-    } catch (e) {
-      console.warn("Lỗi ghi đè localStorage khi xóa đơn:", e);
-    }
+    // 2. Tuyệt đối KHÔNG lưu đơn hàng vào localStorage để chặn đứng QuotaExceededError
 
     // 3. THÔNG BÁO TOAST THÀNH CÔNG
     showToast(`🗑️ Đã xóa đơn hàng #${targetId} thành công!`, "success");
