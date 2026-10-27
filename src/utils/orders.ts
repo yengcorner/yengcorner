@@ -141,70 +141,60 @@ const getInitialMockOrders = (): OrderPayload[] => {
 export const STORAGE_KEY = 'yeng_corner_orders_v1';
 export const LEGACY_STORAGE_KEY = 'yeng_orders';
 
+// In-memory RAM cache cho đơn hàng: Tuyệt đối KHÔNG lưu mảng đơn hàng vào localStorage nữa
+let cachedOrders: OrderPayload[] = [];
+let isOrdersInitialLoaded = false;
+
+// Dọn dẹp sạch sẽ toàn bộ các key đơn hàng cũ khỏi localStorage khi khởi động để chặn đứng lỗi QuotaExceededError
+try {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY + '_timestamp');
+    localStorage.removeItem('yeng_orders_initialized');
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith("orders_") || key.startsWith("yeng_orders") || key.startsWith("yeng_corner_orders")) {
+        try {
+          localStorage.removeItem(key);
+        } catch {}
+      }
+    });
+  }
+} catch (e) {}
+
 const ORDERS_CACHE_MAX_AGE = 5 * 1000; // 5 seconds
 
 export const isOrdersCacheExpired = (): boolean => {
-  try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
-    const storedTime = localStorage.getItem(STORAGE_KEY + '_timestamp');
-    if (!storedTime) return true;
-    return Date.now() - Number(storedTime) > ORDERS_CACHE_MAX_AGE;
-  } catch (e) {
-    return true;
-  }
+  return !isOrdersInitialLoaded;
 };
 
-// Internal synchronous reader for raw orders in localStorage without triggering mocks
+// Internal synchronous reader for raw orders in-memory
 function getOrdersFromLocalSyncRaw(): OrderPayload[] {
   try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return [];
-    const map = new Map<string, OrderPayload>();
-    const raw1 = localStorage.getItem(STORAGE_KEY);
-    if (raw1) {
-      const parsed1 = JSON.parse(raw1);
-      if (Array.isArray(parsed1)) {
-        parsed1.forEach((ord: any) => {
-          if (isValidActiveOrder(ord)) {
-            map.set(String(ord.id).trim().toUpperCase(), ord);
-          }
-        });
-      }
+    if (Array.isArray(cachedOrders)) {
+      return [...cachedOrders];
     }
-    const raw2 = localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (raw2) {
-      const parsed2 = JSON.parse(raw2);
-      if (Array.isArray(parsed2)) {
-        parsed2.forEach((ord: any) => {
-          const key = String(ord?.id || '').trim().toUpperCase();
-          if (isValidActiveOrder(ord) && !map.has(key)) {
-            map.set(key, ord);
-          }
-        });
-      }
-    }
-    return Array.from(map.values()).map(ord => ({
-      ...ord,
-      status: normalizeOrderStatus(ord.status)
-    }));
+    return [];
   } catch (e) {
     return [];
   }
 }
 
-// Synchronous local orders getter (Tuyệt đối KHÔNG tự tạo mock orders khi danh sách rỗng)
+// Synchronous local orders getter (Đọc từ bộ nhớ RAM an toàn 100%)
 export function getOrdersFromLocalSync(): OrderPayload[] {
-  const existing = getOrdersFromLocalSyncRaw();
-  if (existing.length > 0) {
-    existing.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    return existing;
+  try {
+    if (Array.isArray(cachedOrders) && cachedOrders.length > 0) {
+      return [...cachedOrders].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }
+    return [];
+  } catch (e) {
+    return [];
   }
-  return [];
 }
 
 /**
  * Sinh mã đơn hàng duy nhất có định dạng YENGXXXX (với 4 chữ số ngẫu nhiên từ 1000 đến 9999).
- * Luôn đối chiếu toàn diện với danh sách đơn hàng trong state và localStorage (cả 2 key yeng_orders & yeng_corner_orders_v1)
- * để đảm bảo tuyệt đối không trùng lặp mã đơn hàng cũ.
+ * Đối chiếu với danh sách đơn hàng trong memory cache để đảm bảo tuyệt đối không trùng lặp mã đơn hàng cũ.
  */
 export function generateUniqueOrderId(existingOrders?: OrderPayload[], prefix: string = "YENG"): string {
   const existingIds = new Set<string>();
@@ -216,7 +206,7 @@ export function generateUniqueOrderId(existingOrders?: OrderPayload[], prefix: s
     });
   }
 
-  // 2. Quét các đơn hàng đang lưu trữ trong localStorage (cả 2 key)
+  // 2. Quét các đơn hàng đang lưu trữ trong memory cache
   const localExisting = getOrdersFromLocalSyncRaw();
   localExisting.forEach(o => {
     if (o && o.id) existingIds.add(String(o.id).trim().toUpperCase());
@@ -245,57 +235,32 @@ export function generateUniqueOrderId(existingOrders?: OrderPayload[], prefix: s
   return newId;
 }
 
+// CHẶN ĐỨNG HOÀN TOÀN VIỆC LƯU ORDERS VÀO LOCALSTORAGE:
+// Cập nhật bộ nhớ RAM in-memory cache và phát sự kiện; TUYỆT ĐỐI KHÔNG dùng localStorage.setItem cho đơn hàng
 export const saveOrdersToLocalStorage = (list: OrderPayload[], allowEmpty: boolean = false) => {
   try {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
     if (!Array.isArray(list)) return;
     
-    // BẢO VỆ CHỐNG MẤT ĐƠN HÀNG: Nếu mảng lưu truyền vào rỗng nhưng trong localStorage đã có đơn hàng
-    // thì tuyệt đối KHÔNG ĐƯỢC ghi đè làm mất đơn hàng cũ (trừ khi cố ý xóa hết có cờ allowEmpty)
-    if (list.length === 0 && !allowEmpty) {
-      const existing = getOrdersFromLocalSyncRaw();
-      if (existing.length > 0) {
-        console.warn("[Orders Protection] Từ chối ghi đè mảng rỗng vào localStorage vì đang có", existing.length, "đơn hàng hiện hữu.");
-        return;
-      }
+    // Cập nhật in-memory cache
+    cachedOrders = list;
+    isOrdersInitialLoaded = true;
+
+    // Phát sự kiện cập nhật tức thì toàn hệ thống để mọi component cập nhật state ngay lập tức
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('yeng_orders_updated', { detail: list }));
     }
 
-    const jsonStr = JSON.stringify(list);
-    // Đồng bộ đồng thời vào cả 2 key để tương thích 100% với yeng_orders và yeng_corner_orders_v1
+    // Tự động dọn sạch các key cũ trong localStorage để giải phóng hoàn toàn dung lượng trình duyệt
     try {
-      localStorage.setItem(STORAGE_KEY, jsonStr);
-      localStorage.setItem(LEGACY_STORAGE_KEY, jsonStr);
-      localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
-    } catch (quotaError) {
-      console.warn("[Orders Storage] Dung lượng localStorage đầy hoặc bị lỗi, đang giải phóng bộ nhớ đệm phụ...", quotaError);
-      // Dọn dẹp các cache rác phụ
-      try {
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith("orders_") && key !== STORAGE_KEY && key !== LEGACY_STORAGE_KEY) {
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (cleanErr) {}
-
-      // Nếu vẫn đầy, nén bớt hình ảnh hóa đơn base64 trong bản sao cache cục bộ
-      try {
-        const lightweightList = list.map(item => ({
-          ...item,
-          payment: {
-            ...item.payment,
-            invoiceImage: item.payment?.invoiceImage?.startsWith('data:') ? '[stored_in_cloud]' : item.payment?.invoiceImage
-          }
-        }));
-        const compressedJson = JSON.stringify(lightweightList);
-        localStorage.setItem(STORAGE_KEY, compressedJson);
-        localStorage.setItem(LEGACY_STORAGE_KEY, compressedJson);
-        localStorage.setItem(STORAGE_KEY + '_timestamp', Date.now().toString());
-      } catch (innerErr) {
-        console.warn("[Orders Storage] Bộ nhớ trình duyệt đã hết hạn mức hoàn toàn, dữ liệu vẫn được bảo toàn an toàn trên Cloud Firestore.", innerErr);
+      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY + '_timestamp');
+        localStorage.removeItem('yeng_orders_initialized');
       }
-    }
+    } catch (cleanErr) {}
   } catch (e) {
-    console.error("Lỗi khi ghi đơn hàng vào localStorage:", e);
+    // Luôn bọc try...catch an toàn tuyệt đối
   }
 };
 
@@ -705,7 +670,7 @@ export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
 
   console.log(`[deleteOrder] Bắt đầu xóa vĩnh viễn đơn hàng #${cleanId} trên Cloud Firestore và bộ nhớ đệm...`);
 
-  // 1. Cập nhật và lưu đè ngay lập tức vào localStorage cache (xóa sạch cả 2 key yeng_orders & yeng_corner_orders_v1)
+  // 1. Cập nhật và đồng bộ ngay lập tức vào bộ nhớ RAM in-memory cache
   let updatedOrders: OrderPayload[] = [];
   try {
     const currentOrders = getOrdersFromLocalSyncRaw();
@@ -715,12 +680,10 @@ export async function deleteOrder(orderId: string): Promise<OrderPayload[]> {
     saveOrdersToLocalStorage(updatedOrders, true);
     syncAllProductSpecificOrders();
     if (typeof window !== 'undefined') {
-      localStorage.setItem('yeng_orders_initialized', 'true');
-      // Phát sự kiện cập nhật tức thì toàn hệ thống để mọi component cập nhật state ngay lập tức
       window.dispatchEvent(new CustomEvent('yeng_orders_updated', { detail: updatedOrders }));
     }
   } catch (err) {
-    console.warn("Lỗi đồng bộ local cache trong deleteOrder:", err);
+    // Luôn an toàn tuyệt đối
   }
 
   // 2. XÓA VĨNH VIỄN TRÊN CLOUD FIRESTORE BẰNG deleteDoc
