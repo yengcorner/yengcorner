@@ -2742,13 +2742,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       // 1. Cập nhật ngay lập tức vào mảng danh sách sản phẩm trong state (giao diện re-render ngay tức thì)
       setProducts(nextProductsList);
 
-      // 2. Đồng thời lưu đè (localStorage.setItem) để dữ liệu được ghi nhận vĩnh viễn
-      try {
-        localStorage.setItem('yeng_products', JSON.stringify(nextProductsList));
-        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
-      } catch (storageErr) {
-        console.warn("Lưu localStorage trực tiếp thông báo:", storageErr);
-      }
+      // 2. Cập nhật RAM cache (Tuyệt đối KHÔNG ghi mảng sản phẩm vào localStorage để chống QuotaExceededError)
       saveProductsToLocalStorage(nextProductsList);
 
       // 3. Kích hoạt state reload / UI refresh để bảng hiển thị đúng giá trị mới sửa mà không cần F5
@@ -2791,12 +2785,6 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     if (window.confirm(`⚠️ Bạn có chắc chắn muốn XÓA SẢN PHẨM "${productName}" không?`)) {
       const remainingProducts = products.filter(p => Number(p.id) !== Number(productId));
       setProducts(remainingProducts);
-      try {
-        localStorage.setItem('yeng_products', JSON.stringify(remainingProducts));
-        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
-      } catch (storageErr) {
-        console.warn("Lưu localStorage khi xóa sản phẩm:", storageErr);
-      }
       saveProductsToLocalStorage(remainingProducts);
       window.dispatchEvent(new CustomEvent('yeng_products_updated', { detail: { products: remainingProducts, isLoaded: true } }));
 
@@ -2812,13 +2800,7 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
   // Save changes immediately & sync catalog to Firestore
   const handlePersistCatalogChanges = async () => {
     try {
-      // 1. ĐỒNG BỘ VÀ LƯU XUỐNG LOCALSTORAGE
-      try {
-        localStorage.setItem('yeng_products', JSON.stringify(products));
-        localStorage.setItem('yeng_products_timestamp', Date.now().toString());
-      } catch (storageErr) {
-        console.warn("Lưu localStorage trực tiếp thông báo:", storageErr);
-      }
+      // 1. CẬP NHẬT RAM CACHE (Không lưu xuống localStorage để giải phóng bộ nhớ vĩnh viễn)
       saveProductsToLocalStorage(products);
 
       // 2. CẬP NHẬT LẠI GIAO DIỆN (UI REFRESH)
