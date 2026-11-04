@@ -39,12 +39,17 @@ export interface Product {
   attribute2Name?: string;
   attribute2Options?: string[];
   variantMatrix?: VariantMatrixItem[];
+  
+  // Cho phép khách tự điền phân loại / size / ghi chú
+  allowCustomVariant?: boolean;
+  customVariantPlaceholder?: string;
 }
 
 export interface CartItem {
   product: Product;
   quantity: number;
   version: string;
+  customVariant?: string;
 }
 
 export interface OrderContact {
