@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass } from 'lucide-react';
+import { ShoppingBag, ArrowRight, Heart, Sparkles, Star, TrendingUp, Compass, X } from 'lucide-react';
 import { Product } from '../types';
-import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, isProductsLoaded } from '../utils/products';
+import { getProducts, subscribeProducts, resolveDefaultVersionForProduct, isProductSoldOut, isProductsLoaded, getProductStockForVersion } from '../utils/products';
 
 interface HomePageProps {
   navigateToProduct: (id: number) => void;
-  addToCart: (product: Product, quantity?: number, version?: string) => void;
+  addToCart: (product: Product, quantity?: number, version?: string, customVariant?: string) => void;
   setCurrentPage: (page: string) => void;
   navigateToShop?: (category?: string) => void;
   wishlist: number[];
@@ -21,11 +21,40 @@ export default function HomePage({
   wishlist, 
   toggleWishlist 
 }: HomePageProps) {
+  // Quick Order Modal state
+  const [quickOrderProduct, setQuickOrderProduct] = useState<Product | null>(null);
+  const [selectedVer, setSelectedVer] = useState<string>('');
+  const [selectedOpt1, setSelectedOpt1] = useState<string>('');
+  const [selectedOpt2, setSelectedOpt2] = useState<string>('');
+  const [customText, setCustomText] = useState<string>('');
+  const [orderQty, setOrderQty] = useState<number>(1);
+
   // Filter out retired K-POP category
   const [allProducts, setAllProducts] = useState<Product[]>(() => 
     getProducts().filter(p => p.category && p.category.toLowerCase() !== 'k-pop' && !isProductSoldOut(p))
   );
   const [isLoading, setIsLoading] = useState<boolean>(() => !isProductsLoaded() && allProducts.length === 0);
+
+  const openQuickOrder = (prod: Product) => {
+    setQuickOrderProduct(prod);
+    setOrderQty(1);
+    setCustomText('');
+    
+    // Auto initialize variant selections
+    if (prod.attribute1Name && prod.variantMatrix && prod.variantMatrix.length > 0) {
+      const o1 = (prod.attribute1Options && prod.attribute1Options[0]) || '';
+      const o2 = (prod.attribute2Options && prod.attribute2Options[0]) || '';
+      setSelectedOpt1(o1);
+      setSelectedOpt2(o2);
+      setSelectedVer(o2 ? `${o1} - ${o2}` : o1);
+    } else if (prod.variations && prod.variations.length > 0) {
+      setSelectedVer(prod.variations[0].name);
+    } else if (prod.versions && prod.versions.length > 0) {
+      setSelectedVer(prod.versions[0]);
+    } else {
+      setSelectedVer('');
+    }
+  };
 
   const handleGoToShop = (category: string = 'All') => {
     if (navigateToShop) {
@@ -197,6 +226,24 @@ export default function HomePage({
                           {product.price.toLocaleString('vi-VN')} <span className="text-[9px] sm:text-xs font-sans font-normal text-neutral-500">đ</span>
                         </span>
                       </div>
+
+                      {/* Nút đặt hàng trực tiếp ngoài trang chủ */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openQuickOrder(product);
+                        }}
+                        disabled={isSoldOut}
+                        className={`w-full py-2 px-2 text-[11px] font-bold uppercase tracking-wider rounded-lg border transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 ${
+                          isSoldOut
+                            ? 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed'
+                            : 'bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] border-[#D2E3FC]'
+                        }`}
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
+                        <span>{isSoldOut ? 'Hết hàng' : 'Đặt hàng'}</span>
+                      </button>
                     </div>
                   </motion.div>
                 );
@@ -314,6 +361,293 @@ export default function HomePage({
           <span className="text-base">→</span>
         </button>
       </div>
+
+      {/* KHUNG ĐẶT HÀNG NGOÀI TRANG CHỦ */}
+      {quickOrderProduct && (() => {
+        const has2Tiers = Boolean(
+          quickOrderProduct.attribute1Name && 
+          quickOrderProduct.variantMatrix && 
+          quickOrderProduct.variantMatrix.length > 0
+        );
+
+        const isCustomActive = Boolean(
+          quickOrderProduct.allowCustomVariant ||
+          (selectedVer && (selectedVer.toLowerCase().includes('tự điền') || selectedVer.toLowerCase().includes('khách tự nhập'))) ||
+          (selectedOpt1 && (selectedOpt1.toLowerCase().includes('tự điền') || selectedOpt1.toLowerCase().includes('khách tự nhập'))) ||
+          (selectedOpt2 && (selectedOpt2.toLowerCase().includes('tự điền') || selectedOpt2.toLowerCase().includes('khách tự nhập'))) ||
+          (quickOrderProduct.variationName && (quickOrderProduct.variationName.toLowerCase().includes('tự điền') || quickOrderProduct.variationName.toLowerCase().includes('khách tự nhập')))
+        );
+
+        // Find active variant price
+        let currentPrice = quickOrderProduct.price || 0;
+        let currentStock = quickOrderProduct.stock ?? 100;
+        if (has2Tiers && quickOrderProduct.variantMatrix) {
+          const matched = quickOrderProduct.variantMatrix.find(
+            v => v.option1 === selectedOpt1 && (!quickOrderProduct.attribute2Name || v.option2 === selectedOpt2)
+          );
+          if (matched) {
+            currentPrice = matched.price;
+            currentStock = matched.stock ?? 0;
+          }
+        } else if (quickOrderProduct.variations && quickOrderProduct.variations.length > 0) {
+          const matched = quickOrderProduct.variations.find(v => v.name === selectedVer);
+          if (matched) {
+            currentPrice = matched.price;
+            currentStock = matched.stock ?? 0;
+          }
+        }
+
+        const handleConfirmOrder = (goToCart: boolean = false) => {
+          if (!quickOrderProduct) return;
+          if (isCustomActive && !customText.trim()) {
+            alert("✍️ Vui lòng điền thông tin phân loại / size / ghi chú của bạn vào ô trống trước khi đặt hàng!");
+            return;
+          }
+          let finalVer = has2Tiers 
+            ? (selectedOpt2 ? `${selectedOpt1} - ${selectedOpt2}` : selectedOpt1) 
+            : selectedVer;
+          if (isCustomActive && customText.trim()) {
+            finalVer = finalVer 
+              ? `${finalVer} (Khách điền: ${customText.trim()})` 
+              : `Tự điền: ${customText.trim()}`;
+          }
+          addToCart(quickOrderProduct, orderQty, finalVer, isCustomActive ? customText.trim() : undefined);
+          setQuickOrderProduct(null);
+          if (goToCart) {
+            setCurrentPage('cart');
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-neutral-200 p-5 space-y-4">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🛍️</span>
+                  <div>
+                    <h3 className="text-base font-bold text-neutral-900 font-display">
+                      Khung đặt hàng nhanh
+                    </h3>
+                    <p className="text-xs text-neutral-500">
+                      Chọn phân loại và tùy chỉnh chi tiết sản phẩm
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickOrderProduct(null)}
+                  className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Product preview */}
+              <div className="flex gap-3.5 p-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                <img
+                  src={quickOrderProduct.image}
+                  alt={quickOrderProduct.name}
+                  className="w-16 h-16 object-cover rounded-lg shrink-0 border border-neutral-200"
+                />
+                <div className="flex-1 min-w-0 space-y-1">
+                  <h4 className="text-xs font-bold text-neutral-900 line-clamp-2 leading-tight">
+                    {quickOrderProduct.name}
+                  </h4>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm font-mono font-bold text-blue-900">
+                      {currentPrice.toLocaleString('vi-VN')} đ
+                    </span>
+                    <span className="text-[10px] font-mono text-neutral-500">
+                      Kho: {currentStock > 0 ? `${currentStock} sp` : 'Hết hàng'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Multi-tier variant selectors */}
+              {has2Tiers ? (
+                <div className="space-y-3">
+                  {quickOrderProduct.attribute1Name && quickOrderProduct.attribute1Options && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-mono font-bold text-neutral-600 uppercase">
+                        {quickOrderProduct.attribute1Name}:
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {quickOrderProduct.attribute1Options.map(opt => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setSelectedOpt1(opt)}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all cursor-pointer ${
+                              selectedOpt1 === opt
+                                ? 'bg-blue-50 text-blue-900 border-blue-400 font-bold ring-1 ring-blue-400'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {quickOrderProduct.attribute2Name && quickOrderProduct.attribute2Options && (
+                    <div className="space-y-1.5 pt-1">
+                      <label className="text-[11px] font-mono font-bold text-neutral-600 uppercase">
+                        {quickOrderProduct.attribute2Name}:
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {quickOrderProduct.attribute2Options.map(opt => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setSelectedOpt2(opt)}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all cursor-pointer ${
+                              selectedOpt2 === opt
+                                ? 'bg-blue-50 text-blue-900 border-blue-400 font-bold ring-1 ring-blue-400'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Single-tier variants */
+                (Array.isArray(quickOrderProduct.variations) && quickOrderProduct.variations.length > 0) ? (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-mono font-bold text-neutral-600 uppercase">
+                      {quickOrderProduct.variationName || "Phân loại"}:
+                    </label>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {quickOrderProduct.variations.map(v => (
+                        <button
+                          key={v.name}
+                          type="button"
+                          onClick={() => setSelectedVer(v.name)}
+                          className={`w-full p-2.5 rounded-lg border text-xs text-left transition-all flex items-center justify-between cursor-pointer ${
+                            selectedVer === v.name
+                              ? 'bg-blue-50 text-blue-900 border-blue-400 font-bold ring-1 ring-blue-400'
+                              : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300'
+                          }`}
+                        >
+                          <span>{v.name}</span>
+                          <span className="font-mono">{Number(v.price).toLocaleString('vi-VN')} đ</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  Array.isArray(quickOrderProduct.versions) && quickOrderProduct.versions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-mono font-bold text-neutral-600 uppercase">
+                        {quickOrderProduct.variationName || "Phân loại"}:
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {quickOrderProduct.versions.map(ver => (
+                          <button
+                            key={ver}
+                            type="button"
+                            onClick={() => setSelectedVer(ver)}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all cursor-pointer ${
+                              selectedVer === ver
+                                ? 'bg-blue-50 text-blue-900 border-blue-400 font-bold ring-1 ring-blue-400'
+                                : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-300'
+                            }`}
+                          >
+                            {ver}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                )
+              )}
+
+              {/* Ô INPUT TRỐNG ĐỂ KHÁCH HÀNG TỰ GÕ THÔNG TIN PHÂN LOẠI HOẶC GHI CHÚ TÙY Ý */}
+              {isCustomActive && (
+                <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5 uppercase tracking-wide">
+                      <span>✍️</span>
+                      <span>Tự điền phân loại / size / ghi chú của bạn:</span>
+                      <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] font-mono text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full font-semibold">
+                      Bắt buộc
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    value={customText}
+                    onChange={(e) => setCustomText(e.target.value)}
+                    placeholder={quickOrderProduct.customVariantPlaceholder || "Ví dụ: Size XL, màu đen, in chữ Yeng..."}
+                    className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg text-xs font-medium text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[10.5px] text-blue-700 font-sans leading-relaxed">
+                    ℹ️ Thông tin bạn tự nhập sẽ được lưu trực tiếp vào chi tiết đơn hàng gửi đến shop.
+                  </p>
+                </div>
+              )}
+
+              {/* Quantity */}
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-xs font-bold text-neutral-700 font-mono uppercase">Số lượng:</span>
+                <div className="flex items-center border border-neutral-300 rounded-lg bg-neutral-50 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setOrderQty(prev => Math.max(1, prev - 1))}
+                    className="px-3 py-1.5 text-neutral-600 hover:text-black font-bold transition-colors cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="px-3 py-1.5 text-xs font-mono font-bold text-neutral-800 min-w-8 text-center bg-white border-x border-neutral-300">
+                    {orderQty}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (orderQty >= currentStock) {
+                        alert(`Kho chỉ còn ${currentStock} sản phẩm!`);
+                        return;
+                      }
+                      setOrderQty(prev => prev + 1);
+                    }}
+                    className="px-3 py-1.5 text-neutral-600 hover:text-black font-bold transition-colors cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-2.5 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmOrder(false)}
+                  disabled={currentStock <= 0}
+                  className="py-2.5 px-3 border border-neutral-300 hover:border-neutral-400 bg-white text-neutral-800 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer hover:bg-neutral-50 active:scale-95"
+                >
+                  Thêm vào giỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmOrder(true)}
+                  disabled={currentStock <= 0}
+                  className="py-2.5 px-3 bg-[#E8F0FE] hover:bg-[#D2E3FC] text-[#1A73E8] border border-[#D2E3FC] text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Đặt hàng ngay</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
