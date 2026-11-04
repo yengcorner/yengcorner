@@ -641,6 +641,11 @@ export default function CheckoutPage({ cart, setCurrentPage, clearCart, appliedC
                         <span className="text-[10px] font-mono text-neutral-500 bg-neutral-50 border px-1.5 py-0.5 rounded inline-block">
                           SL: {item.quantity}{item.version ? ` | ${item.version}` : ''}
                         </span>
+                        {item.customVariant && !item.version?.includes(item.customVariant) && (
+                          <span className="text-[10px] font-mono text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded inline-block">
+                            ✍️ {item.customVariant}
+                          </span>
+                        )}
                         {isItemSoldOut && (
                           <span className="text-[10px] font-bold text-red-600 bg-red-100 border border-red-200 px-1.5 py-0.5 rounded inline-block">
                             HẾT HÀNG
