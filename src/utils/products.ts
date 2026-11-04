@@ -121,6 +121,8 @@ const sanitizeProductForStorage = (p: Product): any => {
     variantMatrix: p.variantMatrix,
     hasInsurance: p.hasInsurance,
     shippingFeeIncluded: p.shippingFeeIncluded,
+    allowCustomVariant: p.allowCustomVariant,
+    customVariantPlaceholder: p.customVariantPlaceholder,
   };
 };
 
@@ -553,25 +555,52 @@ export function getProductStockForVersion(product: Product, version: string): nu
     return 0;
   }
 
-  const targetVer = (version || "").trim().toLowerCase();
+  let targetVer = (version || "").trim().toLowerCase();
+  if (targetVer.includes(' (khách điền:')) {
+    targetVer = targetVer.split(' (khách điền:')[0].trim();
+  } else if (targetVer.startsWith('tự điền:')) {
+    targetVer = 'tự điền';
+  }
 
   // Case 1: Multi-tier variant (has variantMatrix)
   if (product.attribute1Name && product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
     const matched = product.variantMatrix.find(v => {
-      const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
-      return combinedName.trim().toLowerCase() === targetVer || v.option1.trim().toLowerCase() === targetVer;
+      const combinedName = (v.option2 ? `${v.option1} - ${v.option2}` : v.option1).trim().toLowerCase();
+      const opt1Lower = v.option1.trim().toLowerCase();
+      if (combinedName === targetVer || opt1Lower === targetVer) return true;
+      if (targetVer.includes('tự điền') || targetVer.includes('khách tự nhập')) {
+        return combinedName.includes('tự điền') || combinedName.includes('khách tự nhập') ||
+               opt1Lower.includes('tự điền') || opt1Lower.includes('khách tự nhập');
+      }
+      return false;
     });
     if (matched) {
       return matched.stock !== undefined ? matched.stock : 0;
     }
-    // If version is not matched but matrix exists
+    // If custom variant is allowed for the product, fallback to overall stock
+    if (product.allowCustomVariant || targetVer.includes('tự điền') || targetVer.includes('khách tự nhập')) {
+      const sumStock = product.variantMatrix.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 0), 0);
+      return sumStock > 0 ? sumStock : (product.stock !== undefined ? product.stock : 999);
+    }
     return 0;
   }
   // Case 2: Simple variations list (variations)
   if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
-    const matched = product.variations.find(v => v.name.trim().toLowerCase() === targetVer);
+    const matched = product.variations.find(v => {
+      const name = v.name.trim().toLowerCase();
+      if (name === targetVer) return true;
+      if (targetVer.includes('tự điền') || targetVer.includes('khách tự nhập')) {
+        return name.includes('tự điền') || name.includes('khách tự nhập');
+      }
+      return false;
+    });
     if (matched) {
       return matched.stock !== undefined ? matched.stock : 0;
+    }
+    // If custom variant is allowed for the product, fallback to overall stock
+    if (product.allowCustomVariant || targetVer.includes('tự điền') || targetVer.includes('khách tự nhập')) {
+      const sumStock = product.variations.reduce((sum, v) => sum + (v.stock !== undefined ? v.stock : 0), 0);
+      return sumStock > 0 ? sumStock : (product.stock !== undefined ? product.stock : 999);
     }
     return 0;
   }
@@ -670,13 +699,27 @@ export async function deductProductStock(productId: number, version: string, qua
     let updatePayload: any = {};
     let totalStockRemaining = 0;
 
+    // Chuẩn hóa tên phân loại để đối chiếu trừ kho chính xác (kể cả khi khách đã điền ghi chú)
+    let cleanVer = (version || "").trim().toLowerCase();
+    if (cleanVer.includes(' (khách điền:')) {
+      cleanVer = cleanVer.split(' (khách điền:')[0].trim();
+    } else if (cleanVer.startsWith('tự điền:')) {
+      cleanVer = 'tự điền';
+    }
+
     // Phân tích các trường hợp sản phẩm có phân loại/biến thể
     // Case 1: Có ma trận thuộc tính (variantMatrix)
     if (product.variantMatrix && Array.isArray(product.variantMatrix) && product.variantMatrix.length > 0) {
       let updatedMatrix = [...product.variantMatrix];
       let matchedIdx = updatedMatrix.findIndex(v => {
-        const combinedName = v.option2 ? `${v.option1} - ${v.option2}` : v.option1;
-        return combinedName.trim().toLowerCase() === version.trim().toLowerCase();
+        const combinedName = (v.option2 ? `${v.option1} - ${v.option2}` : v.option1).trim().toLowerCase();
+        const opt1Lower = v.option1.trim().toLowerCase();
+        if (combinedName === cleanVer || opt1Lower === cleanVer) return true;
+        if (cleanVer.includes('tự điền') || cleanVer.includes('khách tự nhập')) {
+          return combinedName.includes('tự điền') || combinedName.includes('khách tự nhập') ||
+                 opt1Lower.includes('tự điền') || opt1Lower.includes('khách tự nhập');
+        }
+        return false;
       });
       
       if (matchedIdx > -1) {
@@ -697,9 +740,14 @@ export async function deductProductStock(productId: number, version: string, qua
     // Case 2: Có danh sách phân loại đơn giản (variations)
     else if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
       let updatedVariations = [...product.variations];
-      let matchedIdx = updatedVariations.findIndex(v => 
-        v.name.trim().toLowerCase() === version.trim().toLowerCase()
-      );
+      let matchedIdx = updatedVariations.findIndex(v => {
+        const name = v.name.trim().toLowerCase();
+        if (name === cleanVer) return true;
+        if (cleanVer.includes('tự điền') || cleanVer.includes('khách tự nhập')) {
+          return name.includes('tự điền') || name.includes('khách tự nhập');
+        }
+        return false;
+      });
       
       if (matchedIdx > -1) {
         let currentStock = updatedVariations[matchedIdx].stock !== undefined ? updatedVariations[matchedIdx].stock! : 0;
