@@ -5,7 +5,7 @@ import { getProducts, subscribeProducts, getProductStockForVersion, isProductSol
 
 interface ProductDetailPageProps {
   id: number | null;
-  addToCart: (product: Product, quantity?: number, version?: string) => void;
+  addToCart: (product: Product, quantity?: number, version?: string, customVariant?: string) => void;
   setCurrentPage: (page: string) => void;
 }
 
@@ -89,6 +89,7 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
   })();
   const [selectedVersion, setSelectedVersion] = useState(defaultVersion);
   const [quantity, setQuantity] = useState(1);
+  const [customVariantText, setCustomVariantText] = useState('');
 
   // Reset selected options, active image, version, and quantity when product changes
   useEffect(() => {
@@ -106,6 +107,7 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
       })();
       setSelectedVersion(nextDefaultVersion);
       setQuantity(1);
+      setCustomVariantText('');
     }
   }, [product?.id]);
 
@@ -209,10 +211,27 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
     ? (activeMatrixItem && activeMatrixItem.pob ? activeMatrixItem.pob : product?.preorderGift)
     : product?.preorderGift;
 
+  const isCustomVariantActive = Boolean(
+    product?.allowCustomVariant ||
+    (selectedVersion && (selectedVersion.toLowerCase().includes('tự điền') || selectedVersion.toLowerCase().includes('khách tự nhập'))) ||
+    (selectedOpt1 && (selectedOpt1.toLowerCase().includes('tự điền') || selectedOpt1.toLowerCase().includes('khách tự nhập'))) ||
+    (selectedOpt2 && (selectedOpt2.toLowerCase().includes('tự điền') || selectedOpt2.toLowerCase().includes('khách tự nhập'))) ||
+    (product?.variationName && (product.variationName.toLowerCase().includes('tự điền') || product.variationName.toLowerCase().includes('khách tự nhập')))
+  );
+
   const handleAddToCart = () => {
     if (!product || isSelectedOutOfStock) return;
-    const finalVer = hasMultiTier ? currentCombinedVersion : selectedVersion;
-    addToCart(product, quantity, finalVer);
+    if (isCustomVariantActive && !customVariantText.trim()) {
+      alert("✍️ Vui lòng điền thông tin phân loại / size / ghi chú của bạn vào ô trống trước khi thêm vào giỏ hàng!");
+      return;
+    }
+    let finalVer = hasMultiTier ? currentCombinedVersion : selectedVersion;
+    if (isCustomVariantActive && customVariantText.trim()) {
+      finalVer = finalVer
+        ? `${finalVer} (Khách điền: ${customVariantText.trim()})`
+        : `Tự điền: ${customVariantText.trim()}`;
+    }
+    addToCart(product, quantity, finalVer, isCustomVariantActive ? customVariantText.trim() : undefined);
     setCurrentPage('cart');
   };
 
@@ -550,6 +569,32 @@ export default function ProductDetailPage({ id, addToCart, setCurrentPage }: Pro
                 )}
               </div>
             )
+          )}
+
+          {/* Ô nhập thông tin tự điền (Khách tự nhập) */}
+          {isCustomVariantActive && (
+            <div className="p-4 bg-gradient-to-br from-blue-50/70 to-indigo-50/50 border border-blue-200 rounded-xl space-y-2 shadow-xs animate-fade-in">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5 uppercase tracking-wide">
+                  <span>✍️</span>
+                  <span>Tự điền phân loại / size / ghi chú của bạn:</span>
+                  <span className="text-rose-500 font-bold">*</span>
+                </label>
+                <span className="text-[10px] font-mono text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full font-semibold">
+                  Bắt buộc
+                </span>
+              </div>
+              <input
+                type="text"
+                value={customVariantText}
+                onChange={(e) => setCustomVariantText(e.target.value)}
+                placeholder={product.customVariantPlaceholder || "Ví dụ: Size XL, màu đen, in chữ Yeng..."}
+                className="w-full px-3.5 py-2.5 bg-white border border-blue-300 rounded-lg text-xs font-medium text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+              />
+              <p className="text-[11px] text-blue-700 font-sans leading-relaxed">
+                ℹ️ Thông tin bạn tự nhập sẽ được lưu trực tiếp vào chi tiết đơn hàng gửi đến shop.
+              </p>
+            </div>
           )}
 
           {/* Quantity numeric adjuster */}
