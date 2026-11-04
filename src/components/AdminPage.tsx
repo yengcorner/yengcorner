@@ -1102,7 +1102,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
     attribute2Name: '',
     attribute2OptionsText: '',
     stock: 0,
-    shippingFeeIncluded: ''
+    shippingFeeIncluded: '',
+    allowCustomVariant: false,
+    customVariantPlaceholder: ''
   });
   const [customCategories, setCustomCategories] = useState<string[]>(() => {
     try {
@@ -2104,7 +2106,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
       attribute2Name: '',
       attribute2OptionsText: '',
       stock: 0,
-      shippingFeeIncluded: ''
+      shippingFeeIncluded: '',
+      allowCustomVariant: false,
+      customVariantPlaceholder: ''
     });
     setNotifySubscribers(false);
     setIsProductModalOpen(true);
@@ -2245,7 +2249,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute2Name: attr2Title,
         attribute2OptionsText: opts2Text,
         stock: masterStockVal,
-        shippingFeeIncluded: prod.shippingFeeIncluded || ''
+        shippingFeeIncluded: prod.shippingFeeIncluded || '',
+        allowCustomVariant: Boolean(prod.allowCustomVariant || (opts1Text && (opts1Text.toLowerCase().includes('tự điền') || opts1Text.toLowerCase().includes('khách tự nhập')))),
+        customVariantPlaceholder: prod.customVariantPlaceholder || ''
       });
     } else {
       let boundVariations: { name: string; price: number; description?: string; stock?: number }[] = [];
@@ -2327,7 +2333,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         attribute2Name: '',
         attribute2OptionsText: '',
         stock: masterStockVal,
-        shippingFeeIncluded: prod.shippingFeeIncluded || ''
+        shippingFeeIncluded: prod.shippingFeeIncluded || '',
+        allowCustomVariant: Boolean(prod.allowCustomVariant || (versionsStr && (versionsStr.toLowerCase().includes('tự điền') || versionsStr.toLowerCase().includes('khách tự nhập')))),
+        customVariantPlaceholder: prod.customVariantPlaceholder || ''
       });
     }
     setIsProductModalOpen(true);
@@ -2527,7 +2535,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         groups: currentGroups,
         options: currentOptions,
         stock: masterStock,
-        shippingFeeIncluded: productForm.shippingFeeIncluded || ""
+        shippingFeeIncluded: productForm.shippingFeeIncluded || "",
+        allowCustomVariant: Boolean(productForm.allowCustomVariant || opts1.some(o => o.toLowerCase().includes('tự điền') || o.toLowerCase().includes('khách tự nhập'))),
+        customVariantPlaceholder: productForm.customVariantPlaceholder || ""
       };
     } else {
       const parsedVersions = (productForm.versionsText || '')
@@ -2633,7 +2643,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         groups: currentGroups,
         options: currentOptions,
         stock: masterStock,
-        shippingFeeIncluded: productForm.shippingFeeIncluded || ""
+        shippingFeeIncluded: productForm.shippingFeeIncluded || "",
+        allowCustomVariant: Boolean(productForm.allowCustomVariant || parsedVersions.some(o => o.toLowerCase().includes('tự điền') || o.toLowerCase().includes('khách tự nhập'))),
+        customVariantPlaceholder: productForm.customVariantPlaceholder || ""
       };
 
       delete (productPayload as any).attribute2Name;
@@ -2751,7 +2763,9 @@ export default function AdminPage({ setCurrentPage }: AdminPageProps) {
         images: finalGallery,
         variants: currentVariants,
         groups: currentGroups,
-        options: currentOptions
+        options: currentOptions,
+        allowCustomVariant: Boolean(productPayload.allowCustomVariant),
+        customVariantPlaceholder: productPayload.customVariantPlaceholder || ""
       };
       if (!isMultiTier) {
         delete (cloudPayload as any).attribute2Name;
@@ -5584,11 +5598,20 @@ function getColumnLetter(colIndex) {
                     <label className="text-[10px] font-mono font-bold text-neutral-500 block mb-1 uppercase">Tên phân loại 1 (Chọn hoặc tự nhập):</label>
                     <div className="flex gap-2">
                       <select
-                        value={["SIZE", "VERSION", "MÀU SẮC"].includes(productForm.variationName) ? productForm.variationName : (productForm.variationName ? "custom" : "")}
+                        value={["SIZE", "VERSION", "MÀU SẮC", "Tự điền (Khách tự nhập)"].includes(productForm.variationName) ? productForm.variationName : (productForm.variationName ? "custom" : "")}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === "custom") {
                             setProductForm(prev => ({ ...prev, variationName: 'Khác', attribute1Name: 'Khác' }));
+                          } else if (val === "Tự điền (Khách tự nhập)") {
+                            setProductForm(prev => ({ 
+                              ...prev, 
+                              variationName: val, 
+                              attribute1Name: val,
+                              allowCustomVariant: true,
+                              versionsText: prev.versionsText ? prev.versionsText : 'Tự điền (Khách tự nhập)',
+                              attribute1OptionsText: prev.attribute1OptionsText ? prev.attribute1OptionsText : 'Tự điền (Khách tự nhập)'
+                            }));
                           } else {
                             setProductForm(prev => ({ ...prev, variationName: val, attribute1Name: val }));
                           }
@@ -5599,10 +5622,11 @@ function getColumnLetter(colIndex) {
                         <option value="SIZE">SIZE</option>
                         <option value="VERSION">VERSION</option>
                         <option value="MÀU SẮC">MÀU SẮC</option>
+                        <option value="Tự điền (Khách tự nhập)">Tự điền (Khách tự nhập)</option>
                         <option value="custom">Tự điền phân loại khác...</option>
                       </select>
                       
-                      {(!["SIZE", "VERSION", "MÀU SẮC"].includes(productForm.variationName) || productForm.variationName === "") && (
+                      {(!["SIZE", "VERSION", "MÀU SẮC", "Tự điền (Khách tự nhập)"].includes(productForm.variationName) || productForm.variationName === "") && (
                         <input
                           type="text"
                           value={productForm.variationName || ''}
@@ -5625,11 +5649,70 @@ function getColumnLetter(colIndex) {
                       value={productForm.versionsText || ''}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setProductForm(prev => ({ ...prev, versionsText: val, attribute1OptionsText: val }));
+                        const hasCustom = val.toLowerCase().includes('tự điền') || val.toLowerCase().includes('khách tự nhập');
+                        setProductForm(prev => ({ 
+                          ...prev, 
+                          versionsText: val, 
+                          attribute1OptionsText: val,
+                          ...(hasCustom ? { allowCustomVariant: true } : {})
+                        }));
                       }}
                       placeholder="Ví dụ: S, M, L hoặc Ver A, Ver B (phân tách bằng dấu phẩy)"
                       className="w-full px-3 py-1.5 border border-neutral-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white font-medium text-neutral-900 resize-none leading-relaxed text-xs"
                     />
+                    <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                      <span className="text-[10px] text-neutral-400 font-mono">Bổ sung nhanh:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const current = (productForm.versionsText || '').trim();
+                          if (!current.toLowerCase().includes('tự điền')) {
+                            const updated = current ? `${current}, Tự điền (Khách tự nhập)` : 'Tự điền (Khách tự nhập)';
+                            setProductForm(prev => ({
+                              ...prev,
+                              versionsText: updated,
+                              attribute1OptionsText: updated,
+                              allowCustomVariant: true
+                            }));
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[10.5px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors cursor-pointer active:scale-95"
+                      >
+                        <span>➕ Tự điền (Khách tự nhập)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CẤU HÌNH TỰ ĐIỀN (KHÁCH TỰ NHẬP) */}
+                  <div className="p-3 bg-blue-50/60 border border-blue-200/80 rounded-xl space-y-2 mt-2">
+                    <label className="flex items-center space-x-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(productForm.allowCustomVariant)}
+                        onChange={(e) => setProductForm(prev => ({ ...prev, allowCustomVariant: e.target.checked }))}
+                        className="w-4 h-4 text-blue-600 rounded border-blue-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-blue-950 font-sans">
+                        ✍️ Bật tùy chọn &quot;Tự điền (Khách tự nhập)&quot; cho sản phẩm này
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-blue-800 leading-relaxed font-sans pl-6">
+                      Khi bật tùy chọn này, ở khung đặt hàng ngoài trang chủ và trang chi tiết sản phẩm sẽ tự động hiển thị thêm một ô input trống (textbox) để khách hàng có thể tự gõ thông tin phân loại, kích thước hoặc ghi chú tùy ý vào đơn hàng khi gửi.
+                    </p>
+                    {productForm.allowCustomVariant && (
+                      <div className="pl-6 pt-1 space-y-1">
+                        <label className="text-[10px] font-mono font-bold text-blue-900 block">
+                          Gợi ý trong ô gõ (Placeholder):
+                        </label>
+                        <input
+                          type="text"
+                          value={productForm.customVariantPlaceholder || ''}
+                          onChange={(e) => setProductForm(prev => ({ ...prev, customVariantPlaceholder: e.target.value }))}
+                          placeholder="Ví dụ: Nhập phân loại/size/mẫu bạn muốn đặt..."
+                          className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-medium text-neutral-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
