@@ -233,7 +233,7 @@ export default function App() {
     }
   }, [currentPage, selectedProductId]);
 
-  const addToCart = (product: Product, quantity = 1, version = "", customVariant?: string) => {
+  const addToCart = (product: Product, quantity = 1, version = "") => {
     const freshProducts = getProducts();
     const freshProduct = freshProducts.find(p => p.id === product.id) || product;
     
@@ -253,7 +253,7 @@ export default function App() {
 
     setCart((prevCart) => {
       const existingIdx = prevCart.findIndex(
-        (item) => item.product.id === product.id && item.version === version && (item.customVariant || '') === (customVariant || '')
+        (item) => item.product.id === product.id && item.version === version
       );
       
       let existingQty = 0;
@@ -276,7 +276,7 @@ export default function App() {
             quantity: availableStock,
           };
         } else {
-          nextCart.push({ product: freshProduct, quantity: availableStock, version, customVariant });
+          nextCart.push({ product: freshProduct, quantity: availableStock, version });
         }
         return nextCart;
       }
@@ -289,7 +289,7 @@ export default function App() {
         };
         return nextCart;
       }
-      return [...prevCart, { product: freshProduct, quantity, version, customVariant }];
+      return [...prevCart, { product: freshProduct, quantity, version }];
     });
 
     if (isOverStock) {
