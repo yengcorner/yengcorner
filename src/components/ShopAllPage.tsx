@@ -5,7 +5,7 @@ import { getProducts, subscribeProducts, isProductSoldOut, isProductsLoaded } fr
 
 interface ShopAllPageProps {
   navigateToProduct: (id: number) => void;
-  addToCart: (product: Product, quantity?: number, version?: string) => void;
+  addToCart: (product: Product, quantity?: number, version?: string, customVariant?: string) => void;
   wishlist: number[];
   toggleWishlist: (id: number) => void;
   initialCategory?: string;
