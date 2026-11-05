@@ -15,9 +15,63 @@ import { CartItem, Product, Coupon } from './types';
 import { CheckCircle2 } from 'lucide-react';
 import { getProducts, convertToSlug, getProductStockForVersion, isProductSoldOut, subscribeProducts, fetchProductsFromServer } from './utils/products';
 
+interface ParsedRoute {
+  page: string;
+  productId: number | null;
+  productSlug: string | null;
+}
+
+const parseRouteFromLocation = (): ParsedRoute => {
+  if (typeof window === 'undefined') {
+    return { page: 'home', productId: null, productSlug: null };
+  }
+
+  const pathname = window.location.pathname;
+  const searchParams = new URLSearchParams(window.location.search);
+  const prodIdParam = searchParams.get('id') || searchParams.get('productId');
+
+  if (pathname === '/admin' || pathname === '/admin-yeng') {
+    return { page: 'admin-yeng', productId: null, productSlug: null };
+  }
+
+  if (pathname.startsWith('/product')) {
+    const raw = pathname.replace(/^\/product\/?/, '').replace(/\/+$/, '');
+    if (raw) {
+      const decoded = decodeURIComponent(raw).trim();
+      const numId = parseInt(decoded, 10);
+      if (!isNaN(numId) && String(numId) === decoded) {
+        return { page: 'product-detail', productId: numId, productSlug: null };
+      }
+      return { page: 'product-detail', productId: null, productSlug: decoded };
+    }
+    return { page: 'shop', productId: null, productSlug: null };
+  }
+
+  if (prodIdParam) {
+    const decoded = decodeURIComponent(prodIdParam).trim();
+    const numId = parseInt(decoded, 10);
+    if (!isNaN(numId) && String(numId) === decoded) {
+      return { page: 'product-detail', productId: numId, productSlug: null };
+    }
+    return { page: 'product-detail', productId: null, productSlug: decoded };
+  }
+
+  if (pathname === '/shop') return { page: 'shop', productId: null, productSlug: null };
+  if (pathname === '/wishlist') return { page: 'wishlist', productId: null, productSlug: null };
+  if (pathname === '/cart') return { page: 'cart', productId: null, productSlug: null };
+  if (pathname === '/checkout') return { page: 'checkout', productId: null, productSlug: null };
+  if (pathname === '/rules') return { page: 'rules', productId: null, productSlug: null };
+  if (pathname === '/about') return { page: 'about', productId: null, productSlug: null };
+  if (pathname === '/track-order') return { page: 'track-order', productId: null, productSlug: null };
+
+  return { page: 'home', productId: null, productSlug: null };
+};
+
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<string>('home');
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const initialRoute = parseRouteFromLocation();
+  const [currentPage, setCurrentPage] = useState<string>(initialRoute.page);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(initialRoute.productId);
+  const [selectedProductSlug, setSelectedProductSlug] = useState<string | null>(initialRoute.productSlug);
   const [rulesAnchor, setRulesAnchor] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
@@ -63,12 +117,23 @@ export default function App() {
     }
   }, [cart]);
 
-  // Real-time synchronization of cart items with latest Firestore product stock and status
+  // Real-time synchronization of cart items and product route resolution with latest Firestore products
   useEffect(() => {
     fetchProductsFromServer().catch(err => console.warn("Failed to fetch fresh products:", err));
 
     const unsubscribe = subscribeProducts((latestProducts) => {
       if (!latestProducts || latestProducts.length === 0) return;
+
+      // If on product-detail and waiting for slug resolution to a concrete product
+      if (selectedProductSlug && selectedProductId === null) {
+        const match = latestProducts.find(
+          (p) => convertToSlug(p.name) === selectedProductSlug || String(p.id) === selectedProductSlug
+        );
+        if (match) {
+          setSelectedProductId(match.id);
+        }
+      }
+
       setCart((prevCart) => {
         let hasChanges = false;
         const updatedCart = prevCart.map((item) => {
@@ -86,7 +151,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [selectedProductSlug, selectedProductId]);
 
   // Keep state saved for wishlist
   useEffect(() => {
@@ -117,60 +182,20 @@ export default function App() {
 
   // Synchronize route from current URL
   const syncRouteFromURL = () => {
-    const pathname = window.location.pathname;
-    const searchParams = new URLSearchParams(window.location.search);
-    const prodIdParam = searchParams.get('id') || searchParams.get('productId');
+    const route = parseRouteFromLocation();
+    setCurrentPage(route.page);
+    setSelectedProductId(route.productId);
+    setSelectedProductSlug(route.productSlug);
 
-    if (pathname === '/admin' || pathname === '/admin-yeng') {
-      setCurrentPage('admin-yeng');
-    } else if (pathname.startsWith('/product/')) {
-      const parts = pathname.split('/');
-      const slugOrId = parts[parts.length - 1];
-      const id = parseInt(slugOrId, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
-      } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === slugOrId);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
+    // If slug is provided and products already exist in cache, map numeric ID
+    if (route.page === 'product-detail' && route.productSlug && route.productId === null) {
+      const list = getProducts();
+      const match = list.find(
+        (p) => convertToSlug(p.name) === route.productSlug || String(p.id) === route.productSlug
+      );
+      if (match) {
+        setSelectedProductId(match.id);
       }
-    } else if (prodIdParam) {
-      const id = parseInt(prodIdParam, 10);
-      if (!isNaN(id)) {
-        setSelectedProductId(id);
-        setCurrentPage('product-detail');
-      } else {
-        const productsList = getProducts();
-        const foundProduct = productsList.find((p) => convertToSlug(p.name) === prodIdParam);
-        if (foundProduct) {
-          setSelectedProductId(foundProduct.id);
-          setCurrentPage('product-detail');
-        } else {
-          setCurrentPage('home');
-        }
-      }
-    } else if (pathname === '/shop') {
-      setCurrentPage('shop');
-    } else if (pathname === '/wishlist') {
-      setCurrentPage('wishlist');
-    } else if (pathname === '/cart') {
-      setCurrentPage('cart');
-    } else if (pathname === '/checkout') {
-      setCurrentPage('checkout');
-    } else if (pathname === '/rules') {
-      setCurrentPage('rules');
-    } else if (pathname === '/about') {
-      setCurrentPage('about');
-    } else if (pathname === '/track-order') {
-      setCurrentPage('track-order');
-    } else {
-      setCurrentPage('home');
     }
   };
 
@@ -201,13 +226,22 @@ export default function App() {
     const getTargetURL = () => {
       if (currentPage === 'admin-yeng') {
         return '/admin';
-      } else if (currentPage === 'product-detail' && selectedProductId !== null) {
-        const productsList = getProducts();
-        const currentProd = productsList.find((p) => p.id === selectedProductId);
-        if (currentProd) {
-          return `/product/${convertToSlug(currentProd.name)}`;
+      } else if (currentPage === 'product-detail') {
+        if (selectedProductId !== null) {
+          const productsList = getProducts();
+          const currentProd = productsList.find((p) => Number(p.id) === Number(selectedProductId));
+          if (currentProd) {
+            return `/product/${convertToSlug(currentProd.name)}`;
+          }
+          if (selectedProductSlug) {
+            return `/product/${selectedProductSlug}`;
+          }
+          return `/product/${selectedProductId}`;
         }
-        return `/product/${selectedProductId}`;
+        if (selectedProductSlug) {
+          return `/product/${selectedProductSlug}`;
+        }
+        return window.location.pathname.startsWith('/product') ? window.location.pathname : '/shop';
       } else if (currentPage === 'track-order') {
         return '/track-order';
       } else if (currentPage === 'shop') {
@@ -231,7 +265,7 @@ export default function App() {
     if (window.location.pathname !== target) {
       window.history.pushState({}, '', target);
     }
-  }, [currentPage, selectedProductId]);
+  }, [currentPage, selectedProductId, selectedProductSlug]);
 
   const addToCart = (product: Product, quantity = 1, version = "") => {
     const freshProducts = getProducts();
@@ -331,8 +365,14 @@ export default function App() {
     setCart([]);
   };
 
-  const navigateToProduct = (id: number) => {
+  const navigateToProduct = (id: number, slug?: string) => {
     setSelectedProductId(id);
+    if (slug) {
+      setSelectedProductSlug(slug);
+    } else {
+      const p = getProducts().find((item) => Number(item.id) === Number(id));
+      setSelectedProductSlug(p ? convertToSlug(p.name) : null);
+    }
     setCurrentPage('product-detail');
   };
 
@@ -381,6 +421,7 @@ export default function App() {
           {currentPage === 'product-detail' && (
             <ProductDetailPage 
               id={selectedProductId} 
+              slug={selectedProductSlug}
               addToCart={addToCart} 
               setCurrentPage={setCurrentPage} 
             />
