@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn, HelpCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ShoppingBag, Truck, Calendar, Sparkles, Scale, Info, CheckCircle2, CalendarDays, X, ZoomIn, HelpCircle, Loader2, RefreshCw } from 'lucide-react';
 import { Product } from '../types';
 import { getProducts, subscribeProducts, getProductStockForVersion, isProductSoldOut, isProductsLoaded, isFirestoreProductsLoaded, convertToSlug } from '../utils/products';
 
@@ -14,15 +14,26 @@ export default function ProductDetailPage({ id, slug, addToCart, setCurrentPage 
   const [productsList, setProductsList] = useState<Product[]>(() => getProducts());
   const [hasRemoteLoaded, setHasRemoteLoaded] = useState<boolean>(() => isFirestoreProductsLoaded());
   const [isLoading, setIsLoading] = useState<boolean>(() => !isFirestoreProductsLoaded());
+  const [waitTimedOut, setWaitTimedOut] = useState<boolean>(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeProducts((list) => {
+    const unsubscribe = subscribeProducts((list, isLoaded) => {
       setProductsList(list);
-      setHasRemoteLoaded(true);
-      setIsLoading(false);
+      if (isLoaded) {
+        setHasRemoteLoaded(true);
+        setIsLoading(false);
+      }
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    setWaitTimedOut(false);
+    const timer = setTimeout(() => {
+      setWaitTimedOut(true);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [id, slug]);
 
   // Gracefully find product by ID or Slug or fallback to first if no ID/slug passed
   const product = productsList.find(p => {
@@ -227,12 +238,21 @@ export default function ProductDetailPage({ id, slug, addToCart, setCurrentPage 
   };
 
   if (!product) {
-    if (isLoading || !hasRemoteLoaded) {
+    if (isLoading || !hasRemoteLoaded || !waitTimedOut) {
       return (
-        <div className="space-y-10">
-          <div>
-            <div className="h-4 w-32 bg-neutral-200 animate-pulse rounded" />
+        <div className="space-y-8 max-w-5xl mx-auto py-6">
+          <div className="bg-gradient-to-r from-blue-50/80 via-white to-blue-50/80 border border-blue-200/70 rounded-2xl p-6 text-center shadow-xs">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-blue-100 text-blue-600 mb-3 animate-spin">
+              <Loader2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-neutral-800">
+              Đang tải sản phẩm, vui lòng chờ một chút nhé...
+            </h3>
+            <p className="text-xs text-neutral-500 mt-1 max-w-md mx-auto">
+              Yeng Corner đang đồng bộ dữ liệu mới nhất từ hệ thống cho bạn.
+            </p>
           </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
             <div className="aspect-square bg-white border border-neutral-200 rounded-2xl p-3 animate-pulse">
               <div className="w-full h-full bg-neutral-200 rounded-xl" />
@@ -256,12 +276,21 @@ export default function ProductDetailPage({ id, slug, addToCart, setCurrentPage 
         <p className="text-neutral-500 text-sm">
           Sản phẩm bạn đang tìm kiếm không tồn tại hoặc đã ngừng kinh doanh.
         </p>
-        <button
-          onClick={() => setCurrentPage('shop')}
-          className="mt-4 px-6 py-2.5 bg-neutral-900 text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
-        >
-          Quay lại cửa hàng
-        </button>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Tải lại trang
+          </button>
+          <button
+            onClick={() => setCurrentPage('shop')}
+            className="px-6 py-2.5 bg-neutral-900 text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-neutral-800 transition-colors cursor-pointer"
+          >
+            Quay lại cửa hàng
+          </button>
+        </div>
       </div>
     );
   }
