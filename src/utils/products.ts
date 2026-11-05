@@ -79,6 +79,10 @@ export const isProductsLoaded = (): boolean => {
   return isProductsInitialLoaded || cachedProducts.length > 0;
 };
 
+export const isFirestoreProductsLoaded = (): boolean => {
+  return isProductsInitialLoaded;
+};
+
 // Helper to sanitize product payload for lightweight storage caching (avoids QuotaExceededError)
 const sanitizeProductForStorage = (p: Product): any => {
   const sanitizeImg = (imgStr?: string) => {
